@@ -1,0 +1,10 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Local test artifact (safe to delete this folder)
+.gittest/
