@@ -34,7 +34,7 @@ if errorlevel 1 git config user.email "lunhui@example.com"
 rem Stage files and create the initial commit if there is anything to commit
 git add .
 git diff --cached --quiet
-if errorlevel 1 git commit -m "chore: initial commit for lunhui"
+if errorlevel 1 git commit -m "chore: update lunhui project"
 
 rem Point origin at the remote repository
 git remote get-url origin >nul 2>nul
