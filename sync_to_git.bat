@@ -15,6 +15,10 @@ if errorlevel 1 (
     )
 )
 
+rem Use the default remote URL unless another one is provided
+set "REMOTE_URL=%~1"
+if "%REMOTE_URL%"=="" set "REMOTE_URL=https://github.com/qianzhuqing/lunhui.git"
+
 rem Remove local test artifact if it exists
 if exist ".gittest" rmdir /s /q ".gittest"
 
@@ -27,21 +31,23 @@ if errorlevel 1 git config user.name "lunhui"
 git config user.email >nul 2>nul
 if errorlevel 1 git config user.email "lunhui@example.com"
 
-rem Stage and create the initial commit
+rem Stage files and create the initial commit if there is anything to commit
 git add .
-git commit -m "chore: initial commit for lunhui"
+git diff --cached --quiet
+if errorlevel 1 git commit -m "chore: initial commit for lunhui"
 
-rem Add remote and push if a URL was provided
-if not "%~1"=="" (
-    git remote remove origin >nul 2>nul
-    git remote add origin %~1
-    git push -u origin main
+rem Point origin at the remote repository
+git remote get-url origin >nul 2>nul
+if errorlevel 1 (
+    git remote add origin %REMOTE_URL%
 ) else (
-    echo.
-    echo Local commit created on branch "main".
-    echo To push to a remote repository, run:
-    echo     git remote add origin ^<YOUR_REPOSITORY_URL^>
-    echo     git push -u origin main
+    git remote set-url origin %REMOTE_URL%
 )
+
+rem Push the main branch to GitHub
+git push -u origin main
+
+echo.
+echo Done. lunhui has been pushed to %REMOTE_URL%
 
 endlocal
