@@ -1,0 +1,8 @@
+﻿slot_id,name_cn,max_equip,sort_order,allow_weapon_types,desc
+weapon,武器,1,1,sword|fist|blade|spear,主手武器
+body,身体,1,2,,躯干护具
+belt,腰带,1,3,,腰饰
+shoulder,肩部,1,4,,肩部护具
+legs,下装,1,5,,腿部护具
+ring,戒指,2,6,,可同时佩戴两枚
+necklace,项链,1,7,,颈饰

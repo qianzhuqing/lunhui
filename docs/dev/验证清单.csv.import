@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://c2axpfoooqjl7"
+
+[deps]
+
+files=["res://docs/dev/验证清单.verify.translation", "res://docs/dev/验证清单.verified.translation", "res://docs/dev/验证清单.note.translation"]
+
+source_file="res://docs/dev/验证清单.csv"
+dest_files=["res://docs/dev/验证清单.verify.translation", "res://docs/dev/验证清单.verified.translation", "res://docs/dev/验证清单.note.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

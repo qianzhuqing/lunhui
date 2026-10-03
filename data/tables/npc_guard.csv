@@ -1,0 +1,2 @@
+﻿guard_id,room_id,npc_name_cn,peace_item,peace_check_source,peace_check_value,peace_note,fight_team,fight_note,reward_group
+guard_hc_02,hc_02,荒村屠夫,item_med_01,skill:yishu,3,给一份草药汤，或医术判定 3 通过；两条路任选其一，他放行并给一条荒村线索,team_butcher,直接挑战，打赢照样拿箱子,drop_chest_silver

@@ -1,0 +1,5 @@
+﻿status_id,name_cn,damage_type,trigger_stat,power_stat,base_chance,max_stack,duration,dispellable,extra_rule,icon,desc
+poison,中毒,dot_poison,luk,int,0.35,5,3,1,,status_poison,
+burn,灼伤,dot_burn,luk,int,0.30,3,2,1,rule_burn_def_down,status_burn,每层降低目标5%外功防御
+bleed,流血,dot_bleed,luk,int,0.30,3,4,1,rule_bleed_move,status_bleed,目标换位或移动时额外触发一次
+internal,内伤,dot_internal,luk,int,0.25,1,5,0,rule_internal_qi,status_internal,内力回复减半且不可驱散

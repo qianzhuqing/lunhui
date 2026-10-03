@@ -1,0 +1,6 @@
+﻿scene_id,name_cn,scene_type,parent_node,room_count,level_range,has_combat,has_completion,save_allowed,note
+scene_qingfengyi,清风驿,town,n_qingfengyi,1,,0,0,1,铁匠铺／药铺／当铺／悬赏板／客栈
+scene_cave,塌陷山洞,dungeon,n_cave_collapse,2,3~5,1,1,1,通往黑风寨后山
+scene_heifengzhai,黑风寨,dungeon,n_heifengzhai,18,3~15,1,1,1,三层加隐藏层共用一张场景图
+scene_huangcun,荒村,dungeon,n_huangcun,2,6~8,1,1,1,野外精英与隐藏宝箱
+scene_ferry_locked,废弃渡口,poi,n_ferry_abandoned,1,,0,0,1,第二章开放

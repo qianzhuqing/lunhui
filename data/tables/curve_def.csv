@@ -1,0 +1,4 @@
+﻿curve_id,formula,desc
+linear,eff = rate * attr,线性成长，无衰减
+diminishing,eff = cap * attr / (attr + param),递减成长，趋近 cap 但永不到达
+piecewise,按分段点线性插值,用于特殊需求

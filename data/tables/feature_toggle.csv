@@ -1,0 +1,2 @@
+﻿toggle_id,name_cn,value,desc
+overworld_roaming_enemy,大地图明雷,0,0=大地图不出现明雷（当前默认）／1=出现。是否恢复看用户反馈

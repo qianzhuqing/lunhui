@@ -1,0 +1,6 @@
+﻿char_id,name_cn,role_tag,weapon_type,initial_str,initial_con,initial_agi,initial_int,initial_luk,initial_wu,initial_gen,attr_total,start_level,start_skill_ids,start_equip_ids,desc
+scholar_fallen,家道失落的书生,探索型,sword,5,5,9,10,5,10,5,49,1,sk_xuanwei_01,eq_sword_01;eq_armor_01,家道中落靠替人抄书糊口；剑法是家传的文人剑
+ch_gang,林铁山,刚猛流,blade,12,12,5,3,3,5,9,49,1,sk_bandit_slash,eq_blade_01;eq_armor_01,镖局武夫出身；力可开碑
+ch_du,苏九娘,毒功流,fist,4,6,5,14,6,8,6,49,1,sk_wudu_01,eq_fist_01;eq_armor_01,药王谷弃徒；惯用毒掌
+ch_ci,燕小七,刺客流,sword,5,4,14,5,7,8,6,49,1,sk_xuanwei_02,eq_sword_01;eq_armor_01,绿林出身；靠背袭起手
+ch_qi,白清和,内功续航流,sword,5,11,4,11,4,7,7,49,1,sk_xuanwei_qi_01,eq_sword_01;eq_armor_01,江湖游医；以内力拖垮对手

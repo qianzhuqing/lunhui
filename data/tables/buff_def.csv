@@ -1,0 +1,20 @@
+﻿buff_id,name_cn,is_debuff,scope,duration,field_minutes,stack_rule,max_stack,effect_kind,icon,desc
+buff_guard,防御姿态,0,battle,1,0,unique,1,stat,buff_guard,主动防御：本回合减伤并回复架势
+buff_yunqi,运功,0,battle,3,0,refresh,1,computed,buff_yunqi,通用运功：该内功的常驻加成临时翻倍
+buff_taiping,太清境,0,battle,3,0,refresh,1,stat,buff_taiping,玄微心法·太清的运功形态
+buff_venom_edge,蛊毒附手,0,battle,3,0,refresh,1,stat,buff_venom,五毒心法·万蛊的运功形态
+buff_life_ward,续命诀,0,battle,3,0,refresh,1,stat,buff_life,药王心法·续命的运功形态
+buff_drunk_mastery,忘忧,0,battle,3,0,refresh,1,stat,buff_drunk,醉里乾坤·忘忧的运功形态
+buff_rusty_moon,锈月剑意,0,battle,0,0,unique,1,stat,buff_rusty,锈月自带，装备即生效
+buff_old_chief,寨主遗威,0,battle,0,0,unique,1,stat,buff_chief,前代寨主遗物自带
+buff_poison_amp,淬毒,0,battle,3,0,stack,3,special,buff_poison,淬毒指环命中时叠加
+buff_regen,药王护体,0,battle,-1,0,unique,1,stat,buff_regen,药王玉佩，整场持续
+buff_zuibu,醉步,0,battle,2,0,refresh,1,stat,buff_zuibu,醉里乾坤·醉步的增益形态
+buff_set_heifeng_2,黑风·两件,0,battle,0,0,unique,1,stat,buff_set_hf2,套装档位
+buff_set_heifeng_4,黑风·四件,0,battle,0,0,unique,1,stat,buff_set_hf4,套装档位
+buff_set_xuanwei_sword_3,剑意·三招,0,battle,0,0,unique,1,stat,buff_set_xs3,套装档位
+buff_set_xuanwei_sword_5,剑意·五招,0,battle,0,0,unique,1,stat,buff_set_xs5,套装档位
+buff_set_xuanwei_qi_4,心法·四格,0,battle,0,0,unique,1,stat,buff_set_xq4,套装档位
+buff_set_xuanwei_qi_7,心法·七格,0,battle,0,0,unique,1,stat,buff_set_xq7,套装档位
+buff_meditated,打坐余韵,0,field,0,10,refresh,1,stat,buff_med,打坐获得；战斗外有效 10 分钟，进战斗维持整场
+buff_meal,饱食,0,field,0,5,refresh,1,stat,buff_meal,酒楼获得；战斗外有效 5 分钟，进战斗维持整场

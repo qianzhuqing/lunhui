@@ -1,0 +1,29 @@
+﻿stat_id,name_cn,value_kind,is_percent,min_value,max_value,show_decimals,desc
+atk_phys,外功攻击,int,0,0,,0,由力驱动
+atk_qi,内功攻击,int,0,0,,0,由智驱动
+def_phys,外功防御,int,0,0,,0,经公式换算为外功减免
+def_qi,内功防御,int,0,0,,0,经公式换算为内功减免
+hp_max,气血上限,int,0,1,,0,
+qi_max,内力上限,int,0,0,,0,
+hp_regen,气血回复,float,0,0,,1,每回合恢复
+qi_regen,内力回复,float,0,0,,1,每回合恢复
+speed,身法,int,0,0,,1,决定出手顺序
+poise_break,破架势,int,0,0,,0,
+pen_rate,穿透率,float,1,0,0.75,1,按比例压低目标有效防御
+hit_rate,命中率,float,1,0,0.95,1,
+dodge_rate,闪避率,float,1,0,0.6,1,
+block_rate,格挡率,float,1,0,0.75,1,与闪避互斥，先判闪避再判格挡
+block_reduction,格挡减伤率,float,1,0,0.8,1,格挡成功时的额外减免
+crit_rate,暴击率,float,1,0,0.75,1,
+crit_dmg,暴击伤害,float,1,0,3,1,暴击时的额外加成
+debuff_power,异常强度,float,1,0,,1,影响异常状态每层伤害
+debuff_chance,异常触发率,float,1,0,0.6,1,
+res_internal,内伤抗性,float,1,-0.5,0.75,1,负值为易伤
+dmg_reduction,减伤率,float,1,0,0.6,1,终局乘区，只来自装备与临时效果
+drop_rate,掉落机缘,float,1,0,0.25,1,
+res_poison,毒抗,float,1,0,0.9,1,减益与伤害的抗性；角色与敌人共用
+res_burn,火抗,float,1,0,0.9,1,
+res_bleed,流血抗,float,1,0,0.9,1,
+slot_active,招式槽上限,int,0,1,9,0,由等级与悟性计算，公式常数见 growth_const
+passive_capacity,内功容量,int,0,1,7,0,由等级与根骨计算；每部内功按星级占 1~3 格
+mastery_gain,熟练度成长,float,1,0,1,2,影响武学熟练度的获取速度

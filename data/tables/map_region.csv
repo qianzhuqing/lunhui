@@ -1,0 +1,8 @@
+﻿node_id,name_cn,node_type,parent_region,pos_x,pos_y,icon,unlock_condition,reveal_on_map,enter_scene,respawn_group,note
+n_qingfengyi,清风驿,town,jiangnan_east,320,480,icon_town,default,1,scene_qingfengyi,,枢纽安全区
+n_post_station,驿站,fast_travel,jiangnan_east,420,420,icon_post,default,1,,,解锁后可快速传送
+n_luoyanpo,落雁坡,wild,jiangnan_east,540,620,icon_wild,default,1,,group_luoyanpo,明雷区
+n_heifengzhai,黑风寨,dungeon,jiangnan_east,760,420,icon_dungeon,discover_luoyanpo,0,scene_heifengzhai,,章节主副本
+n_cave_collapse,塌陷山洞,poi,jiangnan_east,610,700,icon_cave,proximity_3,0,scene_cave,,隐藏入口
+n_huangcun,荒村,poi,jiangnan_east,880,680,icon_ruin,proximity_5,0,scene_huangcun,group_huangcun,野外精英与隐藏宝箱
+n_ferry_abandoned,废弃渡口,poi,jiangnan_east,260,760,icon_ferry,proximity_3,0,scene_ferry_locked,,第二章入口，本章不开放

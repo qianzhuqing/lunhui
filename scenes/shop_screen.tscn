@@ -1,0 +1,95 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/ui/shop_screen.gd" id="1_shop_screen"]
+
+[node name="ShopScreen" type="CanvasLayer"]
+layer = 5
+script = ExtResource("1_shop_screen")
+
+[node name="Panel" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 1
+
+[node name="Backdrop" type="ColorRect" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.07, 0.08, 0.1, 0.97)
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 1
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Column" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="Panel/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "商店"
+
+[node name="Money" type="Label" parent="Panel/Margin/Column"]
+layout_mode = 2
+
+[node name="Tabs" type="HBoxContainer" parent="Panel/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TabBuy" type="Button" parent="Panel/Margin/Column/Tabs"]
+layout_mode = 2
+text = "买入"
+
+[node name="TabSell" type="Button" parent="Panel/Margin/Column/Tabs"]
+layout_mode = 2
+text = "卖出"
+
+[node name="TabBuyback" type="Button" parent="Panel/Margin/Column/Tabs"]
+layout_mode = 2
+text = "回购"
+
+[node name="TabService" type="Button" parent="Panel/Margin/Column/Tabs"]
+layout_mode = 2
+text = "服务"
+
+[node name="Body" type="ScrollContainer" parent="Panel/Margin/Column"]
+custom_minimum_size = Vector2(0, 300)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="List" type="VBoxContainer" parent="Panel/Margin/Column/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Status" type="Label" parent="Panel/Margin/Column"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Buttons" type="HBoxContainer" parent="Panel/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="QtyButton" type="Button" parent="Panel/Margin/Column/Buttons"]
+layout_mode = 2
+text = "数量 ×1"
+
+[node name="ReturnButton" type="Button" parent="Panel/Margin/Column/Buttons"]
+layout_mode = 2
+text = "离开"

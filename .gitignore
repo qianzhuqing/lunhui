@@ -2,6 +2,18 @@
 .godot/
 /android/
 
+# 构建期生成的配置表资源（CSV 是唯一数值源，见 docs/dev/框架说明.md）
+data/generated/
+
+# Godot 把 data/tables/*.csv 当「翻译表」导入（csv_translation），会在同目录按列生成
+# *.translation、并按表生成 *.import —— 它们是导入产物、构建期一律不读（构建读原始 CSV）。
+# 不忽略的话，`sync_to_git.bat` 的 `git add .` 会把 290 多个文件扫进仓库（见框架说明决策 191／195）。
+data/tables/*.translation
+data/tables/*.import
+
+# headless 自检日志
+.logs/
+
 # OS generated files
 .DS_Store
 Thumbs.db

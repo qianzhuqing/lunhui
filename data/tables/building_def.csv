@@ -1,0 +1,6 @@
+﻿building_id,name_cn,building_type,stock_group,service_id,service_price,unlock_condition,desc
+bld_grocery,杂货铺,shop,shop_grocery,,,默认解锁,卖材料与低级饰品
+bld_tavern,酒楼,shop,shop_tavern,,,默认解锁,卖非战斗回血道具
+bld_clinic,医馆,shop,shop_clinic,heal,2,默认解锁,卖战斗中回血道具；可花钱治疗
+bld_smith,铁匠铺,shop,shop_smith,,,默认解锁,卖白板装备
+bld_dummy,木桩,service,,dummy_training,0,默认解锁,按 E 进入练习战；只练到 5 级与熟练度 3 级

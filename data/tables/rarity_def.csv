@@ -1,0 +1,6 @@
+﻿rarity_id,name_cn,color,affix_min,affix_max,drop_weight,desc
+common,凡品,#B8B8B8,0,1,100,
+fine,良品,#6FCF97,1,2,40,
+rare,珍品,#56A8F5,2,3,12,
+epic,奇珍,#C77DFF,3,4,3,
+legend,传世,#FFB020,4,4,0.5,掉落几率最低，仅首杀与隐藏Boss稳定产出

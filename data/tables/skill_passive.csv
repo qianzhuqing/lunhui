@@ -1,0 +1,25 @@
+﻿skill_id,slot_cost,passive_effect,desc
+pf_xuanwei_01,1,,内力上限
+pf_xuanwei_02,1,,内力回复
+pf_xuanwei_03,1,,内伤抗性
+pf_xuanwei_04,2,,内力上限与回复
+pf_xuanwei_05,3,effect_taiping,七项属性，玄微心法至高
+pf_wudu_01,1,,毒伤
+pf_wudu_02,1,,中毒触发
+pf_wudu_03,2,,中毒强度
+pf_wudu_04,2,effect_venom_stack_plus,中毒层数上限 +2
+pf_heifeng_01,1,,力
+pf_heifeng_02,1,,体
+pf_heifeng_03,2,,破架势
+pf_chensha_01,1,,外功防御
+pf_chensha_02,2,,格挡
+pf_chensha_03,2,,穿透
+pf_tieqiang_01,1,,身法
+pf_tieqiang_02,2,,命中
+pf_yaowang_01,1,,气血回复
+pf_yaowang_02,2,effect_post_battle_heal,战斗结束回复气血
+pf_yaowang_03,2,,全抗性
+pf_taixu_01,1,,内伤抗性
+pf_luohan_01,2,,减伤
+pf_drunk_01,2,,闪避与暴击
+pf_drunk_02,3,effect_drunk_mastery,属性与暴击伤害

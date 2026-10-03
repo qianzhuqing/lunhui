@@ -1,0 +1,10 @@
+﻿const_id,name_cn,value,desc
+crit_base_mult,暴击基础倍率,1.5,暴击总倍率 = 本值 + 暴击伤害
+def_const,防御常数,60,防御减免公式分母的常数项
+def_level_coeff,等级系数,20,分母中随攻击者等级成长的系数
+variance_min,伤害浮动下限,0.95,
+variance_max,伤害浮动上限,1.05,
+backstab_poise_reduce,背袭架势削减,0.3,背袭时敌方架势初始值降低比例
+surprise_damage_bonus,奇袭首回合增伤,0.5,从背后接触沉睡敌人的首回合加成
+sneak_detect_reduce,潜行被发现概率降低,0.4,
+dot_execute_threshold,DoT斩杀阈值,0.15,目标血量低于此比例时剩余DoT立即结算

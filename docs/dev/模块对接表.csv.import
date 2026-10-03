@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cbs5gy33jultf"
+
+[deps]
+
+files=["res://docs/dev/模块对接表.module.translation", "res://docs/dev/模块对接表.design.translation", "res://docs/dev/模块对接表.data.translation", "res://docs/dev/模块对接表.code.translation", "res://docs/dev/模块对接表.status.translation", "res://docs/dev/模块对接表.design.translation", "res://docs/dev/模块对接表.note.translation"]
+
+source_file="res://docs/dev/模块对接表.csv"
+dest_files=["res://docs/dev/模块对接表.module.translation", "res://docs/dev/模块对接表.design.translation", "res://docs/dev/模块对接表.data.translation", "res://docs/dev/模块对接表.code.translation", "res://docs/dev/模块对接表.status.translation", "res://docs/dev/模块对接表.design.translation", "res://docs/dev/模块对接表.note.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

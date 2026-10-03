@@ -1,0 +1,23 @@
+﻿id,attr_id,stat_id,rate,curve,cap,param,note
+1001,str,atk_phys,2.0,linear,,,
+1002,str,poise_break,0.8,linear,,,
+1003,con,hp_max,12.0,linear,,,
+1004,con,def_phys,1.2,linear,,,防御减免由公式换算，此处不设上限
+1005,con,res_internal,0.008,diminishing,0.75,150,
+1006,con,hp_regen,0.15,linear,,,
+1007,agi,speed,1.5,linear,,,
+1008,agi,hit_rate,0.01,diminishing,0.95,80,
+1009,agi,dodge_rate,0.008,diminishing,0.6,120,
+1010,int,atk_qi,1.8,linear,,,
+1011,int,qi_max,6.0,linear,,,
+1012,int,qi_regen,0.12,linear,,,
+1013,int,debuff_power,0.005,linear,,,
+1014,luk,crit_rate,0.01,diminishing,0.75,100,
+1015,luk,crit_dmg,0.04,diminishing,3.0,200,
+1016,luk,debuff_chance,0.008,linear,0.6,,
+1017,luk,drop_rate,0.003,diminishing,0.25,150,换装刷的主要来源，当前取保守方案
+1018,str,pen_rate,0.005,diminishing,0.4,200,破防向，对高防御目标收益大
+1019,con,block_rate,0.006,diminishing,0.5,150,格挡向，与闪避互斥
+1020,wu,mastery_gain,0.008,linear,1.0,,熟练度获取速度，上限 +100%
+1021,gen,qi_max,4.0,linear,,,根骨深厚则内力充沛
+1022,gen,res_internal,0.005,diminishing,0.75,150,

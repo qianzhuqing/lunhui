@@ -1,0 +1,4 @@
+﻿set_id,name_cn,set_kind,desc
+set_heifeng,黑风寨,equip,黑风寨出产的装备，以攻代守
+set_xuanwei_sword,玄微剑意,skill_active,装配玄微剑法招式到一定数量
+set_xuanwei_qi,玄微心法,skill_passive,装配玄微心法到一定占格数

@@ -1,0 +1,6 @@
+﻿char_id,is_initial,join_condition,join_scene,join_note
+scholar_fallen,1,,scene_qingfengyi,唯一初始成员
+ch_ci,0,flag_board_read,scene_qingfengyi,看过告示板后在客栈对话加入；第一个同伴，先补输出
+ch_gang,0,flag_luoyanpo_met,n_luoyanpo,落雁坡相遇后帮他了结私怨
+ch_du,0,flag_poison_hall,scene_heifengzhai,毒堂救出或谈拢后加入
+ch_qi,0,flag_huangcun_done,scene_huangcun,荒村事件后加入

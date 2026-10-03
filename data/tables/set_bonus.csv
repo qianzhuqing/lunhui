@@ -1,0 +1,7 @@
+﻿set_id,required_count,buff_id,desc
+set_heifeng,2,buff_set_heifeng_2,两件：力 +3
+set_heifeng,4,buff_set_heifeng_4,四件：破架势 +8、力 +4
+set_xuanwei_sword,3,buff_set_xuanwei_sword_3,三招：敏 +3
+set_xuanwei_sword,5,buff_set_xuanwei_sword_5,五招：暴击率 +6%、穿透率 +6%
+set_xuanwei_qi,4,buff_set_xuanwei_qi_4,四格：内力上限 +40
+set_xuanwei_qi,7,buff_set_xuanwei_qi_7,七格：内力回复 +2、内伤抗性 +10%

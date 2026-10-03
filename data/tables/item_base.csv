@@ -1,0 +1,17 @@
+﻿item_id,name_cn,item_type,rarity,use_context,stack_max,sell_price,is_key_item,icon,desc
+item_money,铜钱,currency,common,,999999999,0,0,item_money,通用货币
+item_iron,铁矿石,material,common,,99,6,0,item_iron,打造与强化材料
+item_herb,草药,material,common,,99,5,0,item_herb,炼药材料
+item_pelt,兽皮,material,common,,99,8,0,item_pelt,制甲材料
+item_potion_small,金创药,consumable,common,battle,20,25,0,item_potion_small,战斗中恢复气血60
+item_potion_qi,回气散,consumable,common,battle,20,28,0,item_potion_qi,战斗中恢复内力40
+item_med_01,草药汤,consumable,common,field,20,12,0,item_med_01,非战斗恢复气血120
+item_med_02,药酒,consumable,fine,field,20,30,0,item_med_02,非战斗恢复气血250
+item_wine_gourd,酒葫芦,key,rare,,1,0,1,item_wine_gourd,给牢房深处的老者
+item_pickaxe,铁镐,tool,common,,1,0,1,item_pickaxe,可在塌陷山洞挖掘
+item_rusty_sword,锈剑,key,rare,,1,0,1,item_rusty_sword,带进聚义厅触发剑气事件
+item_bd_uniform,黑风寨号衣,key,fine,,1,0,1,item_bd_uniform,伪装入寨所需
+item_bd_token,黑风寨腰牌,key,fine,,1,0,1,item_bd_token,伪装入寨所需
+item_poison_wine,毒酒,key,rare,,1,0,1,item_poison_wine,可毒杀聚义厅毒手
+item_scroll_wudu,五毒秘籍残页,skillbook,rare,,99,0,0,item_scroll_wudu,集齐解锁五毒武学
+item_scroll_drunk,醉里乾坤残卷,skillbook,legend,,99,0,1,item_scroll_drunk,隐藏武学，集齐解锁

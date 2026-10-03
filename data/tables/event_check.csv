@@ -1,0 +1,13 @@
+﻿check_id,region_id,scene_id,room_id,check_source,difficulty,check_type,reward_type,reward_id,once_only,fail_note,clue_source,note
+ev_shed_trap,,scene_heifengzhai,hf1_shed,skill:qimen,3,hard,none,,0,触发落石陷阱损失气血,地上有被挪动的石砖,识破柴房机关
+ev_cell_heal,,scene_heifengzhai,hf1_cell,skill:yishu,4,soft,item,item_potion_small,0,拿不到额外药品,地牢里有人低声呻吟,救治被囚村民
+ev_poison_identify,,scene_heifengzhai,hf2_poison,skill:dusu,3,hard,none,,0,无法辨认毒酒的用途,毒堂里摆着几个药罐,认出毒酒可反用
+ev_hall_inscription,,scene_heifengzhai,hf2_hall,skill:wenxue,5,hard,none,,0,读不出题字的次序,聚义厅墙上挂着一幅题字,解出三火盆的点火次序
+ev_wild_track,n_luoyanpo,,,skill:shengcun,3,hard,room,cave_02,1,找不到塌陷山洞,落雁坡有被踩倒的草丛,追出足迹找到塌陷山洞
+ev_herbalist_help,n_luoyanpo,,,skill:yishu,2,hard,item,item_potion_small,0,采药人不愿多谈,路边的采药人捂着腿,救治采药人换取药品与线索
+ev_bandit_parley,n_huangcun,,,skill:wenxue,4,soft,event,event_parley,0,仍要打一场,荒村强盗看起来是被逼的,劝退荒村强盗避免一场战斗
+ev_grave_epitaph,n_cave_collapse,,,skill:wenxue,3,soft,item,item_rusty_sword,1,读不懂碑文,塌陷山洞里的半截石碑,读出碑文拿到锈剑
+ev_climb_wall,n_heifengzhai,,,attr:agi,9,hard,none,,0,翻越失败被发现,寨墙有一处石块松动,翻越寨墙绕过正门
+ev_force_gate,n_heifengzhai,,,attr:str,8,hard,none,,0,推不开粗木闩,寨门横着一根粗木闩,推开木闩省一场战斗
+ev_night_watch,n_luoyanpo,,,attr:con,7,soft,none,,0,疲惫一整晚,野外无处投宿,寒夜守夜不受伤
+ev_gamble,n_qingfengyi,,,attr:luk,6,soft,item,item_money,0,输光押注,客栈里有人摆赌局,赌局赢钱

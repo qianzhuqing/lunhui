@@ -1,0 +1,5 @@
+﻿weapon_type,name_cn,default_element,attr_focus,skill_school,desc
+sword,剑,external,agi|int,xuanwei,招式均衡，敏智向
+fist,拳,external,str|con,chensha,近身，破架势高
+blade,刀,external,str,heifeng,刚猛，单段高伤
+spear,枪,external,str|con,,长兵，攻击距离远

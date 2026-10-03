@@ -1,0 +1,6 @@
+﻿skill_id,name_cn,related_attr,max_level,desc
+qimen,奇门,int,10,机关、阵法、暗门
+yishu,医术,int,10,救治、辨药、解读伤势
+dusu,毒术,int,10,辨毒、制毒、用毒
+wenxue,文学,int,10,题字、碑文、书信、交涉
+shengcun,生存,con,10,追踪、找路、野外庇护

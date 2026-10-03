@@ -1,0 +1,16 @@
+﻿enemy_id,name_cn,faction,level,attr_str,attr_con,attr_agi,attr_int,attr_luk,attr_wu,attr_gen,hp_base,atk_phys,atk_qi,def_phys,def_qi,speed,hit_rate,dodge_rate,crit_rate,poise,res_internal,drop_group,exp,money,threat_tag,ai_template,desc
+en_wolf,野狼,beast,2,,,,,,,,60,9,0,3,0,12,0.85,0.10,0.03,20,0,drop_wolf,12,5,green,ai_aggressive,
+en_boar,野猪,beast,3,,,,,,,,110,11,0,8,0,8,0.80,0.02,0.02,30,0,drop_boar,18,8,green,ai_aggressive,冲锋后停顿一回合
+en_herbalist,采药人,neutral,3,,,,,,,,80,6,0,4,0,9,0.80,0.05,0,15,0,drop_herbalist,10,0,green,ai_neutral,中立，不主动攻击
+en_bd_thug,山寨喽啰,bandit,4,,,,,,,,90,13,0,6,0,10,0.85,0.05,0.05,28,0,drop_bd_thug,22,12,yellow,ai_basic,
+en_bd_scout,巡山兵,bandit,4,,,,,,,,95,12,0,7,0,11,0.85,0.06,0.04,30,0,drop_bd_scout,24,12,yellow,ai_basic,
+en_bd_archer,山寨弓手,bandit,5,,,,,,,,80,15,0,4,0,13,0.90,0.12,0.08,20,0,drop_bd_archer,26,15,yellow,ai_ranged,远程，血量低
+en_bd_sleep_drunk,睡着的醉汉,bandit,3,,,,,,,,70,10,0,4,0,8,0.75,0.05,0,18,0,drop_bd_thug,15,10,green,ai_sleeping,沉睡，可绕开
+en_bd_lone_wolf,独目狼,beast,6,,,,,,,,260,22,0,10,0,17,0.90,0.15,0.12,50,0,drop_lone_wolf,90,0,red,ai_chaser,野外精英，追击型
+en_bd_patrol_leader,巡山小头目,bandit,6,,,,,,,,180,20,0,12,0,12,0.88,0.08,0.10,55,0,drop_bd_elite,60,40,red,ai_elite,精英
+en_bd_elite_blade,黑风刀客,bandit,7,,,,,,,,220,25,0,15,0,13,0.90,0.10,0.12,70,0,drop_bd_elite,80,55,red,ai_elite,精英，破架势高
+en_bd_poison_hand,毒手,bandit,7,,,,,,,,190,12,22,10,14,12,0.90,0.08,0.06,45,0,drop_bd_poison_hand,85,60,red,ai_debuffer,精英，高毒抗
+en_bd_butcher,荒村屠夫,rogue,8,,,,,,,,320,28,0,16,0,11,0.88,0.06,0.15,75,0,drop_butcher,120,80,red,ai_elite,野外精英
+en_bd_boss,大寨主,bandit,12,,,,,,,,900,38,0,26,0,15,0.92,0.08,0.15,160,0.2,drop_bd_boss,400,300,purple,ai_boss,章节Boss，架势回复极快
+en_hidden_drunk,醉刀客,hidden,15,,,,,,,,1400,45,45,30,30,20,0.95,0.18,0.20,200,0.5,drop_hidden_drunk,900,0,purple,ai_boss,隐藏Boss，二阶段转内功
+en_dummy_training,练功木桩,training,3,,,,,,,,500,0,0,0,0,1,0,0,0,30,0,,8,0,green,ai_neutral,清风驿校场木桩；不还手，供反复练级与熟练度，到上限后不再给经验

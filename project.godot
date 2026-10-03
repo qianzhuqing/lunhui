@@ -11,8 +11,14 @@ config_version=5
 [application]
 
 config/name="lunhui"
+run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameData="*res://src/autoload/game_data.gd"
+GameSession="*res://src/autoload/game_session.gd"
 
 [display]
 

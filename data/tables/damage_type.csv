@@ -1,0 +1,8 @@
+﻿type_id,name_cn,category,can_crit,can_dodge,use_def_phys,use_def_qi,tick_timing,base_duration,max_stack,display_color,desc
+dmg_normal,非暴击直伤,instant,0,1,1,0,immediate,0,0,#E8E8E8,基础直伤
+dmg_crit,暴击直伤,instant,1,1,1,0,immediate,0,0,#FFD24A,暴击结算，与直伤共用管线
+dmg_reflect,反伤,instant,0,0,0,0,immediate,0,0,#B0B0B0,反弹伤害，不吃任何防御
+dot_poison,中毒,dot,0,0,0,0,turn_end,3,5,#7FD35A,无视外功防御
+dot_burn,灼伤,dot,0,0,0,0,turn_end,2,3,#FF8A3D,无视外功防御，每层降防
+dot_bleed,流血,dot,0,1,1,0,turn_end,4,3,#E0455A,吃外功防御
+dot_internal,内伤,dot,0,0,0,1,turn_end,5,1,#9B6BD6,吃内功防御，降低内力回复

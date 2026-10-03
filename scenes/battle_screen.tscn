@@ -1,0 +1,160 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/ui/battle_screen.gd" id="1_battle_screen"]
+
+[node name="BattleScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_battle_screen")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 1
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Column" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Headline" type="Label" parent="Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "遭遇"
+
+[node name="Front" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="TeamAllies" type="VBoxContainer" parent="Margin/Column/Front"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="TeamTitle" type="Label" parent="Margin/Column/Front/TeamAllies"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "我方"
+
+[node name="AllyScroll" type="ScrollContainer" parent="Margin/Column/Front/TeamAllies"]
+custom_minimum_size = Vector2(360, 185)
+layout_mode = 2
+horizontal_scroll_mode = 0
+size_flags_vertical = 3
+
+[node name="ListAllies" type="VBoxContainer" parent="Margin/Column/Front/TeamAllies/AllyScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TeamEnemies" type="VBoxContainer" parent="Margin/Column/Front"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="TeamTitle" type="Label" parent="Margin/Column/Front/TeamEnemies"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "敌方"
+
+[node name="EnemyScroll" type="ScrollContainer" parent="Margin/Column/Front/TeamEnemies"]
+custom_minimum_size = Vector2(360, 185)
+layout_mode = 2
+horizontal_scroll_mode = 0
+size_flags_vertical = 3
+
+[node name="ListEnemies" type="VBoxContainer" parent="Margin/Column/Front/TeamEnemies/EnemyScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Round" type="Label" parent="Margin/Column"]
+layout_mode = 2
+
+[node name="BuffPanel" type="HFlowContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 2
+
+[node name="Action" type="Label" parent="Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+autowrap_mode = 3
+
+[node name="Log" type="RichTextLabel" parent="Margin/Column"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_following = true
+
+[node name="SkillRow" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CommandRow" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BasicAttackButton" type="Button" parent="Margin/Column/CommandRow"]
+layout_mode = 2
+text = "普通攻击"
+
+[node name="InnerButton" type="Button" parent="Margin/Column/CommandRow"]
+layout_mode = 2
+text = "内功"
+
+[node name="ItemButton" type="Button" parent="Margin/Column/CommandRow"]
+layout_mode = 2
+text = "道具"
+
+[node name="DefendButton" type="Button" parent="Margin/Column/CommandRow"]
+layout_mode = 2
+text = "主动防御"
+
+[node name="Buttons" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NextRoundButton" type="Button" parent="Margin/Column/Buttons"]
+layout_mode = 2
+text = "下一回合"
+
+[node name="AutoButton" type="Button" parent="Margin/Column/Buttons"]
+layout_mode = 2
+text = "自动战斗"
+
+[node name="SpeedButton" type="Button" parent="Margin/Column/Buttons"]
+layout_mode = 2
+text = "速度 1x"
+
+[node name="StrategyButton" type="Button" parent="Margin/Column/Buttons"]
+layout_mode = 2
+text = "策略：均衡"
+
+[node name="FleeButton" type="Button" parent="Margin/Column/Buttons"]
+layout_mode = 2
+disabled = true
+text = "逃跑"
+
+[node name="ReturnButton" type="Button" parent="Margin/Column/Buttons"]
+layout_mode = 2
+text = "返回大地图"
+
+[node name="Result" type="Label" parent="Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 3
+
+[node name="Status" type="Label" parent="Margin/Column"]
+layout_mode = 2
+autowrap_mode = 3

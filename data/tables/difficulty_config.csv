@@ -1,0 +1,4 @@
+﻿difficulty_id,name_cn,enemy_hp_mul,enemy_atk_mul,enemy_def_mul,exp_mul,money_mul,unlock_condition,note
+normal,普通,1.0,1.0,1.0,1.0,1.0,默认解锁,战斗快且可稳定自动战斗，单位时间击杀数最多
+hard,困难,1.6,1.35,1.25,1.3,1.25,通关第一章,单场收获更好，战斗时长增加
+nightmare,绝境,2.6,1.8,1.5,1.7,1.5,通关第一章并击败醉刀客,极限挑战，极易翻车

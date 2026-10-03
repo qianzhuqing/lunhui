@@ -1,2 +1,9 @@
 # Normalize EOL for all files that Git considers text files.
 * text=auto eol=lf
+
+# 例外：Windows 批处理必须是 CRLF。
+# 依据：AGENTS.md 的硬性约束 + 仓库自检按**字节**要求 `tools/*.bat` 全 CRLF（LF-only 时 cmd 的
+# `call :label` 之类会失效）。上面那条 `eol=lf` 会让**新克隆拿到 LF 的 .bat**——克隆完验收直接红，
+# 而本地工作区看不出来（文件是 CRLF，只是没被重新 checkout 过）。见框架说明决策 195。
+*.bat text eol=crlf
+*.cmd text eol=crlf

@@ -58,6 +58,8 @@ func poll() -> void:
 		buffer.append_array(chunk)
 		client["buffer"] = buffer
 		_handle_client(client)
+		if client.get("closed", false):
+			clients.remove_at(i)
 
 
 func _handle_client(client: Dictionary) -> void:
@@ -284,7 +286,7 @@ func _tool_get_project_info() -> String:
 		"path": ProjectSettings.globalize_path("res://"),
 		"godot_version": String(Engine.get_version_info().get("string", "")),
 		"main_scene": str(ProjectSettings.get_setting("application/run/main_scene", "")),
-		"renderer": str(ProjectSettings.get_setting("renderer/rendering_method", "")),
+		"renderer": str(ProjectSettings.get_setting("rendering/renderer/rendering_method", "")),
 	}
 	return JSON.stringify(info, "  ")
 
@@ -448,6 +450,7 @@ func _send_empty(client: Dictionary, status_code: int) -> void:
 		reason = "Method Not Allowed"
 	var header := "HTTP/1.1 %d %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n" % [status_code, reason]
 	conn.put_data(header.to_utf8_buffer())
+	_close_client(client)
 
 
 func _send_json(client: Dictionary, status_code: int, json_text: String) -> void:
@@ -459,6 +462,7 @@ func _send_json(client: Dictionary, status_code: int, json_text: String) -> void
 	var header := "HTTP/1.1 %d %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % [status_code, reason, body.size()]
 	conn.put_data(header.to_utf8_buffer())
 	conn.put_data(body)
+	_close_client(client)
 
 
 func _send_text(client: Dictionary, status_code: int, text: String) -> void:
@@ -472,3 +476,17 @@ func _send_text(client: Dictionary, status_code: int, text: String) -> void:
 	var header := "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % [status_code, reason, body.size()]
 	conn.put_data(header.to_utf8_buffer())
 	conn.put_data(body)
+	_close_client(client)
+
+
+# Responses are sent with "Connection: close", so the server must close its own
+# end of the socket. Skipping this leaves every request stuck in CLOSE_WAIT and
+# leaks one socket per call for the lifetime of the editor session.
+func _close_client(client: Dictionary) -> void:
+	var conn: StreamPeerTCP = client.get("conn")
+	if conn == null:
+		return
+	# Flush any data still buffered by the engine before closing down.
+	conn.poll()
+	conn.disconnect_from_host()
+	client["closed"] = true

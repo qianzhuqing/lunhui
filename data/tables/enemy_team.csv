@@ -1,0 +1,17 @@
+﻿team_id,name_cn,members,threat_tag,team_buff,note
+team_wolf_pack,野狼群,en_wolf:3,green,,落雁坡游荡
+team_boar_pair,野猪群,en_boar:2,green,,
+team_bandit_patrol,山贼巡山队,en_bd_thug:2;en_bd_archer:1,yellow,,混合队，掉武学残页
+team_gate_sentry,寨门哨兵,en_bd_thug:2,yellow,,
+team_tower_archer,瞭望塔弓手,en_bd_archer:2,yellow,,居高临下，先手
+team_relief_guard,换防队,en_bd_scout:2;en_bd_thug:1,yellow,,
+team_lone_wolf,独目狼,en_bd_lone_wolf:1,red,,野外精英
+team_elite_blade,黑风刀队,en_bd_elite_blade:1;en_bd_thug:2,red,,
+team_butcher,荒村屠夫,en_bd_butcher:1,red,,野外精英
+team_sleeping_drunk,睡着的醉汉,en_bd_sleep_drunk:1,green,,沉睡，可绕开
+team_herbalist,采药人,en_herbalist:1,green,,中立，不主动攻击
+team_poison_hand,毒堂守卫,en_bd_poison_hand:1;en_bd_thug:2,red,,
+team_boss_guards,聚义厅头目,en_bd_patrol_leader:2,red,,
+team_heifeng_elite,寨中精锐,en_bd_elite_blade:2;en_bd_archer:1,red,,
+team_boss,大寨主,en_bd_boss:1,purple,,
+team_dummy_training,练功木桩,en_dummy_training:1,green,,不还手；用于练级与招式熟练度

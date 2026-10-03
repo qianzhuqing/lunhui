@@ -1,0 +1,17 @@
+﻿const_id,name_cn,value,desc
+active_slot_base,招式槽基础值,2,
+active_slot_lv_div,招式槽等级除数,5,每多少级 +1
+active_slot_attr_div,招式槽悟性除数,8,每多少点悟性 +1
+active_slot_cap,招式槽硬上限,9,
+passive_cap_base,内功容量基础值,2,
+passive_cap_lv_div,内功容量等级除数,6,
+passive_cap_attr_div,内功容量根骨除数,10,
+passive_cap_max,内功容量硬上限,7,
+mastery_max,熟练度上限,10,
+mastery_combat_gain,战斗施放熟练度增长,1,每次施放 +1
+cultivate_cost_growth,打坐费用成长系数,1.6,每级费用 = 基础 × 本值^(熟练度-1)
+codex_step,图鉴奖励步长,5,每收集多少部武学给一次奖励
+codex_bonus,图鉴奖励幅值,1,每次奖励七项属性各 +1
+codex_cap,图鉴奖励次数上限,10,
+dummy_xp_cap_level,木桩经验上限等级,5,角色到这一级后木桩战不再给经验
+dummy_mastery_cap,木桩熟练度上限,3,参与木桩战的招式熟练度只涨到这一级

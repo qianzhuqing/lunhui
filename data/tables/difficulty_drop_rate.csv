@@ -1,0 +1,16 @@
+﻿difficulty_id,rarity_id,rate_multiplier,note
+normal,common,1.0,
+normal,fine,1.0,
+normal,rare,1.0,
+normal,epic,1.0,
+normal,legend,1.0,
+hard,common,1.5,
+hard,fine,1.5,
+hard,rare,1.75,
+hard,epic,2.0,
+hard,legend,2.67,
+nightmare,common,2.0,
+nightmare,fine,2.2,
+nightmare,rare,2.75,
+nightmare,epic,3.75,
+nightmare,legend,6.67,越低概率的稀有度倍率越高

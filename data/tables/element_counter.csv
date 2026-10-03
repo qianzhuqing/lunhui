@@ -1,0 +1,10 @@
+﻿element_atk,element_def,multiplier,note
+external,external,1.0,同系
+external,internal,0.8,被内功克
+external,odd,1.3,克奇诡
+internal,external,1.3,克外功
+internal,internal,1.0,同系
+internal,odd,0.8,被奇诡克
+odd,external,0.8,被外功克
+odd,internal,1.3,克内功
+odd,odd,1.0,同系

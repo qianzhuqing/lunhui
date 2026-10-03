@@ -1,0 +1,17 @@
+﻿enemy_id,skill_id,note
+en_bd_thug,pf_heifeng_01,
+en_bd_scout,pf_heifeng_01,
+en_bd_archer,pf_tieqiang_01,
+en_bd_patrol_leader,pf_heifeng_02,
+en_bd_patrol_leader,pf_chensha_01,
+en_bd_elite_blade,pf_heifeng_03,
+en_bd_elite_blade,pf_tieqiang_01,
+en_bd_poison_hand,pf_wudu_03,以毒攻毒，本身高毒抗
+en_bd_butcher,pf_chensha_02,
+en_bd_butcher,pf_heifeng_02,
+en_bd_boss,pf_heifeng_03,
+en_bd_boss,pf_chensha_03,
+en_bd_boss,pf_wudu_02,
+en_hidden_drunk,pf_drunk_02,
+en_hidden_drunk,pf_xuanwei_04,
+en_hidden_drunk,pf_luohan_01,
