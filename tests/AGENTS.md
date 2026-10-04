@@ -6,6 +6,12 @@
 新写的用例必须同时加进 `tools/run_tests.gd` 的 `TEST_SCRIPTS`——只登记不执行会被现场抓出来
 （见根 `AGENTS.md` 的「策划改了需求怎么办」第 4 条）。
 
+> **「策划对接守卫」2026-10-04 拆成八族**（单文件 800 行硬上限，见 `docs/dev/代码拆分清单.md`）：
+> 检查按族住在 `tests/test_handshake_<族>.gd`（contract／repo／code／docs／numbers／doccounts／
+> wiring／flags），**常量与共用夹具留在基类 `tests/test_handshake.gd`**（它自己不再是一份 suite）。
+> 加检查写进对应族；要跨族用某个函数，先把它挪进基类（否则运行期 `Nonexistent function`）。
+> 八族都注册在 `tools/run_tests.gd` 的 `TEST_SCRIPTS` 里，按族的「静态断言点 vs 实际执行条数」照旧生效。
+
 - **断言里的期望值不许由被测对象算出来**：`check_float(broken, normal * (1.0 + CONST), …)` 这种写法
   **常量一改、期望值跟着改，永远绿**——真踩过：破绽增伤那样写了很久，把 0.5 改成 0.7 也没人发现
   （见框架说明决策 153）。同理「上下限」要**顶到**：`<= 0.95` 盖不住「上限被改成 0.85」。
@@ -19,7 +25,7 @@
   而且还有一条**余量上限** `SLACK_LIMIT`（余量涨到 100 就红，报错里会直接算出该改成多少）——
   2026-10-03 量过两次窟窿（4366 vs 5318、6059 vs 6213），光写一句"要贴着现状"是拦不住的。
   加断言不用动它；删断言或数据表行数缩水后要把它改到新值——那是**有意识的行为**，不是把基线调松。
-  （「整个用例文件被摘掉」不归它管：`test_handshake._check_verify_tests_are_executed` 要求登记过的用例
+  （「整个用例文件被摘掉」不归它管：`test_handshake_contract._check_verify_tests_are_executed` 要求登记过的用例
   必须出现在 `run_tests.gd` 的执行列表里。）
 - **发行数据没覆盖到的分支，用「复制表、只改内存」的夹具跑**：`character_base` 只有 1 行（多人分支）、
   `stock_limit` 全是 0（限量分支）、`equip_slot_def` 的容量从没变过（配表收口）……这些
@@ -30,7 +36,7 @@
   真实场景自检要按它当前的朝向摆位（正面与绕背各来一次），否则会 50% 概率变红。
   **用例里造战斗界面必须固定 `rng_seed`**（`BattleScreen.rng_seed` 默认 -1 会 `randomize()`）：
   掉落／暴击／闪避都是掷出来的，不固定就会写出时红时绿的断言（真踩过：`test_skill_grant` 用
-  「结算卡片里有没有领悟」当唯一证据，而卡片行数随掉落件数变）。`test_handshake._check_battle_tests_are_seeded`
+  「结算卡片里有没有领悟」当唯一证据，而卡片行数随掉落件数变）。`test_handshake_code._check_battle_tests_are_seeded`
   会扫 `tests/*.gd` 里造战斗界面的位置、要求往下 12 行内出现 `rng_seed`（见框架说明决策 111）。
 - **给文件插调用点后，回去看一眼 `run()` 真的变了**：`apply_patch` 的上下文在文件里出现多次时
   会插到别处（踩过：`_check_big_bag(db)` 被插进 `_check_big_bag` 自己的尾部，自己调自己、

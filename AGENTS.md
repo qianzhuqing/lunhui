@@ -1,7 +1,10 @@
 ﻿# 约定摘要
 
 《轮回》是一个 Godot 4.7（GDScript，Mobile 渲染器）的武侠回合制 RPG。
-策划文档在 `docs/design/`，工程说明在 `docs/dev/框架说明.md`。
+策划文档在 `docs/design/`（**变更日志只保留最近 5 个版本**，更早 47 个在
+`docs/design/archive/CHANGELOG.md`）；工程说明在 `docs/dev/框架说明.md`（**现状说明**——
+**377 条编号决策已拆到 `docs/dev/decisions/`**：全仓库那些「见框架说明决策 N」的引用，
+去那儿 `rg -n "^N\. " docs/dev/decisions/` 找，条目形如 `153. **标题**`、正文里不写「决策」两字）。
 **`docs/dev/设计实现对照.md`** 是「设计写了什么 → 代码在哪」的反向清单（找漏项用，与正查的
 `docs/dev/模块对接表.csv` 互补）；策划改需求后顺手核对相关行。
 
@@ -181,29 +184,37 @@ tools\run_windowed_smoke.bat
 
 下面是**跨目录**的约定；分系统的规矩在各自目录的 `AGENTS.md`（见开头那张表）。
 
-- **版本库状态与入库方式**：仓库 HEAD 目前**只跟踪骨架**（编辑器配置、`addons/godot-mcp/`、
-  `icon.svg(.import)`、`node_2d.tscn`、`project.godot`、`sync_to_git.bat`）——
-  `src/ tests/ tools/ docs/ data/ scenes/ assets/ AGENTS.md` **都还没入册**；
-  入库靠根目录的 `sync_to_git.bat`（`git add .` → commit → push 到 `github.com/qianzhuqing/lunhui`）。
-  两条纪律：① **绝不要在这个仓库跑 `git clean -fd`／`git reset --hard`**——**未跟踪的就是整个游戏**，
-  一条 `clean` 就能把它删光（清理只能精确删自己刚建的文件）；② `.gitignore` 的忽略面与
-  `.gitattributes` 里 `*.bat` 的行尾有门限盯着（`_check_git_repo_contract`），别绕开。
-  **怎么判断现在是哪种状态**（别信日期，信命令）：`git ls-files | wc -l` 只有十几个就是"还没同步"；
-  几百个（`src/ docs/ …` 都在列）就是已同步——同步过之后上面"只跟踪骨架"那句当历史看，
-  **两条纪律与两条门限照旧**。
-- **新加的公共接口要真的接进游戏路径**：`tests/test_handshake.gd::_check_no_new_test_only_api` 会扫
+- **版本库状态与入库方式**：**已入册**（2026-10-04 同步过一次：`git ls-files` 一千上下、
+  `git status` 干净、未跟踪为 0）。入库靠根目录的 `sync_to_git.bat`
+  （`git add .` → commit → push 到 `github.com/qianzhuqing/lunhui`）。
+  两条纪律照旧：① **绝不要在这个仓库跑 `git clean -fd`／`git reset --hard`**——
+  清理只能精确删自己刚建的文件；② `.gitignore` 的忽略面与 `.gitattributes` 里 `*.bat` 的行尾
+  有门限盯着（`_check_git_repo_contract`），别绕开。
+  **怎么判断状态**（别信日期，信命令）：`git ls-files | Measure-Object -Line` **只有十几个 = 还没同步**
+  （那时**未跟踪的就是整个游戏**，一条 `clean` 就能删光）；**几百上千 = 已入册**。
+- **本机 git 已经能用**（2026-10-04 修）：仓库属主是 `BUILTIN\Administrators`、当前用户不是它，
+  不加例外就报 `fatal: detected dubious ownership`——已用
+  `git config --global --add safe.directory F:/GodotProject/lunhui` 修好，**现在直接跑 `git` 即可**
+  （不带 `-c safe.directory=…` 也行）。换机器／换账户后若又遇到这条，照上面加一行即可。
+- **新加的公共接口要真的接进游戏路径**：`tests/test_handshake_code.gd::_check_no_new_test_only_api` 会扫
   「定义了但 `src/`＋`scenes/` 里没人调用」的函数（`_` 开头的跳过），只在白名单 `TEST_ONLY_API_ALLOWED`
   里才放行。真出了这类坑：图鉴奖励 `codex_bonus()` 写好却只有用例在调，游戏里收集再多也不涨属性。
   要么接上，要么把名字与理由写进白名单。
 - **同一事实只许有一处定义**（漂移了不报错的那种）：`LOCKED_SCENES` 归 `WorldMapService`、
   贡献 kind 字符串（`attr_point`／`stat_flat`）归 `AttributeCalculator`，别在别处再写字面量。
-  `tests/test_handshake.gd::_check_single_source_of_truth()` 按 `SINGLE_SOURCE_RULES` 盯着；
+  `tests/test_handshake_code.gd::_check_single_source_of_truth()` 按 `SINGLE_SOURCE_RULES` 盯着；
   新发现这类重复（**写错只会静默丢东西**）就加一条规则。场景路径那种写错就加载失败的不收（见决策 88）。
 - **公式不进表**：表只配系数、上限、曲线枚举，算法写在 `src/core/`。
 - 跨文件**调用**（`X.new()`／`X.静态方法()`）必须走 `preload` 常量，别把"能不能跑起来"压在
-  `.godot` 的全局类名缓存上（`tests/test_handshake.gd::_check_preload_for_global_class_calls` 盯着，
+  `.godot` 的全局类名缓存上（`tests/test_handshake_code.gd::_check_preload_for_global_class_calls` 盯着，
   2026-10-04 起 0 处裸调用）。**类型标注**（`var x: TableDb`、`-> Inventory`）可以写全局类名——
   那是仓库的现状（106 处），靠工具链每轮 `--editor --quit` 刷新缓存；这条界线是量出来的，见决策 369。
+- **单文件别长成上帝类**：一个脚本只担一类职责、按职责拆细，**单个文件硬上限 800 行**，超了就要拆。
+  存量超标文件列在 `docs/dev/代码拆分清单.md`（2026-10-04 量出 15 个，已拆掉
+  `tests/test_handshake.gd` 一个 → 剩 14 个），按优先级逐步拆，**新增代码不许把已有数字继续往上推**。
+  拆分**只挪位置、不改行为**：一个批次拆一个文件，拆完 `tools\run_tests.bat` 与
+  `tools\validate_tables.ps1` 仍然全绿，才动下一个。门限是 `tests/test_handshake_repo.gd::_check_file_size`
+  （白名单就是那份清单本身，拆完把它那一行划掉、抬头的「N 个超标」跟着改）。
 - 不要改 `addons/godot-mcp/`（编辑器插件）。`addons/sound_manager/` 是复用的第三方 MIT 库，
   它的规矩见 `src/audio/AGENTS.md`。
 - 主场景是 `scenes/main_menu.tscn`（启动菜单）；`scenes/bootstrap.tscn` 是配置表诊断场景，不是入口。
@@ -217,9 +228,11 @@ tools\run_windowed_smoke.bat
 
 ## 策划改了需求怎么办（强制流程）
 
-策划每改一次需求，开发侧的**计划和验证都要跟着动**，这条由 `tests/test_handshake.gd` 把关：
+策划每改一次需求，开发侧的**计划和验证都要跟着动**，这条由 `tests/test_handshake_*.gd`（八族）把关：
 
 1. 读 `docs/design/CHANGELOG.md`，看当前设计版本和影响模块。
+   **它只保留最近 5 个版本**（2026-10-04 起）——更早的 47 个已归档到
+   `docs/design/archive/CHANGELOG.md`，**日常别去读那一份**（101 KB，只有查「这条规则哪一版定的」才翻）。
 2. 在 `docs/dev/模块对接表.csv` 找到自己负责的模块，评估要不要返工。
 3. 改代码 → **补或改 `tests/` 里的用例**（新增能力必须有新断言，改动的数值必须有对应校验）。
 4. 回填 `docs/dev/验证清单.csv`：`verify_paths` 写清用例文件，`verified_design_version` 改成当前设计版本。

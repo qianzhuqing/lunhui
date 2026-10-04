@@ -11,6 +11,14 @@ data/generated/
 data/tables/*.translation
 data/tables/*.import
 
+# 同上一条：`docs/dev/` 下那两张过程表（模块对接表／验证清单）也被 Godot 当「翻译表」导入，
+# 在同目录生成 *_<列名>.translation 与 *.csv.import。它们是导入产物、没有任何人读，
+# 但 `sync_to_git.bat` 的 `git add .` 会把它们收进去——2026-10-04 发现已入库 11 个、约 139 KB，
+# 其中两个 `.note.translation` 就占 121 KB（Godot 把 note 列编译成了二进制）。
+# 注意：这条只匹配 docs/dev/ 顶层，**不动** docs/dev/images/*.png.import——那是图片的正常导入元数据，和 assets/ 下 163 个一样该入库。
+docs/dev/*.translation
+docs/dev/*.import
+
 # headless 自检日志
 .logs/
 

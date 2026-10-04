@@ -19,7 +19,7 @@
   **读档落点也在这里定**：`MenuController.load_game` 的结果带 `start_scene = START_OVERWORLD`（视图据此切
   `scenes/world_run.tscn`），新建游戏仍进占位枢纽页（`START_HUB`）。
   **新加的字段必须同时写进 `to_dict()`**（漏了不会报错，只是读档静默丢）——
-  `tests/test_handshake.gd::_check_save_fields_are_serialized` 会扫源文件兜底（`Inventory` 同理），
+  `tests/test_handshake_code.gd::_check_save_fields_are_serialized` 会扫源文件兜底（`Inventory` 同理），
   确实不持久化的（如读档整理结果）要加进那儿的白名单并写明理由（见框架说明决策 173）。
   **字段类型写错的老档也要容错**（JSON 合法但 `inventory` 是字符串之类）：要么判损坏、要么读成缺省，**不许运行期报错**——`test_save_migration._check_type_mismatched_fields` 用六种写法钉着（决策 248）。
   **升版本时还要做一件事**：往 `tests/test_save_migration.gd` 的 `ADDED_IN` 补一行（写清新版本加了哪些字段）——

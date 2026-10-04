@@ -45,7 +45,16 @@ const TEST_SCRIPTS := [
 	"res://tests/test_clue.gd",
 	"res://tests/test_dungeon_ui.gd",
 	"res://tests/test_save_timing.gd",
-	"res://tests/test_handshake.gd",
+	# 「策划对接守卫」2026-10-04 按检查族拆成八份（每份 ≤ 800 行，见
+	# `docs/dev/代码拆分清单.md`）；公共常量与夹具留在 `test_handshake.gd`（它本身不再是 suite）。
+	"res://tests/test_handshake_contract.gd",
+	"res://tests/test_handshake_repo.gd",
+	"res://tests/test_handshake_code.gd",
+	"res://tests/test_handshake_docs.gd",
+	"res://tests/test_handshake_numbers.gd",
+	"res://tests/test_handshake_doccounts.gd",
+	"res://tests/test_handshake_wiring.gd",
+	"res://tests/test_handshake_flags.gd",
 	"res://tests/test_copy_audit.gd",
 	"res://tests/test_layout_budget.gd",
 	"res://tests/test_buff.gd",
@@ -70,15 +79,15 @@ const TEST_SCRIPTS := [
 ## 2026-10-03 之前这里停在 4366 而实际已经 5318，空了 952 条的窟窿——那次是「有下限」和「没下限」的区别。
 ## 同一天晚些时候又量了一次：停在 6059、实际 6213，**又空了 154 条**——
 ## 这次不是"没下限"，而是**下限松到拦不住"删掉一整块断言"**（最小的用例文件也就 15 条断言）。
-## 现在贴到 9620−10＝9610（0.32.0 那批用例上来之后：探索口径两条断言、`Conditional`／
-## `Overlay` 分层、UI 九宫格与架势图、序幕 `flag_open_*` 与 `flag_obs_*`；本条是"余量上限"
-## 逼着贴的，见决策 211）。并加了余量上限（见 `SLACK_LIMIT`）：
+## 现在贴到 9714−10＝9704（2026-10-04「策划对接守卫」拆成八族之后：有几条门限按
+## `tests/*.gd` 逐个文件断言，多出八份 suite 就多出十几条——本条是"余量上限"逼着贴的，
+## 见决策 211）。并加了余量上限（见 `SLACK_LIMIT`）：
 ## 基线再漂就会被自己点名。
 ## 注意「整个用例文件被摘掉」**不归这条管**：那件事由 `test_handshake._check_verify_tests_are_executed`
 ## （登记的用例必须在 `TEST_SCRIPTS` 里、否则红）兜着。这条守的是**文件内部的整块断言被删**。
 ## 数据表行数改动也会带来断言增减（逐行断言的循环）：确认无误后把这一行改到新值——
 ## 那是**有意识的行为**，不是把下限调松。
-const MIN_ASSERTIONS := 9610
+const MIN_ASSERTIONS := 9704
 
 ## 基线最大余量：实际断言数 − `MIN_ASSERTIONS` 超过它，说明基线松了（这条网在退化成摆设）。
 ## 有它是因为真发生过两次：`4366 vs 5318`（952 条窟窿）、`6059 vs 6213`（154 条）。

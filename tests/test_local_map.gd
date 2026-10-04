@@ -1895,9 +1895,23 @@ func _check_guide_after_shop_close(db, session_node) -> void:
 		state.has_flag("flag_supplies_ready"),
 		"关掉药铺浮层的那一下就把「备齐」算出来了（不用出镇再进来）"
 	)
+	# 期望值**不抄文案**：0.32.0 把第 4 步从「出城上山」改成「出城往落雁坡走，从那儿上山。」
+	# （落雁坡改成 `proximity_5` 后不点名玩家会摸不着北），抄死子串的写法当场过期成假红。
+	# 改成问 `GuideService`「现在该显示哪一步」——状态是在关浮层那一刻才变的，
+	# label 若没跟着刷新就还是上一步的文案，这条照样红（不是同义反复）。
+	var expected_hud := GuideServiceScript.hud_text(db, state)
 	check_true(
-		str(town._guide_label.text).contains("出城上山"),
-		"HUD 当场换成下一步：%s" % str(town._guide_label.text)
+		str(town._guide_label.text) == expected_hud,
+		"HUD 当场换成下一步：%s（表里现在该显示的是 %s）" % [str(town._guide_label.text), expected_hud]
+	)
+	# 再钉一层，免得上面那条靠"两边都是空串"假绿：这一步必须真是「备齐之后」那一步。
+	var supplies_text := ""
+	for row: Resource in GuideServiceScript.steps(db):
+		if str(row.condition) == "flag_supplies_ready":
+			supplies_text = str(row.text_cn)
+	check_true(
+		not supplies_text.is_empty() and expected_hud.contains(supplies_text),
+		"关浮层那一下推进到「备齐之后」那一步（flag_supplies_ready → 「%s」）" % supplies_text
 	)
 	scene_tree.root.remove_child(town)
 	town.free()
