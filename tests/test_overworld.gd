@@ -66,8 +66,24 @@ func run() -> void:
 	_check_region_recruit(db)
 	_check_region_origin_gift(db)
 	_check_conditional_layer(db)
+	_check_overlay_layer(controller)
 	scene_tree.root.remove_child(controller)
 	controller.free()
+
+
+## 大地图侧同一个坑（2026-10-04 实测的「NPC 面板打不开」）：`npc_panel` 的根是 `Control`，
+## 挂到世界节点下会跟着相机跑出屏幕——修法是 `OverlayStack.mount()` 包一层画布层。
+func _check_overlay_layer(controller) -> void:
+	var opened: Dictionary = controller.open_npc("npc_qian_dafu")
+	check_true(
+		bool(opened.get("ok", false)),
+		"大地图上的 NPC 面板开得起来：%s" % str(opened.get("error", "")),
+	)
+	if controller.npc_panel != null:
+		check_true(
+			controller.npc_panel.get_parent() is CanvasLayer,
+			"大地图上的 NPC 面板挂在画布层下（不是世界节点下）",
+		)
 
 
 ## 条件地表层（`Conditional`，0.32.0）：大地图上那条「落雁坡西 → 石隙迷窟」的碎石细径，
@@ -129,7 +145,7 @@ func _check_region_recruit(db) -> void:
 	if row == null:
 		return
 	check_eq(str(row.join_scene), "n_luoyanpo", "他的加入点写在区域节点上（不是小地图）")
-	state.set_flag(str(row.join_condition))
+	satisfy_condition(state, str(row.join_condition))
 	var before_party: int = state.party_size()
 	var map = load(OVERWORLD_RUN).instantiate()
 	map.state_override = state

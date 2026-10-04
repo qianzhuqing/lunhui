@@ -22,6 +22,7 @@ const BattleSimulatorScript := preload("res://src/core/battle_simulator.gd")
 ## 对话说话人里的特殊记号（`player` = 主角自己）：构建期要认它，否则本命机遇／序幕那类
 ## 「主角自己说的话」在落表当天就会红
 const NpcServiceScript := preload("res://src/core/npc_service.gd")
+const DialogueOptionRowScript := preload("res://src/data/tables/dialogue_option_row.gd")
 
 const ELEMENTS := ["external", "internal", "odd"]
 const ITEM_TYPES := ["currency", "material", "consumable", "key", "tool", "skillbook"]
@@ -2190,12 +2191,14 @@ static func _check_dialogue(db, errors: PackedStringArray) -> void:
 			errors.append("dialogue_option[%s].next_node_id=%s 不是对话节点" % [row.option_id, next_id])
 		if str(row.text_cn).is_empty():
 			errors.append("dialogue_option[%s] 没有 text_cn：选项就是玩家要按的那句话" % row.option_id)
-		var flag := str(row.set_flag)
-		if not flag.is_empty() and not flag.begins_with("flag_") and not flag.begins_with("heart_"):
-			errors.append(
-				"dialogue_option[%s].set_flag=%s 既不是 flag_* 也不是心性（heart_*）"
-					% [row.option_id, flag]
-			)
+		# `set_flag` 可以写多个（分号隔开，Q83）：**每一段都要认得出来**。
+		# 拆法调行类那一处（与运行期、PS1 同一口径），不在这里再写一遍。
+		for flag: String in DialogueOptionRowScript.parse_set_flags(str(row.set_flag)):
+			if not flag.begins_with("flag_") and not flag.begins_with("heart_"):
+				errors.append(
+					"dialogue_option[%s].set_flag 里的 '%s' 既不是 flag_* 也不是心性（heart_*；多个旗标用分号隔开）"
+						% [row.option_id, flag]
+				)
 		var item_id := str(row.grant_item_id)
 		if not item_id.is_empty():
 			if db.get_row("item_base", item_id) == null and db.get_row("equip_base", item_id) == null:

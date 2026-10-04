@@ -89,6 +89,13 @@ godot --headless --path . --log-file .logs\menu_smoke.log res://scenes/main_menu
 每一步跑完还会调 `tools\check_log_errors.bat` 扫引擎日志：里面有 `SCRIPT ERROR` 就判红——
 它能抓住「退出码 0、`SELFCHECK: OK` 也打印了，但出错那一行之后的代码根本没跑」这种假绿
 （反向验证过：把一条越界塞进 `run_tests.gd` 的 `quit()` 之后，两道旧判定都说绿，只有它报红）。
+
+**场景跑的是生成物，不是 CSV**（2026-10-04 加）：所有场景自检（含真窗口冒烟）读的是
+`data/generated/*.tres`，而**只有 `run_tests.bat` 那条链会重建它**（`build_tables.gd`）。
+所以「改了 `data/tables/*.csv` → 直接跑场景自检／冒烟」会**拿旧数据判**（红的是幽灵、绿的也是幽灵——
+有人为此白追了一轮）。处置：**`run_windowed_smoke.bat` 现在开头自己先重建一次**（多几秒，
+不再靠人记）；单独跑 `check_scene.bat`／`check_maps.bat`／`check_loop.bat` 之前，
+先跑一次 `run_tests.bat`（或 `build_tables`）把生成物刷到最新。
 最后一步是「跑完不许留下引擎进程」：用 `Get-Process` 查（`tasklist` 在本机会话里报 Access denied），
 查到就列 PID 判红，**查不动也判红**——「查不出来」不等于「没有」。（同一条纪律见版式预算：量不出来 ≠ 塞得下。）
 

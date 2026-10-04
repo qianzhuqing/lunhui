@@ -262,6 +262,41 @@ func _check_icon_file_names(db) -> void:
 		unknown.size(), 0,
 		"每张武学图标的名字都是 skill_base 里的 id（认不出的：%s）" % "、".join(unknown),
 	)
+	# 异常状态（15 §4.3 的「异常状态 4」）与增益（19）：**同一套门限，以前这两条缺着**。
+	# 2026-10-04 美术交异常 4 张时发现：`icons/status/` 一张图都没有门限管——
+	# 文件名和 `status_effect.icon` 对不上时不会有任何东西红（图摆上去不显示，或者摆错张）。
+	# 表侧来源是 `icon` 列（**空则退回行 id**，与 `IconPathsScript` 的优先级同一口径），
+	# 不是行的主键：现例 `poison` 行的 icon 就是 `status_poison`。
+	_check_icon_dir_matches_table(db, "res://assets/icons/status", "status_effect", "异常状态")
+	_check_icon_dir_matches_table(db, "res://assets/icons/buff", "buff_def", "增益")
+
+
+## 一类图标目录里的**文件名**必须都能在对应表里认出来（目录还没交图 = 跳过，不算错，
+## 与装备那条同口径）。「认出来」= 命中任一行的 `icon` 列（非空时）或行的 id——代码就是这么
+## 解析的（`icon_paths.gd` 的「优先 icon，空则退回行 id」），门限跟着它走，别自创第二套口径。
+func _check_icon_dir_matches_table(db, dir_path: String, table: String, label: String) -> void:
+	var dir := DirAccess.open(dir_path)
+	if dir == null:
+		return
+	var allowed := {}
+	for row: Resource in db.rows(table):
+		var icon_id := str(row.icon).strip_edges()
+		allowed[icon_id if not icon_id.is_empty() else str(row.id)] = true
+	var checked := 0
+	var unknown := PackedStringArray()
+	for file: String in dir.get_files():
+		if not file.ends_with(".png"):
+			continue
+		var file_id := file.trim_suffix(".png")
+		checked += 1
+		if not allowed.has(file_id):
+			unknown.append(file_id)
+	check_gt(float(checked), 0.0, "%s图标目录里有图（%d 张）" % [label, checked])
+	check_eq(
+		unknown.size(), 0,
+		"每张%s图标的名字都要能在 %s 里认出来（icon 列或行 id；认不出的：%s）"
+			% [label, table, "、".join(unknown)],
+	)
 
 
 ## 地标图标的贴图必须真的在（`map_region.icon` → `assets/sprites/icons/<icon>.png`）。

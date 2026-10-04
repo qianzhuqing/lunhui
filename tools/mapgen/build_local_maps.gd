@@ -336,6 +336,9 @@ func _build_huangcun() -> void:
 const FERRY_SCENE := "scene_ferry_locked"
 const FERRY_W := 32
 const FERRY_H := 24
+## 渡口那條河（16 §3.5：废弃渡口＝**水岸**——水面 ＋ 栈桥残骸 ＋ 芦苇）。
+## 封渡的牌坊与墙在河南岸，玩家从南边的街走过来，到墙为止。
+const FERRY_RIVER := Rect2i(1, 1, 26, 8)
 
 
 func _build_ferry() -> void:
@@ -350,6 +353,7 @@ func _build_ferry() -> void:
 	MapKit.mark_rect(streets, Rect2i(4, 12, 20, 6))
 	MapKit.paint_grass(ground, FERRY_W, FERRY_H)
 	MapKit.paint_dirt(ground, streets, FERRY_W, FERRY_H)
+	var river := _paint_ferry_river(ground, decor)
 	# 本章不开放：牌坊 + 破船 + 断桥封锁，一眼看出过不去。
 	for offset in range(-2, 3):
 		decor.set_cell(Vector2i(12 + offset, 10), MapKit.SOURCE_ID,
@@ -359,19 +363,53 @@ func _build_ferry() -> void:
 	decor.set_cell(Vector2i(21, 14), MapKit.SOURCE_ID, MapKit.T_CRATE)
 	for x in range(4, 12):
 		decor.set_cell(Vector2i(x, 15), MapKit.SOURCE_ID, MapKit.T_FENCE_H)
-	decor.set_cell(Vector2i(16, 16), MapKit.SOURCE_ID, MapKit.T_SIGN)
-	# 封渡木桩（0.32.0「醉刀客线索改走主线条」的第三条线索挂在它上面）：
-	# 木牌挂在两根桩之间；**观察点落在桩东侧能站人的那格**——验收要求观察点本身可走、
-	# 且从出生点走得到，而桩／牌都是挡路的道具，点位不能压在它们身上。
-	decor.set_cell(Vector2i(15, 16), MapKit.SOURCE_ID, MapKit.T_FENCE_POST)
-	decor.set_cell(Vector2i(17, 16), MapKit.SOURCE_ID, MapKit.T_FENCE_POST)
-	MapKit.add_marker(shell["markers"], "Observe_ob_dukou_pile_04", Vector2i(18, 16))
-	MapKit.forest_border(decor, streets, FERRY_W, FERRY_H, 2)
+	# 栈桥残骸：断掉的三根桥桩伸进浅水，中间那根没了——「一眼看出过不去」（07 §4.4）。
+	decor.set_cell(Vector2i(11, 7), MapKit.SOURCE_ID, MapKit.T_FENCE_POST)
+	decor.set_cell(Vector2i(15, 7), MapKit.SOURCE_ID, MapKit.T_FENCE_POST)
+	decor.set_cell(Vector2i(17, 6), MapKit.SOURCE_ID, MapKit.T_FENCE_POST)
+	# 封渡木桩（0.32.0）：美术交付的 **prop**（`prop_ferry_pile.png`，32×32，木桩 ＋ 钉在桩上的
+	# 朱印木牌一起出图），挂在观察点位点上——「醉刀客线索改走主线条」的第三条就刻在这根桩上。
+	# 摆在封渡牌坊东侧两格的街上（玩家出镇往渡口走，正好经过它）。
+	# 桩**不挡路**：验收要求观察点本身可走、且从出生点走得到；以前那两个占位桩 ＋ 通用木牌
+	# （`T_FENCE_POST`／`T_SIGN`）由这张图取代。
+	# 图的路径**只在 `map_kit.PROP_FERRY_PILE` 写一次**，这里只引用常量。
+	var pile := MapKit.add_marker(shell["markers"], "Observe_ob_dukou_pile_04", Vector2i(15, 12))
+	MapKit.add_sprite(pile, "pile", MapKit.PROP_FERRY_PILE)
+	# 密林封边不能长到河里（河道自己就是天然边界）。
+	var keep_open := streets.duplicate()
+	for cell: Vector2i in river:
+		keep_open[cell] = true
+	MapKit.forest_border(decor, keep_open, FERRY_W, FERRY_H, 2)
 	# 本章不可进入，按 07 文档 4.0 不做回程出口。
 	MapKit.add_marker(shell["characters"], "player_spawn", Vector2i(5, 14)).set_meta("role", "player")
 	_fit(shell, FERRY_W, FERRY_H)
 	_finish(shell["root"], FERRY_SCENE, FERRY_W, FERRY_H, streets, ground, decor)
-	print("[mapgen] 废弃渡口：1 区域（本章不开放，做封锁表现）／封渡木桩观察点 1 处")
+	print("[mapgen] 废弃渡口：1 区域（河道 ＋ 栈桥残骸 ＋ 封锁表现）／封渡木桩 prop ＋ 观察点 1 处")
+
+
+## 渡口的水。**深水画在 `Decor`**——它挡路，而 `Ground` 按约定只能放「走得上去的地面」
+## （`verify_maps._check_only_decor_blocks` 逐层盯着这条，`Ground`／`Overlay`／`Conditional` 都在内）；
+## 浅水／水岸／芦苇不挡路，留在 `Ground`。
+## 返回整片水的格子（含岸边芦苇），好让密林封边绕开河道。
+func _paint_ferry_river(ground: TileMapLayer, decor: TileMapLayer) -> Dictionary:
+	var cells := {}
+	var last_y := FERRY_RIVER.position.y + FERRY_RIVER.size.y - 1
+	for y in range(FERRY_RIVER.position.y, last_y + 1):
+		for x in range(FERRY_RIVER.position.x, FERRY_RIVER.position.x + FERRY_RIVER.size.x):
+			var cell := Vector2i(x, y)
+			cells[cell] = true
+			if y <= last_y - 2:
+				decor.set_cell(cell, MapKit.SOURCE_ID, MapKit.T_WATER_DEEP)
+			elif y == last_y - 1:
+				ground.set_cell(cell, MapKit.SOURCE_ID, MapKit.T_WATER_SHALLOW)
+			else:
+				ground.set_cell(cell, MapKit.SOURCE_ID, MapKit.T_WATER_SHORE)
+	# 岸边芦苇荡（在 `Ground` 上，能走进去——07 §4.4 的侦察靠它）
+	for at: Vector2i in [Vector2i(4, 8), Vector2i(6, 9), Vector2i(9, 9), Vector2i(19, 9),
+			Vector2i(22, 9), Vector2i(25, 8)]:
+		ground.set_cell(at, MapKit.SOURCE_ID, MapKit.T_REEDS)
+		cells[at] = true
+	return cells
 
 
 # ---------------------------------------------------------------- 副本通用

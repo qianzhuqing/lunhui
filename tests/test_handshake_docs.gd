@@ -671,11 +671,16 @@ func _check_shop_shelves_match_design() -> void:
 					# 设计 05 的「材料＋白板饰品」是常规商品口径，钥匙道具是**故意**摆在这里的。
 					if item != null and str(item.item_type) == "key":
 						ok = true
+					# 2026-10-04（Q3）：`shop` 那 5 部武学改走秘籍道具，四家店各上架一本——
+					# 秘籍是这几家店**新增的例外品类**，07 §4.1 那张建筑表已写明。
+					if item != null and str(item.item_type) == "skillbook":
+						ok = true
 					check_true(ok, "杂货铺只卖材料与白板饰品（%s 不符）" % item_id)
 				"bld_tavern":
 					check_true(
-						item != null and str(item.item_type) == "consumable" \
-							and str(item.use_context) == "field",
+						(item != null and str(item.item_type) == "consumable" \
+							and str(item.use_context) == "field") \
+							or (item != null and str(item.item_type) == "skillbook"),
 						"酒楼只卖非战斗回血道具（%s 不符）" % item_id,
 					)
 				"bld_clinic":
@@ -686,7 +691,8 @@ func _check_shop_shelves_match_design() -> void:
 					)
 				"bld_smith":
 					check_true(
-						equip != null and str(equip.rarity) == "common",
+						(equip != null and str(equip.rarity) == "common") \
+							or (item != null and str(item.item_type) == "skillbook"),
 						"铁匠铺只卖白板装备（%s 不符）" % item_id,
 					)
 		# 附加服务：05 那张表里只有医馆带「花钱治疗」

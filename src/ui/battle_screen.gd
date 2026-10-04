@@ -640,7 +640,9 @@ func _spawn_floats(events: Array) -> void:
 		var hit_index := int(event.get("hit_index", 0))
 		label.name = "Float_%s" % str(event["target"]) if hit_index == 0 else "Float_%s_%d" % [str(event["target"]), hit_index]
 		label.text = "-%d" % damage
-		label.add_theme_font_size_override("font_size", 16)
+		# 游戏内浮字也吃两档（设计 15 §4.4，2026-10-04 Q82）：跟标题档 24——
+		# 16 ＝ 12×1.33，像素字发虚，正是本轮取消 16 档要消灭的那种非整数倍。
+		label.add_theme_font_size_override("font_size", 24)
 		var color := Color("ffd24a") if bool(event.get("is_crit", false)) else Color(1, 1, 1, 0.95)
 		if bool(event.get("was_broken", false)):
 			color = Color("eb5757")
@@ -802,6 +804,29 @@ func press_return() -> void:
 		tree.change_scene_to_file(_return_scene())
 
 
+## 切磋的镜像对手（Q88 拍板 ①）：把这位同伴**照他自己**造一个战斗单位，翻到敌方阵营。
+##
+## 用的是与他上场时**同一个** `PartyBuilder.build_actor()`——等级、加点、装备、内功、招式全同，
+## 所以「赢的是他自己的镜像」这句话是真的，而不是另配一套数值。
+##
+## 两处刻意的收口：① **满血**（`refill()`）——同伴带伤不该让这一场变得更好打；
+## ② **不给经验、钱、掉落**（同伴不是敌人，表里没有他的 `exp_reward`；设计 19 §2.2 里切磋的
+## 收益就是好感那一条）。这两条若与设计口径不合，改这里一处即可。
+func _build_mirror_enemy(char_id: String):
+	var actor = PartyBuilderScript.build_actor(db, state, char_id)
+	if actor == null:
+		push_error("[battle] 切磋镜像造不出来（character_base 里没有这个同伴）")
+		return null
+	actor.side = BattleActorScript.SIDE_ENEMY
+	actor.actor_id = "mirror_%s" % char_id
+	actor.reward_exp = 0
+	actor.reward_money = 0
+	actor.drop_group = ""
+	actor.tags["faction"] = "companion"
+	actor.refill()
+	return actor
+
+
 ## 打完回哪：大地图或来时的那个小地图
 func _return_scene() -> String:
 	var session_node := _session_node()
@@ -813,6 +838,10 @@ func _return_scene() -> String:
 ## 敌人在遭遇里可能带着 members（房间队伍、隐藏 Boss），否则按 team_id 建
 func _build_enemies(encounter) -> Array:
 	var factory = EnemyFactoryScript.new(db)
+	# 同伴的切磋没有表里的队伍：对手是**他自己**（Q88 拍板 ①）——按人物现造一个镜像
+	if not str(encounter.mirror_char).is_empty():
+		var mirror = _build_mirror_enemy(str(encounter.mirror_char))
+		return [mirror] if mirror != null else []
 	var members := str(encounter.members)
 	if members.is_empty():
 		return factory.create_team(encounter.team_id, encounter.difficulty_id)
@@ -974,15 +1003,21 @@ func _settle() -> void:
 		# 但**不许写「败北」**——那是假话（玩家没输，只是没打完）。口径记进交接表等设计定。
 		lines.append("平局：回合打满了，双方都没有收获（明雷不会被清掉）")
 	else:
-		# 战败处理（08 已定，0.8.0 口径）：全队回到**最近到过的出生点／城镇**、气血回满、
-		# 战斗外增益全部清除；不扣铜钱不掉装备。平局不走这里（见上一分支）。
-		var shelter := ""
-		if session_node != null:
-			shelter = str(session_node.last_shelter_name)
-		lines.append("败北：全队被送回%s，气血已回满、战斗外增益已清除" % (
-			"「%s」" % shelter if not shelter.is_empty() else "大地图"
-		))
-		lines.append("这一场没有收获，明雷不会被清掉")
+		# 切磋落败是一个**例外**（Q88 之后策划定的口径，2026-10-04）：**不传送、原地站着**——
+		# 陪练把人送回城很怪。气血回满与清战斗外增益照旧走败北结算（见 `_handle_defeat` 的
+		# `stay_put`），只是不设回程，也不写「被送回」。好感本来就 +0（19 §2.2 输了不罚）。
+		if not str(encounter.spar_npc).is_empty():
+			lines.append("切磋落败，无好感（对方是自己人，不结怨）")
+		else:
+			# 战败处理（08 已定，0.8.0 口径）：全队回到**最近到过的出生点／城镇**、气血回满、
+			# 战斗外增益全部清除；不扣铜钱不掉装备。平局不走这里（见上一分支）。
+			var shelter := ""
+			if session_node != null:
+				shelter = str(session_node.last_shelter_name)
+			lines.append("败北：全队被送回%s，气血已回满、战斗外增益已清除" % (
+				"「%s」" % shelter if not shelter.is_empty() else "大地图"
+			))
+			lines.append("这一场没有收获，明雷不会被清掉")
 	if session_node != null:
 		session_node.last_battle = {
 			"winner": sim.winner(),
@@ -1002,7 +1037,7 @@ func _settle() -> void:
 	# 战败处理要在写回气血**之后**做：`heal_all()` 清掉 char_hp 记录 = 全队满血，
 	# 否则会被上面那份「打完剩 1 点」的记录盖回去。
 	if sim.winner() == BattleSimulatorScript.WINNER_ENEMY:
-		_handle_defeat(session_node)
+		_handle_defeat(session_node, not str(encounter.spar_npc).is_empty())
 	# 打完就自动存档（设计 02：副本内自动存档，退出重进不掉本层进度）
 	var save_result: Dictionary = save_service().save("战斗结算", true)
 	# **自动存档失败要在战报里说一句**：不然玩家以为这一场白打的进度都存住了，其实只在本局里。
@@ -1039,12 +1074,17 @@ func _write_back_hp() -> void:
 ## 只有真的败北才走这里：**平局留在原地**（设计原文），撤退也不回城。
 ## 回到哪张图交给会话：`pending_local_scene` + `pending_return_scene` 是既有的回程通道，
 ## 小地图控制器与大地图都读它们，所以这里不需要另开一条传送实现。
-func _handle_defeat(session_node) -> void:
+##
+## `stay_put=true` 是**切磋**那一条（Q88 之后策划定的口径）：气血回满与清战斗外增益照旧，
+## 但**不设回程**——陪练把人送回城很怪。
+func _handle_defeat(session_node, stay_put: bool = false) -> void:
 	if state != null:
 		state.heal_all()
 	if session_node == null:
 		return
 	session_node.clear_field_buffs()
+	if stay_put:
+		return
 	var shelter := str(session_node.last_shelter_scene)
 	if not shelter.is_empty():
 		session_node.pending_local_scene = shelter
@@ -1697,6 +1737,23 @@ func _run_battle_selftest() -> void:
 	ok = ok and allies.size() > 0 and enemies.size() > 0
 	lines.append("开战：我方 %d 人 vs %s %d 人" % [allies.size(), encounter.team_name, enemies.size()])
 
+	# 切磋镜像（Q88 拍板 ①）：遭遇里带 `mirror_char` 时，敌人**不从表里取**，而是照那个人现造
+	# （与他上场时同一个 PartyBuilder：等级／加点／装备／招式全同）——这里验「一条命、敌方、
+	# 满血、不给经验与钱」。**「只有同伴才走镜像」那条由 `spar_opponent()` 判**，在 NPC 面板自检里钉。
+	var mirror_id := str(state.char_ids[0])
+	var saved_mirror := str(encounter.mirror_char)
+	encounter.mirror_char = mirror_id
+	var mirrored: Array = _build_enemies(encounter)
+	encounter.mirror_char = saved_mirror
+	var mirror_ok: bool = mirrored.size() == 1 and mirrored[0] != null \
+		and int(mirrored[0].side) == int(BattleActorScript.SIDE_ENEMY) \
+		and str(mirrored[0].display_name) == state.char_name(db, mirror_id) \
+		and int(mirrored[0].hp) == int(mirrored[0].max_hp()) \
+		and int(mirrored[0].reward_exp) == 0 and int(mirrored[0].reward_money) == 0 \
+		and not mirrored[0].skills.is_empty()
+	ok = ok and mirror_ok
+	lines.append("切磋镜像（照自己现造·敌方·满血·无收益）=%s" % mirror_ok)
+
 	# 版式预算：整页要塞得进设计分辨率（曾经最小高度 711 > 648，标题被裁掉半行）
 	ok = ok and LayoutBudgetScript.fits(self)
 	lines.append(LayoutBudgetScript.ascii_line(self))
@@ -1868,6 +1925,37 @@ func _run_battle_selftest() -> void:
 	])
 	for temp_button: Node in temp_buttons:
 		temp_button.queue_free()
+	await tree.process_frame
+	# 「带状态」那一档（2026-10-04 补）：chip 有图时按**原生 32×32** 摆（不缩放——像素图非整数倍会糊），
+	# 所以带状态的那一排比纯文字版高约 12px。而自检此前**从没量到带状态的那一版**：
+	# `_check_status_ui` 那些是 headless 用例、不量 LAYOUT（美术交异常图标时指出来的）。
+	# 照「满招式」那档的办法：临时塞几枚**带图**的 chip，量一次外壳，再收掉。
+	# 图取真实表行（`status_effect` 的 icon 列），所以美术交图/改名的效果当场就能看见。
+	var temp_chips: Array = []
+	for status_id: String in ["poison", "burn", "bleed", "internal"]:
+		var status_row: Resource = db.get_row("status_effect", status_id)
+		if status_row == null:
+			continue
+		temp_chips.append(_make_effect_chip({
+			"kind": "status", "entry_id": status_id, "buff_id": status_id,
+			"icon": str(status_row.icon), "name": str(status_row.name_cn),
+			"is_debuff": true, "remaining": 3, "stacks": 2, "permanent": false,
+			"side_mark": "我方",
+		}))
+	for chip: Node in temp_chips:
+		_buff_panel.add_child(chip)
+	await tree.process_frame
+	var with_status_ok: bool = LayoutBudgetScript.fits(self)
+	ok = ok and with_status_ok
+	var icon_chips := 0
+	for chip: Button in temp_chips:
+		if chip.icon != null:
+			icon_chips += 1
+	lines.append("%s（带状态：%d 枚 chip，其中 %d 枚真的带图）" % [
+		LayoutBudgetScript.ascii_line(self, "带状态"), temp_chips.size(), icon_chips,
+	])
+	for chip: Node in temp_chips:
+		chip.queue_free()
 	await tree.process_frame
 	_result_label.text = saved_result
 	ok = ok and LayoutBudgetScript.content_fits(self)

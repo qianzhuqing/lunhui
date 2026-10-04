@@ -1,4 +1,4 @@
-﻿[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://src/ui/clue_screen.gd" id="1_clue_screen"]
 
@@ -42,21 +42,16 @@ theme_override_constants/separation = 6
 
 [node name="Title" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "线索本"
 
 [node name="Subtitle" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
 
-[node name="Body" type="ScrollContainer" parent="Panel/Margin/Column"]
+[node name="Tabs" type="TabContainer" parent="Panel/Margin/Column"]
 custom_minimum_size = Vector2(0, 380)
 layout_mode = 2
 size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="List" type="VBoxContainer" parent="Panel/Margin/Column/Body"]
-layout_mode = 2
-size_flags_horizontal = 3
 
 [node name="Status" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2

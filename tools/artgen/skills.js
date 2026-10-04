@@ -54,7 +54,7 @@ function breathMark(c, color) {
 }
 
 function finish(c, accent) {
-  c.outline(hex(INK));
+  c.edge();
   const src = c.clone();
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {

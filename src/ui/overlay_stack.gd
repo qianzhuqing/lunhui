@@ -12,10 +12,47 @@
 class_name OverlayStack
 extends RefCounted
 
+const UiKitScript := preload("res://src/ui/ui_kit.gd")
+
 ## 栈深上限（设计 18.1 定死 3）
 const LIMIT := 3
 
+## 浮层画布层（与 `shop_screen.tscn` 的 `layer = 5` 对齐）：压在世界与 HUD 之上。
+const OVERLAY_LAYER := 5
+
 var _ids: Array[String] = []
+
+
+## 把一张浮层场景挂到**画布层**上，返回它自己。
+##
+## **为什么必须有这一步**（2026-10-04 实测的“面板打不开”）：`npc_panel.tscn` 与
+## `character_screen.tscn` 的根是 `Control`，直接 `add_child` 到 `Node2D` 场景根下会
+## **跟着相机平移**——面板明明开了，玩家在屏幕上看不到（`local_map_controller` 里
+## `_hud_layer()` 那句注释就是同一个坑的记录：HUD 当年也是这么跑出屏幕的）。
+## `shop／cultivate／clue／dungeon／waypoint` 几张场景的根本来就是 `CanvasLayer`，
+## 所以它们一直没露；这里统一收口：是 `CanvasLayer` 就照旧挂，是 `Control`（或别的
+## CanvasItem）就包一层再挂——**新加浮层不用再记这条**。
+##
+## 包出来的那层跟着面板一起回收（面板离开场景树时收掉空画布），
+## 所以调用方的 `panel.queue_free()` 不用改。
+static func mount(host: Node, panel: Node, layer: int = OVERLAY_LAYER) -> Node:
+	if panel is CanvasLayer:
+		host.add_child(panel)
+		UiKitScript.paint_backdrop(panel)
+		return panel
+	var canvas := CanvasLayer.new()
+	canvas.name = "%sLayer" % panel.name
+	canvas.layer = layer
+	host.add_child(canvas)
+	canvas.add_child(panel)
+	panel.tree_exited.connect(func() -> void:
+		if is_instance_valid(canvas):
+			canvas.queue_free()
+	)
+	# 背板统一刷成宣纸（色值在主题里一处，见 `UiKit.paint_backdrop`）。
+	# 放在 `add_child` 之后：`_ready` 已经跑完，**代码里建背板的面板**这时也建好了。
+	UiKitScript.paint_backdrop(panel)
+	return panel
 
 
 func ids() -> Array[String]:

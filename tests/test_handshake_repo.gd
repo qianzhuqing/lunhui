@@ -22,6 +22,7 @@ func run() -> void:
 	_check_no_stray_control_bytes()
 	_check_no_escape_eaten_tabs()
 	_check_file_size()
+	_check_font_size_tiers()
 
 
 
@@ -513,3 +514,71 @@ func _count_lines_in_text(text: String) -> int:
 	if lines.size() > 0 and lines[lines.size() - 1].is_empty():
 		lines.remove_at(lines.size() - 1)
 	return lines.size()
+
+
+## 67. UI 字号**只有两档**：正文 12 ／ 标题 24（设计 15 §4.4，2026-10-04 Q82 拍板）。
+##
+## 由来：16（＝12×1.33）与 36（＝12×3）这种"非两档"的字号散在场景与代码里，像素字发虚，
+## 而且**没有任何东西盯着**——本轮 Q82 收口时一次就清出 11 处 16 ＋ 1 处 36 ＋ 1 处 14。
+## 口径：`scenes/*.tscn` 的 `theme_override_font_sizes/font_size`、`src/**/*.gd` 的
+## `add_theme_font_size_override("font_size", N)` 与 `font_size: int = N` 形参默认值、
+## 以及 theme 的 `default_font_size`／`…/font_sizes/font_size`，都只许 12／24；
+## `0` 放行（`_make_label` 那套用它表示"这一处不覆写"）。
+## **只认字面量**：写成变量的字号这条盯不住（真出现时再补）。
+const FONT_SIZE_TIERS := [12, 24]
+const FONT_SIZE_SCAN_DIRS := ["scenes", "src"]
+const FONT_SIZE_THEME := "res://assets/ui/theme_lunhui.tres"
+
+
+func _check_font_size_tiers() -> void:
+	var hits := PackedStringArray()
+	var scanned := 0
+	for path: String in _collect_files(FONT_SIZE_SCAN_DIRS):
+		if not path.ends_with(".tscn") and not path.ends_with(".gd"):
+			continue
+		var line_no := 0
+		for raw: String in FileAccess.get_file_as_string("res://" + path).split("\n"):
+			line_no += 1
+			var size := _font_size_literal(raw)
+			if size < 0:
+				continue
+			scanned += 1
+			if size != 0 and not FONT_SIZE_TIERS.has(size):
+				hits.append("%s:%d（%d）" % [path, line_no, size])
+	var theme_text := FileAccess.get_file_as_string(FONT_SIZE_THEME)
+	check_false(theme_text.is_empty(), "读得到主题资源")
+	for raw: String in theme_text.split("\n"):
+		var size := _font_size_literal(raw)
+		if size < 0:
+			continue
+		scanned += 1
+		if not FONT_SIZE_TIERS.has(size):
+			hits.append("%s（%d）" % [FONT_SIZE_THEME.get_file(), size])
+	check_gt(float(scanned), 10.0, "扫到足够多的字号声明（%d 处）" % scanned)
+	check_eq(
+		hits.size(), 0,
+		"UI 字号只有两档（正文 12／标题 24，设计 15 §4.4；浮字也吃两档）：这些地方不是——%s"
+			% "、".join(hits)
+	)
+	# 解析本身的内存负向用例：格式变了却"什么都扫不到"，这条门限会静默变成摆设
+	check_eq(_font_size_literal("theme_override_font_sizes/font_size = 16"), 16, "认得出场景里的写法")
+	check_eq(_font_size_literal("\tlabel.add_theme_font_size_override(\"font_size\", 14)"), 14, "认得出代码里的写法")
+	check_eq(
+		_font_size_literal("func _make_label(node_name: String, font_size: int = 0) -> Label:"), 0,
+		"认得出形参默认值（0 = 不覆写，放行）",
+	)
+	check_eq(_font_size_literal("default_font_size = 12"), 12, "认得出主题里的 default_font_size")
+	check_eq(_font_size_literal("font_size = 20  # 行尾注释"), 20, "行尾注释不影响取值")
+	check_eq(_font_size_literal("var x := 1"), -1, "没有字号就给 -1（别拿 0 冒充）")
+
+
+## 从一行里取字号字面量（取不到 -1）。三种写法：`…font_size = N`／`…"font_size", N`／
+## `font_size: int = N`。行尾注释先切掉（注释里举例的写法不该被当成真声明）。
+func _font_size_literal(line: String) -> int:
+	var code := line.split("#")[0]
+	var regex := RegEx.new()
+	regex.compile("font_size\\s*(?:=\\s*|\"\\s*,\\s*|:\\s*int\\s*=\\s*)(\\d+)")
+	var hit := regex.search(code)
+	if hit == null:
+		return -1
+	return int(hit.get_string(1))

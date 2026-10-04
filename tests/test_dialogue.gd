@@ -15,6 +15,8 @@ const GuideServiceScript := preload("res://src/core/guide_service.gd")
 const StoryServiceScript := preload("res://src/core/story_service.gd")
 ## 名字不能叫 `TableDbScript`：基类 `TestCase` 已经有一个同名的（GDScript 会当场拒绝解析）
 const LocalDbScript := preload("res://src/core/table_db.gd")
+const TableValidatorScript := preload("res://src/core/table_validator.gd")
+const DialogueOptionRowScript := preload("res://src/data/tables/dialogue_option_row.gd")
 
 const CHEN := "npc_huangcun"
 const CHEN_NODE := "dl_huangcun_chen"
@@ -36,6 +38,8 @@ func run() -> void:
 	_check_release_rows(db)
 	_check_conditions(db)
 	_check_effects(db)
+	_check_set_flag_multi(db)
+	_check_mu2_lin_chain(db)
 	_check_region_npcs(db)
 	_check_companion_person(db)
 	_check_companion_dialogue(db)
@@ -186,6 +190,101 @@ func _check_condition_ops(db) -> void:
 	)
 
 
+## `set_flag` 一列可以写**多个**旗标（分号隔开，2026-10-04 Q83）：幕二「拔剑」那条选项要一次
+## 置 `flag_lin_silent` 与 `flag_luoyanpo_met`，而这一列原本只装得下一个（加列会让列结构、
+## 行类、两端校验、数据字典一起动）。
+##
+## 盯五件事：① 多值全部落地；② 单值（旧数据）行为一字不变；③ 空白段不算错；
+## ④ 多值里带 `heart_*` 时，序幕那句照旧补 `flag_open_*`；⑤ 构建期校验点名认不出的那一段。
+## 全部在**内存副本**上做（绝不碰策划的 CSV）。
+func _check_set_flag_multi(db) -> void:
+	var custom = LocalDbScript.new()
+	custom.load_all()
+	var table: Resource = custom.tables["dialogue_option"].duplicate(true)
+	var option: Resource = null
+	for row: Resource in table.rows:
+		if str(row.option_id) == "opt_open_yi":
+			option = row
+	# **复制出来的表要放回去**：不放回去，`choose()` 读的还是原表——改的是一份没人看的副本，
+	# 断言会以"真表本来就对"的方式变绿（这里第一次就踩了）。
+	custom.tables["dialogue_option"] = table
+	check_not_null(option, "副本里有序幕那条选项（opt_open_yi）")
+	if option == null:
+		return
+	# ② 单值照旧：普通旗标只是置一个，**不**补 `flag_open_*`（只有心性那条规则才补）
+	option.set_flag = "flag_q83_single"
+	var state = solo_state(custom)
+	var single: Dictionary = DialogueServiceScript.choose(custom, state, "opt_open_yi")
+	check_true(bool(single.get("ok", false)), "单值照样选得动：%s" % str(single.get("error", "")))
+	check_true(state.has_flag("flag_q83_single"), "单值置上了")
+	check_false(state.has_flag("flag_open_q83_single"), "普通旗标不补 flag_open_*")
+	# ① / ④ 多值：两枚都落地，且那枚 `heart_*` 照旧补出 `flag_open_yi`（序幕那条规则）
+	option.set_flag = "flag_q83_a;heart_yi"
+	var state2 = solo_state(custom)
+	var multi: Dictionary = DialogueServiceScript.choose(custom, state2, "opt_open_yi")
+	check_true(bool(multi.get("ok", false)), "多值时选得动：%s" % str(multi.get("error", "")))
+	check_true(state2.has_flag("flag_q83_a"), "多值的第一枚落地")
+	check_true(state2.has_flag("heart_yi"), "多值的第二枚落地")
+	check_true(state2.has_flag("flag_open_yi"), "多值里带 heart_* → 序幕照旧补 flag_open_yi")
+	# ③ 空白段跳过：`flag_a;;flag_b` 拆出两枚、不报错
+	check_eq(
+		DialogueOptionRowScript.parse_set_flags(" flag_a ;; flag_b ").size(), 2,
+		"空白段跳过（分号多值里最常见的打字错）",
+	)
+	check_eq(DialogueOptionRowScript.parse_set_flags("").size(), 0, "空串拆出 0 枚")
+	# ⑤ 校验器认得出多值、并点名**真错的那一段**
+	option.set_flag = "flag_q83_a;bogus_flag"
+	var errors: PackedStringArray = TableValidatorScript.validate(custom)
+	var hit := false
+	for message: String in errors:
+		if message.contains("bogus_flag"):
+			hit = true
+	check_true(hit, "构建期校验点名 set_flag 里认不出的那一段（共 %d 条错误）" % errors.size())
+
+
+## 幕二·落雁坡林铁山那条链（Q83，2026-10-04 入表）：四条路都得出得来，而且**交心那句不能被
+## 任何选项指到**——`entry_node` 会把"被选项指到的节点"从入口候选里排掉（幕四踩过同一个坑），
+## 一旦有人给 `dl_lin_heart` 挂上 `next_node_id`，威／买／拔剑三条路之后再找他**永远取不到**它。
+## 小策划落表时**故意把 `opt_lin_chetai.next_node_id` 留空**（四条路统一「应答 → 再点一次 →
+## 交心／短句」），这条用例把那个决定钉住——复查结论：**成立，与幕四同一套做法**。
+func _check_mu2_lin_chain(db) -> void:
+	var node: Resource = db.get_row("dialogue_node", "dl_luoyanpo_lin")
+	check_not_null(node, "幕二相遇那一节点在表里")
+	if node == null:
+		return
+	check_eq(str(node.speaker_id), "ch_gang", "说话人是林铁山")
+	# 按**表**数那四条路（不用 `options_for`：那会带上条件，夹具状态一变条数就飘）
+	var options: Array = []
+	for row: Resource in db.rows("dialogue_option"):
+		if str(row.node_id) == "dl_luoyanpo_lin":
+			options.append(row)
+	check_eq(options.size(), 4, "四条路（威／买／拔剑／撤台）")
+	var met := 0
+	var silent := false
+	for option: Resource in options:
+		var flags: PackedStringArray = DialogueOptionRowScript.parse_set_flags(str(option.set_flag))
+		if flags.has("flag_luoyanpo_met"):
+			met += 1
+		if flags.has("flag_lin_silent"):
+			silent = true
+	check_eq(met, 4, "四条路**都**点亮 flag_luoyanpo_met（招募链 Q51 等的就是它）")
+	check_true(silent, "拔剑那条是分号多值 `flag_lin_silent;flag_luoyanpo_met`（Q83 的新语法）")
+	# 交心／短句两句都不许被任何选项指到
+	var pointed := PackedStringArray()
+	for row: Resource in db.rows("dialogue_option"):
+		if not str(row.next_node_id).is_empty():
+			pointed.append(str(row.next_node_id))
+	check_false(pointed.has("dl_lin_heart"), "`dl_lin_heart` 没被任何选项指到（指到就永远取不到了）")
+	check_false(pointed.has("dl_lin_short"), "`dl_lin_short` 也没被指到（它靠条件自己出现）")
+	var short_row: Resource = db.get_row("dialogue_node", "dl_lin_short")
+	check_not_null(short_row, "拔剑的收尾短句在表里")
+	if short_row != null:
+		check_true(
+			str(short_row.condition).contains("flag_lin_silent"),
+			"收尾短句的条件认 flag_lin_silent（%s）" % str(short_row.condition),
+		)
+
+
 ## 终局难题（20 号 §七）：一册账，三条路——三条路各置一个旗标，
 ## 而 story_node 那三行 `kind=choice` 的永久增益**照着旗标发**（设计 20 §八）。
 ##
@@ -291,12 +390,20 @@ func _check_companion_person(db) -> void:
 	# NPC 那一侧不受影响：真表行还是原样返回
 	var npc: Resource = NpcServiceScript.person_of(db, state, "npc_wang_tie")
 	check_eq(str(npc.npc_id), "npc_wang_tie", "NPC 走的是真表行（不是合成）")
-	# 好感行（Q68 的推荐值：赠送／切磋 5、不可偷）
+	# 好感行（赠送 5、不可偷；**切磋**见下面的改判）
 	var favor_row: Resource = NpcServiceScript.favor_row_of(db, char_id)
 	check_not_null(favor_row, "同伴有好感行（设计写的「＋4 四位同伴」）")
 	if favor_row != null:
 		check_eq(int(favor_row.gift_favor), 5, "赠送 +5")
-		check_eq(int(favor_row.spar_favor), 5, "切磋 +5")
+		# **2026-10-04 改判（Q88）**：同伴**可以切磋**了——走「按同伴当前配装镜像成一支队伍」
+		# （`battle_screen._build_mirror_enemy`），不给四位同伴造 `enemy_base` 行、也不动
+		# `character_base`。旧口径「同伴不切磋」作废：当初否决它是因为要四人各造一行
+		# `enemy_base` ＋一支队伍，镜像那条路把这个代价消掉了。数值落在 20 §十 的 4～8，
+		# 口径＝越能打给得越多。
+		check_eq(int(favor_row.spar_favor), 6, "切磋 +6（燕小七 `ch_ci`）")
+		check_eq(int(db.get_row("npc_favor", "ch_gang").spar_favor), 8, "切磋 +8（林铁山，最能打）")
+		check_eq(int(db.get_row("npc_favor", "ch_qi").spar_favor), 7, "切磋 +7（白清和）")
+		check_eq(int(db.get_row("npc_favor", "ch_du").spar_favor), 5, "切磋 +5（苏九娘）")
 		check_eq(int(favor_row.steal_difficulty), 0, "同伴不可偷（设计明写）")
 
 

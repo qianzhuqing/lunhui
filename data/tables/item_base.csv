@@ -18,3 +18,7 @@ item_scroll_drunk,醉里乾坤残卷,skillbook,legend,,99,0,1,item_scroll_drunk,
 item_treasure_map,藏宝图,key,rare,,1,0,1,item_treasure_map,画的是落雁坡西边一处石隙；笔迹很旧
 item_scroll_yipian,遗篇残卷,skillbook,legend,,99,0,1,item_scroll_yipian,前朝遗篇·归元；第一章最高品质的内功
 item_bd_ledger,账册,key,rare,,1,0,1,item_bd_ledger,白鹭渡沉银案的账册：前面记着贪墨的数目，最后几页夹着一份活人名册
+item_book_chensha,沉沙掌谱,skillbook,rare,,1,0,0,item_book_chensha,沉沙一脉的拳谱与心法合订，纸页被汗浸得发硬
+item_book_tieqiang,铁枪诀谱,skillbook,fine,,1,0,0,item_book_tieqiang,驿站枪把式传下来的起手谱，边角卷了
+item_book_liehuo,烈火掌谱,skillbook,fine,,1,0,0,item_book_liehuo,杂货铺货底压着的旧册，封皮熏得发黑
+item_book_taixu,太虚功谱,skillbook,rare,,1,0,0,item_book_taixu,酒楼账房压箱底的道家内功抄本

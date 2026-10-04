@@ -62,6 +62,10 @@ var practice: bool = false
 ## 记在这里而不是会话里：结算发生在战斗场景，那时会话里的临时标记早没了（切过场景）。
 ## 空串 = 普通遭遇。组这场遭遇的地方是 `local_map_controller._start_spar()`。
 var spar_npc: String = ""
+## 切磋的**对手是这个人自己**（Q88 拍板 ①，2026-10-04）：同伴没有 `enemy_team` 行，
+## 战斗层按这位同伴的 `character_base` ＋当前等级与配装现造一个镜像（不新增表行、不加列）。
+## 空串 = 不是镜像切磋（普通队伍走 `team_id`）。组这场遭遇的地方同上。
+var mirror_char: String = ""
 ## 背袭时敌方架势初始值降低比例（0 表示不降；数值取 combat_const.backstab_poise_reduce）
 var enemy_poise_reduce: float = 0.0
 

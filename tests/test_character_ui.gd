@@ -139,9 +139,10 @@ func _check_no_points_ui(db) -> void:
 	if plus != null:
 		check_true(plus.disabled, "没点数了，加号按钮置灰（不是点了才报错）")
 	var header: Label = screen.find_child("AttrHeader", true, false)
-	check_not_null(header, "五维标题还在")
+	check_not_null(header, "七维标题还在")
 	if header != null:
-		check_true(header.text.contains("未分配点数：0"), "标题写明剩 0：%s" % header.text)
+		# 文案按 UI 清单 §二-4：「顶部写「可加点 N 点」」（14 §四 的「剩余配额」）
+		check_true(header.text.contains("可加点 0 点"), "标题写明剩 0：%s" % header.text)
 	var refused: Dictionary = screen.press_plus("str")
 	check_false(bool(refused["ok"]), "就算绕过置灰硬调也拒绝")
 	scene_tree.root.remove_child(screen)
@@ -162,7 +163,7 @@ func _check_big_bag(db) -> void:
 			continue
 		if bool(inventory.add_item(db, str(row.item_id), maxi(1, int(row.stack_max)))["ok"]):
 			filled += 1
-	check_eq(filled, 18, "19 行道具里除「铜钱」外都放进背包（各堆满；0.26.0 加藏宝图与遗篇残卷，0.31.0 加账册）")
+	check_eq(filled, 22, "23 行道具里除「铜钱」外都放进背包（各堆满；0.26.0 加藏宝图与遗篇残卷，0.31.0 加账册，2026-10-04 加 4 本秘籍）")
 	var instances: Array = []
 	for base_id: String in ["eq_sword_01", "eq_fist_01", "eq_ring_01", "eq_head_01", "eq_armor_01"]:
 		for _n in range(6):
@@ -193,7 +194,7 @@ func _check_big_bag(db) -> void:
 	var item_rows := 0
 	for node: Node in screen.find_children("ItemRow*", "HBoxContainer", true, false):
 		item_rows += 1
-	check_eq(item_rows, 18, "背包页列出 18 种道具")
+	check_eq(item_rows, 22, "背包页列出 22 种道具")
 	var equip_rows := 0
 	for node: Node in screen.find_children("EquipRow*", "HBoxContainer", true, false):
 		equip_rows += 1
@@ -494,11 +495,13 @@ func _check_party_stress(db) -> void:
 	if not laid_out:
 		fail("4 人满员 + 长名字下版式超预算：" + LayoutBudgetScript.ascii_line(screen))
 	check_true(laid_out, "4 人满员 + 长名字仍塞进设计分辨率")
-	# 成员行是 HBox（只会横向长），而滚动区的横向滚动是关着的：行宽超过设计宽度，后面的成员就被裁掉。
-	# 这里量成员行自己的最小宽度——**不用等帧就准**（探针验过：4 个 300px 按钮的行宽是 1212）。
+	# 成员行是 Flow 容器（2026-10-04 第 4 屏排版时从 HBox 换过来的）：装不下就**换行**，
+	# 而滚动区的横向滚动是关着的——HBox 时代行宽超过设计宽度，后面的成员就被裁掉。
+	# 这里量成员行自己的最小宽度——**不用等帧就准**。
 	# 外层那条 `fits()` 量不到它：`get_combined_minimum_size()` 到 ScrollContainer 就断了。
 	var members_node: Control = screen.find_child("Members", true, false)
 	check_not_null(members_node, "有成员行（HBox）")
+	check_true(members_node is HFlowContainer, "成员行是 Flow 容器：塞不下会换行，不会被右边裁掉")
 	var members_width: float = members_node.get_combined_minimum_size().x if members_node != null else -1.0
 	check_lt(members_width, float(LayoutBudgetScript.DESIGN_WIDTH), "4 人 + 长名字的成员行不超设计宽度（%.0f px）" % members_width)
 	screen.select_tab(2)

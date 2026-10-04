@@ -115,21 +115,21 @@ const DOC_DICTIONARY_PROSE_COLUMNS := ["desc", "note", "name_cn", "icon", "displ
 ## 提示"加了检查就把 floor 贴上去"——不然那张表会慢慢退化成摆设（2026-10-04 实测漂了 1～11 条）。
 const VERIFICATION_FLOOR_SLACK := 2
 const VERIFICATION_CHECK_FLOORS := {
-	"src/ui/battle_screen.gd": {"pattern": "ok = ok and", "floor": 22, "why": "场景自检的聚合断言"},
+	"src/ui/battle_screen.gd": {"pattern": "ok = ok and", "floor": 23, "why": "场景自检的聚合断言（2026-10-04 Q88 加了「切磋镜像」一条）"},
 	"src/ui/shop_screen.gd": {"pattern": "ok = ok and", "floor": 12, "why": "场景自检的聚合断言"},
 	"src/ui/waypoint_screen.gd": {"pattern": "ok = ok and", "floor": 11, "why": "场景自检的聚合断言"},
 	"src/ui/dungeon_screen.gd": {"pattern": "ok = ok and", "floor": 11, "why": "场景自检的聚合断言"},
-	"src/ui/character_screen.gd": {"pattern": "ok = ok and", "floor": 13, "why": "场景自检的聚合断言"},
+	"src/ui/character_screen.gd": {"pattern": "ok = ok and", "floor": 29, "why": "场景自检的聚合断言（2026-10-04 Q74①／Q67④ 加了 6 条；同日 UI 清单 §二-4「角色详情排版」又加了 8 条：三栏、立绘在左栏、装备摘要、可加点表头、资质行、战斗属性逐项、底部提示、队伍页签高亮＋空位；随后补 2 条「属性／派生数值图标有图才摆」）"},
 	"src/ui/cultivate_screen.gd": {"pattern": "ok = ok and", "floor": 11, "why": "场景自检的聚合断言"},
-	"src/ui/clue_screen.gd": {"pattern": "ok = ok and", "floor": 8, "why": "场景自检的聚合断言"},
+	"src/ui/clue_screen.gd": {"pattern": "ok = ok and", "floor": 16, "why": "场景自检的聚合断言（2026-10-04 UI 清单 §二-10「纪事五类」加了 8 条：五类页签、切页签高亮、主线状态词、支线待接→待交→已了、传闻指向与已验、角色页主角不摆）"},
 	"src/ui/main_menu.gd": {"pattern": "ok = ok and", "floor": 7, "why": "场景自检的聚合断言"},
 	"src/world/overworld_controller.gd": {"pattern": "ok = ok and", "floor": 17, "why": "场景自检的聚合断言（2026-10-04 决策 337 加了「观察点可见标记」一条）"},
 	"src/world/local_map_controller.gd": {"pattern": "ok = ok and", "floor": 14, "why": "场景自检的聚合断言（2026-10-04 决策 337 加了「观察点可见标记」一条）"},
 	"src/bootstrap.gd": {"pattern": "ok = ok and", "floor": 6, "why": "配置表诊断场景自检的聚合断言"},
 	"src/ui/creation_screen.gd": {"pattern": "ok = ok and", "floor": 15, "why": "创建角色场景自检的聚合断言"},
-	"src/ui/npc_panel.gd": {"pattern": "ok = ok and", "floor": 20, "why": "NPC 面板自检的聚合断言"},
+	"src/ui/npc_panel.gd": {"pattern": "ok = ok and", "floor": 24, "why": "NPC 面板自检的聚合断言（2026-10-04 Q88 加了「同伴只摆赠与＋切磋」「判成镜像」两条；同日 UI 清单 §二-7 又加了「好感档位刻度」「不可偷只给说明」两条）"},
 	"tools/check_loop.gd": {"pattern": "ok = ok and", "floor": 15, "why": "跨场景闭环每段一个聚合断言（③ 现在有胜／败两次）"},
-	"tools/mapgen/verify_maps.gd": {"pattern": "_problems.append(", "floor": 39, "why": "每个地图检查点都必须能报错（2026-10-04 决策 332 给「按 id 绑的 NPC 位点」加了 2 条：id 不存在／人不在本图）"},
+	"tools/mapgen/verify_maps.gd": {"pattern": "_problems.append(", "floor": 43, "why": "每个地图检查点都必须能报错（2026-10-04 决策 332 给「按 id 绑的 NPC 位点」加了 2 条；同日晚 `_check_building_markers` 又给「建筑位点」加了 4 条：清单读不出／走不到任何格子／位点名不是 building_def 的 id／最近可站格超出交互半径——玩家报的「店铺经常打不开」里那一半）"},
 }
 ## 58. 设计文档里「某张表 N 行／N 件／N 个」的声称，抽成一张小表逐条对账。
 ##
@@ -380,8 +380,6 @@ const PS1_ENUM_EXEMPT := {
 ## **已知缺口**写在 KNOWN_FLAG_GAPS：补上就要把那行删掉，否则门限会红
 ## （「缺口清单过期」和「新断链」一样要有人管，与 PENDING_COST_CHECKS 同一套做法）。
 const KNOWN_FLAG_GAPS := [
-	## 落雁坡旧镖车位点还没摆（地编的活，见 20 号 §十二）
-	"flag_luoyanpo_met",
 	## 伪装混入（号衣＋腰牌）整套还没做——设计侧的 Q7 还开着
 	"flag_bd_uniform",
 ]

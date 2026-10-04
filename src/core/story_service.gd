@@ -22,6 +22,32 @@ static func done_flag(node_id: String) -> String:
 	return "story_done_%s" % node_id
 
 
+## 心性称号（设计 20 §四「显示落点」段 ＋ `docs/dev/待策划确认.md` Q74① 拍板）：
+## **没到章节末，整行不显示**。
+##
+## 名字只在 `ui_text` 里（`title_yi`／`title_mou`／`title_li`）——代码不抄第二份；
+## 条件与**幕结旁白同一条件**（序幕定下的那一档 `flag_open_*` ＋ 账册三选一任一），
+## 所以两者一定同一时刻开始显示。这一串与 `dialogue_node.dl_end_*` 的 `condition`
+## 必须一字一致，用例 `tests/test_dialogue.gd::_check_title_matches_ending` 两边都读，漂了就红。
+const TITLE_CONDITION_FORMAT := "flag_open_%s&flag_ledger_public|flag_ledger_buried|flag_ledger_scattered"
+## 三个后缀（义／谋／利）与 `flag_open_*`／`heart_*`／`dl_end_*` 同一个后缀体系。
+const TITLE_SUFFIXES := ["yi", "mou", "li"]
+
+
+static func title_of(db, state) -> String:
+	if db == null or state == null:
+		return ""
+	for suffix: String in TITLE_SUFFIXES:
+		if not GuideServiceScript.condition_met(state, TITLE_CONDITION_FORMAT % suffix):
+			continue
+		var row: Resource = db.get_row("ui_text", "title_%s" % suffix)
+		if row == null:
+			push_error("[StoryService] ui_text 缺 title_%s——心性称号没有出处" % suffix)
+			return ""
+		return str(row.text_cn)
+	return ""
+
+
 ## 抉择的**永久增益**（设计 20 §八，0.29.1）：`kind=choice` 的节点只要**条件满足**就一直在生效
 ## ——条件就是那枚抉择旗标，所以"选完立刻生效"，不必再跑回触发点去领。
 ##

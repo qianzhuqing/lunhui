@@ -43,9 +43,10 @@ func run() -> void:
 ## （0.28.0 加了第五家：**行商** `bld_caravan`——它不是地图上的建筑，
 ##   是大地图随机事件 `we_caravan` 开出来的货架，所以这里也要能查到它的行）
 func _check_stock(db, shop) -> void:
-	# 杂货铺 6 行 = 5 行材料／白板饰品 ＋ 0.23.0 加进来的毒酒（隐藏线「毒杀毒手」的钥匙）
+	# 杂货铺 7 行 = 5 行材料／白板饰品 ＋ 0.23.0 加进来的毒酒（隐藏线「毒杀毒手」的钥匙）
+	# ＋ 2026-10-04 的秘籍（Q3：shop 那 5 部武学改走 `item` 来源，四家店各上架一本）
 	var counts := {
-		GROCERY: 6, "bld_tavern": 2, CLINIC: 2, SMITH: 8, "bld_caravan": 4,
+		GROCERY: 7, "bld_tavern": 3, CLINIC: 2, SMITH: 10, "bld_caravan": 4,
 	}
 	for building_id: String in counts:
 		var rows: Array = shop.stock_rows(building_id)

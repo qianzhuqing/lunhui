@@ -88,6 +88,8 @@ func run() -> void:
 	_check_save_timing(map, state, session_node)
 	_check_exit(map, session_node, returns)
 	_check_town_shop(db, state, session_node)
+	_check_overlays_on_canvas_layer(db, session_node)
+	_check_spar_button(db, session_node)
 	_check_guide_after_shop_close(db, session_node)
 	_check_town_facilities(db, state, session_node)
 	_check_every_facility_is_interactable(db, session_node)
@@ -104,6 +106,95 @@ func run() -> void:
 	_check_shixi_layers(db, state, session_node)
 	scene_tree.root.remove_child(map)
 	map.free()
+	session_node.pending_local_scene = ""
+
+
+## 浮层必须挂在**画布层**上（2026-10-04 实测的「面板打不开」根因）。
+##
+## `npc_panel.tscn`／`character_screen.tscn` 的根是 `Control`，直接 `add_child` 到 `Node2D`
+## 场景根下会**跟着相机平移**——面板明明开了，玩家在屏幕上看不到（走远了就整块出了屏幕），
+## 而自检是"直接调 API、不看屏幕"，所以照样全绿。修法是 `OverlayStack.mount()` 统一收口。
+## 这条不看坐标、只**抓根**：面板的父节点必须是 `CanvasLayer`。
+func _check_overlays_on_canvas_layer(db, session_node) -> void:
+	session_node.pending_local_scene = "scene_qingfengyi"
+	var town = load(LOCAL_RUN).instantiate()
+	town.state_override = solo_state(db)
+	scene_tree.root.add_child(town)
+	town.setup()
+	var npc_opened: Dictionary = town.open_npc("npc_qian_dafu")
+	check_true(bool(npc_opened.get("ok", false)), "NPC 面板开得起来：%s" % str(npc_opened.get("error", "")))
+	if town.npc_panel != null:
+		check_true(
+			town.npc_panel.get_parent() is CanvasLayer,
+			"NPC 面板挂在画布层下（挂世界节点下会跟着相机跑出屏幕）",
+		)
+	var char_opened: Dictionary = town.open_character_overlay(0)
+	check_true(
+		bool(char_opened.get("ok", false)),
+		"角色／行囊面板开得起来：%s" % str(char_opened.get("error", "")),
+	)
+	var char_panel: Node = town.find_child("CharacterPanel", true, false)
+	check_not_null(char_panel, "角色面板节点在")
+	if char_panel != null:
+		check_true(char_panel.get_parent() is CanvasLayer, "角色／行囊面板也挂在画布层下")
+	town.close_npc()
+	var shop_opened: Dictionary = town.open_shop("bld_grocery")
+	check_true(bool(shop_opened.get("ok", false)), "商店面板开得起来")
+	check_true(
+		town.shop_panel is CanvasLayer,
+		"商店面板本来就是 CanvasLayer 根（这条防它哪天被改成 Control）",
+	)
+	scene_tree.root.remove_child(town)
+	town.free()
+	session_node.pending_local_scene = ""
+
+
+## 「切磋」按钮的接线（2026-10-04 玩家报「NPC 面板缺少切磋」）。
+##
+## 这个按钮是**两个数据凑齐**才出现的：`npc_favor.spar_favor`（赢了加多少好感）＋
+## `npc_def.spar_team_id`（打哪支队伍）。而 `spar_team_id` 那列**九个人全是空的** →
+## `_add_spar_section()` 直接 return、按钮永远不渲染（面板自检也从不走切磋，两边都绿）。
+## 这条用例把**机制**钉住：给一个人临时配上队伍 → 按钮出现、文案带好感数、按下去把
+## `(npc_id, team_id)` 交给场景控制器。**数据那半边**（谁该配哪支队伍）由
+## `validate_tables` 的「配了 spar_favor 却没配 spar_team_id」告警盯着，不在这里判——否则
+## 设计把队伍补上那天，这条用例会自己变红。
+func _check_spar_button(db, session_node) -> void:
+	var custom = TableDbScript.new()
+	custom.load_all()
+	var table: Resource = custom.tables["npc_def"].duplicate(true)
+	var row: Resource = null
+	for candidate: Resource in table.rows:
+		if str(candidate.npc_id) == "npc_wang_tie":
+			row = candidate
+	check_not_null(row, "副本里有铁匠那一行")
+	if row == null:
+		return
+	# 借一支**已存在**的队伍当切磋对手（真比赛时换哪支由数据决定，这里只验接线）
+	row.spar_team_id = "team_wanderer_disciple"
+	custom.tables["npc_def"] = table
+
+	var panel = load("res://scenes/npc_panel.tscn").instantiate()
+	panel.db_override = custom
+	panel.state_override = solo_state(custom)
+	panel.npc_id = "npc_wang_tie"
+	var calls: Array = []
+	panel.spar_handler = func(who: String, team: String) -> void: calls.append([who, team])
+	scene_tree.root.add_child(panel)
+	panel.setup()
+	panel.mode = "interact"
+	panel.refresh()
+	var button: Node = panel.find_child("SparButton", true, false)
+	check_not_null(button, "配了 spar_team_id 的人，面板上要出现「切磋」按钮")
+	if button != null:
+		check_true(str(button.text).contains("8"), "按钮文案带出 spar_favor（王铁 8）：%s" % str(button.text))
+		var result: Dictionary = panel.spar()
+		check_true(bool(result.get("ok", false)), "切磋开得起来：%s" % str(result.get("error", "")))
+		check_eq(calls.size(), 1, "按下去把这一场交给场景控制器")
+		if calls.size() == 1:
+			check_eq(str(calls[0][1]), "team_wanderer_disciple", "交出去的是表里那支队伍")
+			check_eq(str(calls[0][0]), "npc_wang_tie", "以及是哪个人")
+	scene_tree.root.remove_child(panel)
+	panel.free()
 	session_node.pending_local_scene = ""
 
 

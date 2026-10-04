@@ -27,6 +27,7 @@ func run() -> void:
 	_check_condition_gate(db)
 	_check_join_seeds_character(db)
 	_check_region_rows(db)
+	_check_or_join_condition(db)
 	_check_region_radius()
 	_check_no_double_join(db)
 	_check_join_conditions_are_reachable(db)
@@ -173,7 +174,7 @@ func _check_join_seeds_character(db) -> void:
 	var char_id := str(row.char_id)
 	var scene_id := _scene_for_row(db, row)
 	var state = solo_state(db)
-	state.set_flag(str(row.join_condition))
+	satisfy_condition(state, str(row.join_condition))
 	var before_party := state.party_size()
 	var before_equipment: int = state.inventory.equipment_count()
 	var results: Array = RecruitServiceScript.join_all_for_scene(db, state, scene_id)
@@ -206,12 +207,51 @@ func _check_region_rows(db) -> void:
 	var char_id := str(region_row.char_id)
 	var node_id := str(region_row.join_scene)
 	var state = solo_state(db)
-	state.set_flag(str(region_row.join_condition))
+	satisfy_condition(state, str(region_row.join_condition))
 	check_true(_pending_ids_for_region(db, state, node_id).has(char_id), "%s 在 %s 的地标旁等着加入" % [char_id, node_id])
 	check_false(_pending_ids(db, state, "scene_heifengzhai").has(char_id), "区域型同伴不会因为进副本而加入")
 	var results: Array = RecruitServiceScript.join_all_for_region(db, state, node_id)
 	check_eq(results.size(), 1, "走到地标旁就入队")
 	check_true(state.char_ids.has(char_id), "区域型同伴真的进了队伍")
+
+
+## 条件语言的 `|`（任一满足）在**招募的加入条件**上也要真的生效——Q83 那条 `flag_a|flag_b`
+## 就是这个写法。夹具以前直接 `state.set_flag(join_condition)`：条件里一带 `|`／`&` 就置进去
+## 一个假旗标（名字叫 `flag_a|flag_b`），条件仍然不成立，人永远不入队，而用例看起来
+## "已经把条件点亮了"（2026-10-04 小策划落 Q83 时实测踩到）。现在夹具走
+## `satisfy_condition()`（基类 `test_case.gd`），这条用例把"真能入队"钉住。
+func _check_or_join_condition(db) -> void:
+	var custom = TableDbScript.new()
+	custom.load_all()
+	var table: Resource = custom.tables["recruit_def"].duplicate(true)
+	var row: Resource = null
+	for candidate: Resource in table.rows:
+		if str(candidate.char_id) == "ch_gang":
+			row = candidate
+	custom.tables["recruit_def"] = table   # 副本要放回去，否则查的还是原表（改了个没人看的副本）
+	check_not_null(row, "副本里有林铁山那一行（落雁坡那条区域路径）")
+	if row == null:
+		return
+	row.join_condition = "flag_q83_never|flag_luoyanpo_met"
+	var node_id := str(row.join_scene)
+	var state = solo_state(custom)
+	check_true(
+		node_id == "n_luoyanpo",
+		"这条条件压在区域节点上（%s）——`|` 要在这条路径上验" % node_id,
+	)
+	check_false(
+		_pending_ids_for_region(custom, state, node_id).has("ch_gang"),
+		"两枚旗标都没点亮时不入队",
+	)
+	satisfy_condition(state, str(row.join_condition))
+	check_true(
+		state.has_flag("flag_luoyanpo_met"),
+		"夹具点亮的是**真旗标**（不是把整串 `a|b` 当一个旗标名）",
+	)
+	check_true(
+		_pending_ids_for_region(custom, state, node_id).has("ch_gang"),
+		"`|` 任一满足 → 他在落雁坡地标旁等着加入",
+	)
 
 
 ## 区域招募的判定半径要**钉住数值**：它决定「走到落雁坡算不算遇上林铁山」，
@@ -234,7 +274,7 @@ func _check_no_double_join(db) -> void:
 	var char_id := str(row.char_id)
 	var scene_id := _scene_for_row(db, row)
 	var state = solo_state(db)
-	state.set_flag(str(row.join_condition))
+	satisfy_condition(state, str(row.join_condition))
 	var before_party := state.party_size()
 	RecruitServiceScript.join_all_for_scene(db, state, scene_id)
 	var equipment_after_first: int = state.inventory.equipment_count()

@@ -153,7 +153,9 @@ func _build_ui() -> void:
 	var title := Label.new()
 	title.name = "Title"
 	title.text = "《轮回》"
-	title.add_theme_font_size_override("font_size", 36)
+	# 标题档 24（设计 15 §4.4：A11 原先的「标题 36px」按 Q82 改成 24——1× 体系里 36 会顶到布局，
+	# 也超出一套 12px 字集的可用倍率）。以前这里停在 36，是没跟上那条修订。
+	title.add_theme_font_size_override("font_size", 24)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(title)
 

@@ -13,6 +13,7 @@ const GuideServiceScript := preload("res://src/core/guide_service.gd")
 const NpcServiceScript := preload("res://src/core/npc_service.gd")
 ## 选项给东西时走**与掉落／事件奖励同一条入账口径**（货币进钱、装备建实例、其余堆叠）
 const BattleRewardScript := preload("res://src/core/battle_reward.gd")
+const DialogueOptionRowScript := preload("res://src/data/tables/dialogue_option_row.gd")
 
 ## 序幕·择念那个节点（设计 20 §3.1）：读清风驿的悬赏板时摆出来，问过一次就不再问。
 ## **唯一出处**——「什么时候摆」（`local_map_controller`）与「选项要顺带置 `flag_open_*`」
@@ -119,16 +120,24 @@ static func choose(db, state, option_id: String) -> Dictionary:
 	out["text"] = str(row.text_cn)
 	out["next_node_id"] = str(row.next_node_id)
 
-	var flag := str(row.set_flag)
-	if not flag.is_empty():
-		state.set_flag(flag)
-		out["flag"] = flag
+	var flag_text := str(row.set_flag)
+	if not flag_text.is_empty():
+		# 一列可以写多个旗标（分号隔开，Q83）：幕二「拔剑」那条要同时置
+		# `flag_lin_silent` 与 `flag_luoyanpo_met`。**拆法只有一处**（行类的 `parse_set_flags`），
+		# 与构建期校验、PS1 那份校验同一口径；单值（旧数据）行为一字不变。
+		var flags: PackedStringArray = DialogueOptionRowScript.parse_set_flags(flag_text)
+		for flag: String in flags:
+			state.set_flag(flag)
+		out["flag"] = flag_text
 		# 序幕·择念（设计 20 §3.1，0.32.0 补）：**心性由序幕一次定死**——称号与幕结旁白只看
 		# `flag_open_*`，而后面各幕的选项照旧只置当场反应的 `heart_*`。
 		# 对应关系是同一个后缀（`heart_yi` → `flag_open_yi`），所以既不逐条抄选项 id、
 		# 也不用给 `dialogue_option` 加列（表侧不加列是设计侧这一版的拍板）。
-		if str(row.node_id) == OPENING_NODE and flag.begins_with("heart_"):
-			state.set_flag("flag_open_%s" % flag.substr("heart_".length()))
+		# 多值时按"这一份里带 `heart_*` 的每一个"走。
+		if str(row.node_id) == OPENING_NODE:
+			for flag: String in flags:
+				if flag.begins_with("heart_"):
+					state.set_flag("flag_open_%s" % flag.substr("heart_".length()))
 
 	var delta := int(row.favor_delta)
 	if delta != 0:

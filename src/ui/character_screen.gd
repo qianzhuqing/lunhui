@@ -15,7 +15,9 @@ const LevelServiceScript := preload("res://src/core/level_service.gd")
 const TalentServiceScript := preload("res://src/core/talent_service.gd")
 ## 抉择的永久增益（设计 20 §八）：面板要把它摆出来，玩家才知道"为什么多了这 2 点"
 const StoryServiceScript := preload("res://src/core/story_service.gd")
+const RecruitServiceScript := preload("res://src/core/recruit_service.gd")
 const LayoutBudgetScript := preload("res://src/ui/layout_budget.gd")
+const UiKitScript := preload("res://src/ui/ui_kit.gd")
 ## 图标路径的唯一出处（15 §六）：武学／道具那一列有图才摆，没图就照旧从文字开始
 const IconPathsScript := preload("res://src/ui/icon_paths.gd")
 
@@ -34,6 +36,10 @@ const FILTERS := [
 ## 自检注入点
 var state_override = null
 var back_handler := Callable()
+## Q67 拍板 ④ 的接线点：同伴不站位，交往（赠送／切磋／兑换／委托）从**角色面板点人**开。
+## 面板只负责「把谁交给场景控制器」，真正的 `open_npc()`（浮层栈、刷新）在控制器那一侧——
+## 与 `back_handler` 同一个往来口径。**战斗里的角色面板不接这个**（战斗中不交往，按钮自然不摆）。
+var npc_open_handler := Callable()
 
 var _db
 var _selected_char: String = ""
@@ -147,6 +153,34 @@ func portrait_path() -> String:
 
 
 ## 加一点，返回 {ok, error, remaining}
+## 交往目标（Q67 拍板 ④）：**选中的是同伴**（在队伍里、且不是主角）**并且有人接手这一按**。
+##
+## 「主角就是开局第一个人」这条口径与 `GuideService`／`NpcService`／`StoryService` 同一处
+## （`char_ids[0]`，`CreationService` 把玩家选的出身放在第一位）——主角不摆这一按：
+## 设计 20 §十 那套「提升途径」是给**同伴**的（招募 +20／支线 +30／赠送／切磋）。
+func _social_target() -> String:
+	if _selected_char.is_empty() or not npc_open_handler.is_valid():
+		return ""
+	var state = current_state()
+	if state == null or state.char_ids.is_empty():
+		return ""
+	if not state.char_ids.has(_selected_char):
+		return ""
+	if _selected_char == str(state.char_ids[0]):
+		return ""
+	return _selected_char
+
+
+## Q67 ④ 的落点：把「谁」交给场景控制器，由它走现成的 `open_npc()`——
+## 浮层栈会压成「角色面板 → 交往屏」，关掉交往屏就回到角色面板。
+func open_social() -> Dictionary:
+	var who := _social_target()
+	if who.is_empty():
+		return {"ok": false, "char_id": "", "error": "这个人不能交往"}
+	npc_open_handler.call(who)
+	return {"ok": true, "char_id": who, "error": ""}
+
+
 func press_plus(attr_id: String) -> Dictionary:
 	var panel = sheet()
 	if panel == null:
@@ -290,7 +324,8 @@ func _build_ui() -> void:
 	# 背板：这界面是盖在游戏画面上的（Tab 打开），没有背板就会让地图与 NPC 透上来把字糊掉
 	var backdrop := ColorRect.new()
 	backdrop.name = "Backdrop"
-	backdrop.color = Color(0.07, 0.08, 0.1, 0.97)
+	# 背板色值只在主题里一处（`UiKit/colors/backdrop`）
+	backdrop.color = UiKitScript.color("backdrop")
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
 	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(backdrop)
@@ -430,122 +465,69 @@ func _rebuild_header() -> void:
 
 
 func _rebuild_character() -> void:
-	_clear(_char_box)
 	var state = current_state()
+	# 立绘跟着「角色」页走（装备／背包页各有自己的排版）：先把它从上一个父级摘下来，
+	# 免得被下面的 `_clear()` 连带释放——`queue_free` 之后这个节点就再也摆不回去了。
+	if _portrait != null and _portrait.get_parent() != null:
+		_portrait.get_parent().remove_child(_portrait)
+	_clear(_char_box)
 	if state == null:
 		_char_box.add_child(_make_label("Empty", "没有会话状态：请回主菜单新建或读取存档"))
 		return
 
-	var member_row := HBoxContainer.new()
+	# 顶部队伍页签（14 §四）：名字 ＋ 等级，点头换人，当前那个用「▶」标出来。
+	# 用 Flow 容器而不是 HBox：名字长／人多的时候**换行**，比被屏幕右边裁掉强
+	# （4 人满员 + 长名字那条版式用例量的就是这一行）。
+	var member_row := HFlowContainer.new()
 	member_row.name = "Members"
-	member_row.add_theme_constant_override("separation", 6)
+	member_row.add_theme_constant_override("h_separation", 6)
+	member_row.add_theme_constant_override("v_separation", 4)
 	_char_box.add_child(member_row)
 	for char_id: String in state.char_ids:
 		var selected := char_id == _selected_char
 		var button := _make_button(
 			"MemberButton%s" % char_id,
-			"%s%s" % ["▶ " if selected else "", state.char_name(_db, char_id)],
+			"%s%s　Lv%d" % [
+				"▶ " if selected else "", state.char_name(_db, char_id), state.level_of(char_id),
+			],
 			func() -> void: select_char(char_id)
 		)
 		member_row.add_child(button)
+	# 空位也占一格（清单 §二-4：空位写「空位」）；置灰——它是缺口提示，不是按钮
+	for empty_index in range(state.char_ids.size(), GameStateScript.MAX_PARTY):
+		member_row.add_child(_make_button(
+			"EmptySlot%d" % empty_index, "空位", func() -> void: pass, true
+		))
+
+	# Q67 拍板 ④：选中的是**同伴**时，这一按开交往屏——同伴不站位，这里是唯一入口
+	# （偷窃对同伴不适用，交往屏自己不摆那一段）。主角不摆；战斗里没人接手，也不摆。
+	var social_id := _social_target()
+	if not social_id.is_empty():
+		_char_box.add_child(_make_button(
+			"SocialButton", "与 %s 交往" % state.char_name(_db, social_id),
+			func() -> void: open_social(),
+		))
 
 	var panel = sheet()
 	if panel == null or not panel.valid():
 		_char_box.add_child(_make_label("InvalidChar", "角色模板缺失：%s" % _selected_char))
 		return
 
-	_char_box.add_child(_make_label(
-		"Template",
-		"%s　Lv%d　%s　%s" % [panel.display_name(), panel.level, panel.role_tag(), panel.weapon_type_name()],
-		20
-	))
-	if not panel.template_desc().is_empty():
-		_char_box.add_child(_make_label("TemplateDesc", panel.template_desc()))
+	# 三栏（14 §四 ＋ UI 清单 §二-4）：左＝立绘／装备摘要｜中＝七维＋称号＋永久增益｜
+	# 右＝战斗属性＋非战斗技能。三栏都只读——要改在「装备」页与下面那段武学里改。
+	var detail := HBoxContainer.new()
+	detail.name = "DetailBody"
+	detail.add_theme_constant_override("separation", 12)
+	_char_box.add_child(detail)
+	var left := _make_column(detail, "LeftColumn", "立绘 · 装备摘要", 320)
+	var middle := _make_column(detail, "MidColumn", "七维 · 心性 · 增益")
+	var right := _make_column(detail, "RightColumn", "战斗属性 · 非战斗技能")
+	_build_character_left(left, panel)
+	_build_character_middle(middle, panel, state)
+	_build_character_right(right, panel)
 
-	# 五维：显示「合计（裸值 + 装备）」，可加点
-	_char_box.add_child(_make_label("AttrHeader", "五维（未分配点数：%d）" % panel.available_points(), 18))
-	var total: Dictionary = panel.total_attrs()
-	var naked: Dictionary = panel.naked_attrs()
-	for attr_row: Resource in _db.rows("attribute_def"):
-		var attr_id := str(attr_row.attr_id)
-		var total_value := int(total.get(attr_id, 0))
-		var naked_value := int(naked.get(attr_id, 0))
-		# 悟性／根骨是资质（设计 0.13.0）：加号置灰，并在行里写清为什么不能加
-		var blocked_reason: String = panel.allocation_block_reason(attr_id)
-		var is_talent := not blocked_reason.is_empty()
-		var row := HBoxContainer.new()
-		row.name = "AttrRow%s" % attr_id
-		row.add_theme_constant_override("separation", 8)
-		var attr_label := _make_label(
-			"AttrLabel%s" % attr_id,
-			"%s %d（裸 %d ＋ 装备 %d）%s" % [
-				str(attr_row.name_cn), total_value, naked_value, total_value - naked_value,
-				"　资质，不可加点" if is_talent else "",
-			]
-		)
-		# 自动换行会把标签的最小宽度压到一个字，HBox 于是把它挤成竖排——
-		# 五维行必须让它撑满（这一条踩过：面板上「力 5（裸 5 ＋ 装备 0）」被竖着排下来）
-		attr_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(attr_label)
-		var plus := _make_button(
-			"PlusButton%s" % attr_id, "+", func() -> void: press_plus(attr_id),
-			panel.available_points() <= 0 or is_talent
-		)
-		if is_talent:
-			plus.tooltip_text = blocked_reason
-		plus.custom_minimum_size = Vector2(36, 0)
-		row.add_child(plus)
-		_char_box.add_child(row)
-
-	# 图鉴奖励（设计 01「收集本身也是成长」）：进度与当前加成摆出来，玩家才知道集图鉴有用
-	var codex: Dictionary = panel.codex_bonus()
-	var collected := panel.collected_skill_count()
-	var step := maxi(1, int(codex.get("step", 5)))
-	var remaining := (step - collected % step) % step
-	_char_box.add_child(_make_label(
-		"CodexReward",
-		"图鉴奖励：已收集 %d 部武学 → 七项各 +%d（每 %d 部 +1，上限 %d 次%s）" % [
-			collected, int(codex["bonus"]), step, int(codex.get("cap", 10)),
-			"" if remaining == 0 else "，再收 %d 部再 +1" % remaining,
-		],
-	))
-
-	# 派生数值：按攻击 / 防御 / 资源与行动分组
-	# 永久增益（设计 20 §八 第 1 条：「跟存档、跨章保留、**界面要能看见**」）：
-	# 账册三选一给的是**资质与派生上限**，它们已经算进上面的五维与下面的战斗属性里，
-	# 但玩家看不出来"为什么多了这 2 点"——所以在这儿写明是哪一条、加了多少。
-	var bonus_labels: PackedStringArray = StoryServiceScript.bonus_labels(_db, state, _selected_char)
-	_char_box.add_child(_make_label(
-		"PermanentBonus",
-		"永久增益：%s" % ("、".join(bonus_labels) if not bonus_labels.is_empty() else "无（账册三选一之后见）"),
-	))
-
-	_char_box.add_child(_make_label("StatHeader", "战斗属性", 18))
-	# 战斗外气血（v11 起进存档）：面板上要看得见，不然玩家不知道为什么要去医馆
-	var current_hp := int(panel.current_hp())
-	var max_hp := int(panel.max_hp())
-	_char_box.add_child(_make_label(
-		"CurrentHp",
-		"当前气血 %d / %d%s" % [current_hp, max_hp, "" if current_hp >= max_hp else "　（可到医馆花钱治疗）"],
-	))
-	for group_name: String in CharacterSheetScript.STAT_GROUPS:
-		var parts := PackedStringArray()
-		for stat_id: String in CharacterSheetScript.STAT_GROUPS[group_name]:
-			parts.append("%s %s" % [panel.stat_name(stat_id), panel.stat_label(stat_id)])
-		_char_box.add_child(_make_label("Stat%s" % group_name, "%s：%s" % [group_name, "　".join(parts)]))
-
-	# 非战斗技能与判定值（判定不含装备）
-	_char_box.add_child(_make_label("EventSkillHeader", "非战斗技能（判定值不含装备加成）", 18))
-	for row: Dictionary in panel.event_skill_rows():
-		_char_box.add_child(_make_label(
-			"EventSkill%s" % row["skill_id"],
-			"%s %d/%d　判定 %d（%s）" % [
-				row["name"], int(row["level"]), int(row["max_level"]),
-				int(row["check_value"]), row["related_attr_name"],
-			]
-		))
-
-	# 武学：学到的都能装，招式进招式槽、内功按星级占容量格
+	# 武学（学 + 装）暂时仍留在这一页底部：它自己那一屏（清单 §二-6）还没做，
+	# 现在挪走等于把「装／卸武学」整块功能删掉。等那一屏做出来再搬过去。
 	var summary: Dictionary = panel.slot_summary()
 	_char_box.add_child(_make_label(
 		"SkillHeader",
@@ -557,6 +539,174 @@ func _rebuild_character() -> void:
 	))
 	for row: Dictionary in panel.skill_rows():
 		_char_box.add_child(_make_skill_row(row))
+	# 底部提示（14 §四）
+	_char_box.add_child(_make_label("TabHint", "Tab 切换页签，Esc 返回"))
+
+
+## 三栏里的一栏。立绘那一栏要确定宽度（320），另外两栏平分剩下的地方。
+## 每一栏＝一块卡片（示意图第 4 屏就是三个 `lu-panel`）：外面是九宫格背板＋标题条，
+## **返回的是卡片里的内容列**（名字仍是 `LeftColumn` 这些——自检按名字找它）。
+func _make_column(parent: Node, node_name: String, title: String, min_width: int = 0) -> VBoxContainer:
+	# 卡片外壳与它的内容列**同名**（挂在不同父级下，不冲突）：自检按 `DetailBody` 的
+	# 直接子节点找「三栏」，`_portrait` 的父级也要叫 `LeftColumn`——两头都认这个名字。
+	var box: VBoxContainer = UiKitScript.add_card(parent, title, "", node_name)
+	box.name = node_name
+	box.add_theme_constant_override("separation", 4)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 卡片外壳（`Body` 的祖父）才是霍在 HBox 里的那一格，宽度要它来撑
+	var card := box.get_parent().get_parent() as Control
+	if card != null:
+		card.name = node_name
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if min_width > 0:
+			card.custom_minimum_size = Vector2(min_width, 0)
+	return box
+
+
+## 左栏：立绘 ＋ 名字／定位 ＋ 装备摘要（只读，要改去「装备」页）
+func _build_character_left(box: VBoxContainer, panel) -> void:
+	if _portrait != null:
+		box.add_child(_portrait)
+	box.add_child(_make_label("Template", "%s　Lv%d" % [panel.display_name(), panel.level], 20))
+	var sub := "%s · %s" % [panel.role_tag(), panel.weapon_type_name()]
+	if not panel.template_desc().is_empty():
+		sub += "　%s" % panel.template_desc()
+	box.add_child(_make_label("TemplateDesc", sub))
+	box.add_child(_make_label("EquipSummaryHeader", "装备摘要", 18))
+	# 清单 §二-4 原本写的是「兵器／护具／站位」三行，**「站位」那行已按策划 2026-10-04 的拍板删掉**
+	# （前/后排规则还没定，`battle_actor` 里记着这条缺口）——装备摘要只摆有数据的槽位行。
+	# 槽位 id 取自 `equip_slot_def`：武器是 `weapon`、护具是 `body`（不是 `armor`）。
+	for slot_id: String in ["weapon", "body"]:
+		box.add_child(_make_label("EquipSummary%s" % slot_id, _equip_summary_line(panel, slot_id)))
+	box.add_child(_make_button(
+		"EquipTabButton", "换装、词条、套装另开「装备」页", func() -> void: select_tab(1)
+	))
+
+
+## 一件已穿装备的一行摘要：「兵器：铁枪　外功攻击+12」；空槽写「护具：空」
+func _equip_summary_line(panel, slot_id: String) -> String:
+	var slot_row: Resource = _db.get_row("equip_slot_def", slot_id)
+	var slot_name := str(slot_row.name_cn) if slot_row != null else slot_id
+	for row: Dictionary in panel.equipped_rows():
+		if str(row["slot_id"]) != slot_id or bool(row["empty"]):
+			continue
+		return "%s：%s　%s" % [slot_name, str(row["name"]), str(row["summary"])]
+	return "%s：空" % slot_name
+
+
+## 中栏：七维（5 项可加点 ＋ 2 项资质，资质那一行顺带写清它管着多少格）
+## ＋ 图鉴奖励 ＋ 永久增益 ＋ 心性称号
+func _build_character_middle(box: VBoxContainer, panel, state) -> void:
+	box.add_child(_make_label("AttrHeader", "七维 · 可加点 %d 点" % panel.available_points(), 18))
+	var total: Dictionary = panel.total_attrs()
+	var naked: Dictionary = panel.naked_attrs()
+	var summary: Dictionary = panel.slot_summary()
+	for attr_row: Resource in _db.rows("attribute_def"):
+		var attr_id := str(attr_row.attr_id)
+		var total_value := int(total.get(attr_id, 0))
+		var naked_value := int(naked.get(attr_id, 0))
+		# 悟性／根骨是资质（设计 0.13.0）：加号置灰，并在行里写清为什么不能加
+		var blocked_reason: String = panel.allocation_block_reason(attr_id)
+		var is_talent := not blocked_reason.is_empty()
+		var row := HBoxContainer.new()
+		row.name = "AttrRow%s" % attr_id
+		row.add_theme_constant_override("separation", 8)
+		var text := "%s %d" % [str(attr_row.name_cn), total_value]
+		if total_value != naked_value:
+			text += "（裸 %d ＋ 装备 %d）" % [naked_value, total_value - naked_value]
+		if is_talent:
+			# 资质行（清单 §二-4）：这一项**管着什么**也写在同行，省得玩家猜
+			if attr_id == "wu":
+				text += "　招式槽 %d" % int(summary.get("active_slots", 0))
+			elif attr_id == "gen":
+				text += "　心法 %d 格" % int(summary.get("passive_capacity", 0))
+			text += "　资质，不可加点"
+		var attr_label := _make_label("AttrLabel%s" % attr_id, text)
+		# 自动换行会把标签的最小宽度压到一个字，HBox 于是把它挤成竖排——
+		# 七维行必须让它撑满（这一条踩过：面板上「力 5（裸 5 ＋ 装备 0）」被竖着排下来）
+		attr_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# 属性图标：`icons/attr/<attr_id>.png`（15 §六；没出图就不占位）
+		var attr_icon := IconPathsScript.make_icon(
+			IconPathsScript.attr(attr_id), "AttrIcon%s" % attr_id
+		)
+		if attr_icon != null:
+			row.add_child(attr_icon)
+		row.add_child(attr_label)
+		var plus := _make_button(
+			"PlusButton%s" % attr_id, "+", func() -> void: press_plus(attr_id),
+			panel.available_points() <= 0 or is_talent
+		)
+		if is_talent:
+			plus.tooltip_text = blocked_reason
+		plus.custom_minimum_size = Vector2(36, 0)
+		row.add_child(plus)
+		box.add_child(row)
+
+	# 图鉴奖励（设计 01「收集本身也是成长」）：进度与当前加成摆出来，玩家才知道集图鉴有用
+	var codex: Dictionary = panel.codex_bonus()
+	var collected: int = panel.collected_skill_count()
+	var step := maxi(1, int(codex.get("step", 5)))
+	var remaining: int = (step - collected % step) % step
+	box.add_child(_make_label(
+		"CodexReward",
+		"图鉴奖励：已收集 %d 部武学 → 七项各 +%d（每 %d 部 +1，上限 %d 次%s）" % [
+			collected, int(codex["bonus"]), step, int(codex.get("cap", 10)),
+			"" if remaining == 0 else "，再收 %d 部再 +1" % remaining,
+		],
+	))
+	# 永久增益（设计 20 §八 第 1 条：「跟存档、跨章保留、**界面要能看见**」）：
+	# 账册三选一给的是**资质与派生上限**，它们已经算进上面的七维与右栏的战斗属性里，
+	# 但玩家看不出来"为什么多了这 2 点"——所以在这儿写明是哪一条、加了多少。
+	var bonus_labels: PackedStringArray = StoryServiceScript.bonus_labels(_db, state, _selected_char)
+	box.add_child(_make_label(
+		"PermanentBonus",
+		"永久增益：%s" % ("、".join(bonus_labels) if not bonus_labels.is_empty() else "无（账册三选一之后见）"),
+	))
+	# 心性称号（Q74① 拍板 ＋ 20 §四：「落在永久增益那一行的**下面**」）：名字取自 `ui_text`，
+	# 条件与幕结旁白同一条件——**没到章节末整行不显示**（不是写「无」，是不摆这一行）。
+	var title_text := StoryServiceScript.title_of(_db, state)
+	if not title_text.is_empty():
+		box.add_child(_make_label("StoryTitle", "心性称号：%s" % title_text))
+
+
+## 右栏：战斗属性（按表里的顺序逐项一行）＋ 非战斗技能
+func _build_character_right(box: VBoxContainer, panel) -> void:
+	box.add_child(_make_label("StatHeader", "战斗属性", 18))
+	# 战斗外气血（v11 起进存档）：面板上要看得见，不然玩家不知道为什么要去医馆
+	var current_hp := int(panel.current_hp())
+	var max_hp := int(panel.max_hp())
+	box.add_child(_make_label(
+		"CurrentHp",
+		"当前气血 %d / %d%s" % [current_hp, max_hp, "" if current_hp >= max_hp else "　（可到医馆花钱治疗）"],
+	))
+	for stat_row: Resource in _db.rows("stat_def"):
+		var stat_id := str(stat_row.stat_id)
+		var line := HBoxContainer.new()
+		line.name = "StatRow%s" % stat_id
+		line.add_theme_constant_override("separation", 8)
+		# 派生数值图标：`icons/stat/<stat_id>.png`（15 §六；没出图就不占位）
+		var stat_icon := IconPathsScript.make_icon(
+			IconPathsScript.stat(stat_id), "StatIcon%s" % stat_id
+		)
+		if stat_icon != null:
+			line.add_child(stat_icon)
+		var stat_label := _make_label(
+			"StatLabel%s" % stat_id,
+			"%s %s" % [panel.stat_name(stat_id), panel.stat_label(stat_id)],
+		)
+		stat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(stat_label)
+		box.add_child(line)
+	# 非战斗技能与判定值（判定不含装备）
+	box.add_child(_make_label("EventSkillHeader", "非战斗技能（判定值不含装备加成）", 18))
+	for row: Dictionary in panel.event_skill_rows():
+		box.add_child(_make_label(
+			"EventSkill%s" % row["skill_id"],
+			"%s %d/%d　判定 %d（%s）" % [
+				row["name"], int(row["level"]), int(row["max_level"]),
+				int(row["check_value"]), row["related_attr_name"],
+			]
+		))
 
 
 ## 一行武学：名字／星级色 + 数值摘要 + 装配（卸下）按钮。
@@ -1043,6 +1193,89 @@ func _run_character_selftest() -> void:
 		and portrait.texture != null
 	ok = ok and portrait_ok
 	lines.append("立绘位 320×480 且占位图已加载=%s（%s）" % [portrait_ok, portrait_path()])
+	# —— 第 4 屏（UI 清单 §二-4）：三栏排版 ＋ 装备摘要 ＋ 资质行 ＋ 底部提示 ——
+	var detail: Control = find_child("DetailBody", true, false)
+	var column_names := PackedStringArray()
+	if detail != null:
+		for child: Node in detail.get_children():
+			column_names.append(str(child.name))
+	var columns_ok: bool = detail != null and column_names.size() == 3 \
+		and column_names.has("LeftColumn") and column_names.has("MidColumn") \
+		and column_names.has("RightColumn")
+	ok = ok and columns_ok
+	lines.append("角色页三栏＝%s（%s）" % [columns_ok, "／".join(column_names)])
+	# 立绘移进了左栏（以前是「面板左边固定一块」，装备／背包页也一起显示）
+	var portrait_in_left: bool = _portrait != null and _portrait.get_parent() != null \
+		and str(_portrait.get_parent().name) == "LeftColumn"
+	ok = ok and portrait_in_left
+	lines.append("立绘在左栏里=%s" % portrait_in_left)
+	# 装备摘要两行（清单写的是「兵器／护具／站位」三行，站位规则还没定，先两行）
+	var weapon_line: Label = find_child("EquipSummaryweapon", true, false)
+	var armor_line: Label = find_child("EquipSummarybody", true, false)
+	# 槽位名照表里的 `name_cn` 读（清单写的「兵器」在表里叫「武器」）——别在这儿抄第二份名字
+	var weapon_slot: Resource = _db.get_row("equip_slot_def", "weapon")
+	var armor_slot: Resource = _db.get_row("equip_slot_def", "body")
+	var equip_summary_ok: bool = weapon_line != null and armor_line != null \
+		and weapon_slot != null and armor_slot != null \
+		and weapon_line.text.contains(str(weapon_slot.name_cn)) \
+		and armor_line.text.contains(str(armor_slot.name_cn))
+	ok = ok and equip_summary_ok
+	lines.append("装备摘要两行=%s（%s）" % [
+		equip_summary_ok, weapon_line.text if weapon_line != null else "缺",
+	])
+	# 顶部「可加点 N 点」（14 §四 的「剩余配额」）
+	var attr_header: Label = find_child("AttrHeader", true, false)
+	var points_ok: bool = attr_header != null and attr_header.text.contains("可加点")
+	ok = ok and points_ok
+	lines.append("七维表头写「可加点 N 点」=%s（%s）" % [
+		points_ok, attr_header.text if attr_header != null else "缺",
+	])
+	# 资质行（清单 §二-4）：悟性／根骨那一行要把「管着什么」写出来
+	var wu_line: Label = find_child("AttrLabelwu", true, false)
+	var gen_line: Label = find_child("AttrLabelgen", true, false)
+	var talent_rows_ok: bool = wu_line != null and gen_line != null \
+		and wu_line.text.contains("招式槽") and wu_line.text.contains("不可加点") \
+		and gen_line.text.contains("心法") and gen_line.text.contains("不可加点")
+	ok = ok and talent_rows_ok
+	lines.append("资质行写出招式槽／心法格=%s（%s）" % [
+		talent_rows_ok, wu_line.text if wu_line != null else "缺",
+	])
+	# 右栏：战斗属性逐项一行（行数＝表里那几项）
+	var stat_rows: Array = find_children("StatLabel*", "Label", true, false)
+	var stat_ok: bool = stat_rows.size() == _db.rows("stat_def").size()
+	ok = ok and stat_ok
+	lines.append("战斗属性逐项一行（%d 行）=%s" % [stat_rows.size(), stat_ok])
+	# 属性／派生数值图标（15 §六 命名表：按行 id 走）：**有图才摆**——
+	# 断言的是「图标节点在不在 ⟺ 图在不在」，美术出图那天不用回来改用例。
+	var attr_icon_ok := true
+	for attr_row: Resource in _db.rows("attribute_def"):
+		var attr_id := str(attr_row.attr_id)
+		if ResourceLoader.exists(IconPathsScript.attr(attr_id)) \
+				!= (find_child("AttrIcon%s" % attr_id, true, false) != null):
+			attr_icon_ok = false
+	ok = ok and attr_icon_ok
+	lines.append("七维图标「有图才摆」=%s" % attr_icon_ok)
+	var stat_icon_ok := true
+	for stat_row: Resource in _db.rows("stat_def"):
+		var stat_id := str(stat_row.stat_id)
+		if ResourceLoader.exists(IconPathsScript.stat(stat_id)) \
+				!= (find_child("StatIcon%s" % stat_id, true, false) != null):
+			stat_icon_ok = false
+	ok = ok and stat_icon_ok
+	lines.append("派生数值图标「有图才摆」=%s" % stat_icon_ok)
+	# 底部提示（14 §四）
+	var hint: Label = find_child("TabHint", true, false)
+	var hint_ok: bool = hint != null and hint.text.contains("Tab")
+	ok = ok and hint_ok
+	lines.append("底部提示=%s（%s）" % [hint_ok, hint.text if hint != null else "缺"])
+	# 队伍页签：当前项高亮（▶）＋空位占格（清单 §二-4）
+	var leader_button: Button = find_child("MemberButton%s" % str(state.char_ids[0]), true, false)
+	var empty_slots: Array = find_children("EmptySlot*", "Button", true, false)
+	var member_tabs_ok: bool = leader_button != null and leader_button.text.begins_with("▶") \
+		and empty_slots.size() == GameStateScript.MAX_PARTY - state.char_ids.size() \
+		and (empty_slots.is_empty() or (empty_slots[0] as Button).disabled)
+	ok = ok and member_tabs_ok
+	lines.append("队伍页签：当前项带「▶」＋空位 %d 格=%s" % [empty_slots.size(), member_tabs_ok])
 	# 页签内容宽度：**外层版式量不到滚动区里的内容**（`get_combined_minimum_size()` 到 ScrollContainer
 	# 就断了，量到的其实是 `_tabs.custom_minimum_size` 那个写死的常量），而横向滚动是关着的——
 	# 内容一宽就被裁掉、代码一声不吭。
@@ -1059,6 +1292,68 @@ func _run_character_selftest() -> void:
 	lines.append(CopyGuardScript.ascii_line(self))
 	if not copy_hits.is_empty():
 		lines.append("COPY 命中：%s" % "；".join(copy_hits))
+
+	# —— 心性称号（Q74① 拍板）——
+	# 「没到章节末整行不显示」：先确认现在**没有**这一行，再点亮「序幕那一档 ＋ 账册已选」两枚旗标，
+	# 确认它出现、且名字逐字取自 `ui_text`（代码不抄第二份名字）。
+	var title_gone: bool = find_child("StoryTitle", true, false) == null
+	ok = ok and title_gone
+	lines.append("章节末之前不显示心性称号行=%s" % title_gone)
+	state.set_flag("flag_open_yi")
+	state.set_flag("flag_ledger_public")
+	refresh()
+	var title_label: Label = find_child("StoryTitle", true, false)
+	var title_row: Resource = _db.get_row("ui_text", "title_yi")
+	var title_ok: bool = title_label != null and title_row != null \
+		and title_label.text == "心性称号：%s" % str(title_row.text_cn)
+	ok = ok and title_ok
+	lines.append("心性称号行（义档）=%s（%s）" % [
+		title_ok, title_label.text if title_label != null else "缺",
+	])
+	# 幕结旁白与称号**同一条件**：两边的条件串必须一字一致，否则会「旁白出来了、称号还没出来」
+	# （或反过来）。条件串只在 `StoryService.TITLE_CONDITION_FORMAT` 写一次，这里对着表读回来比。
+	var same_condition := true
+	for suffix: String in StoryServiceScript.TITLE_SUFFIXES:
+		var end_row: Resource = _db.get_row("dialogue_node", "dl_end_%s" % suffix)
+		if end_row == null or str(end_row.condition) != StoryServiceScript.TITLE_CONDITION_FORMAT % suffix:
+			same_condition = false
+	ok = ok and same_condition
+	lines.append("称号与幕结旁白同一条件=%s" % same_condition)
+
+	# —— 同伴的交往入口（Q67 拍板 ④）——
+	# 同伴不站位，这是入队之后**唯一**的交往入口：角色面板选中他 → 摆出一按 → 按下把 id 交给
+	# 场景控制器（控制器那边走 `open_npc()`）。主角不摆这一按。
+	var leader := str(state.char_ids[0])
+	var social_got := PackedStringArray()
+	npc_open_handler = func(who: String) -> void: social_got.append(who)
+	select_char(leader)
+	var leader_ok: bool = find_child("SocialButton", true, false) == null
+	ok = ok and leader_ok
+	lines.append("主角不摆交往那一按=%s" % leader_ok)
+	var companion := ""
+	for row: Resource in _db.rows("recruit_def"):
+		var cid := str(row.char_id)
+		if cid != leader and not state.char_ids.has(cid):
+			companion = cid
+			break
+	var joined: Dictionary = RecruitServiceScript.join(_db, state, companion) if not companion.is_empty() \
+		else {"ok": false, "char_id": "", "error": "没有可入队的同伴"}
+	select_char(companion)
+	var social_btn: Button = find_child("SocialButton", true, false)
+	var social_ok: bool = bool(joined.get("ok", false)) and social_btn != null \
+		and social_btn.text == "与 %s 交往" % state.char_name(_db, companion)
+	if social_btn != null:
+		social_btn.pressed.emit()
+	social_ok = social_ok and social_got.size() == 1 and str(social_got[0]) == companion
+	ok = ok and social_ok
+	lines.append("同伴交往那一按（%s → 交给控制器 %s）=%s" % [
+		companion, "、".join(social_got), social_ok,
+	])
+	# 新摆出来的这一行也过一遍文案守卫（表内 id 不许出现在玩家可见文案里）
+	var later_hits: PackedStringArray = CopyGuardScript.id_tokens(self)
+	ok = ok and later_hits.is_empty()
+	lines.append("称号与交往文案守卫=%s" % later_hits.is_empty())
+
 	for line: String in lines:
 		print("  " + line)
 	print("CHARACTER SELF-TEST: %s" % ("OK" if ok else "FAILED"))

@@ -92,11 +92,16 @@ func _has_user_arg(flag: String) -> bool:
 
 # ------------------------------------------------------------------ 界面
 
+## 界面配件（卡片、色值）走共享构件——`const` 就近放在用它的这一段上面
+const UiKitScript := preload("res://src/ui/ui_kit.gd")
+
+
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.name = "Backdrop"
-	bg.color = Color(0.06, 0.07, 0.08, 0.97)
+	# 背板色值只在主题里一处（`UiKit/colors/backdrop`）
+	bg.color = UiKitScript.color("backdrop")
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -118,7 +123,8 @@ func _build_ui() -> void:
 	var title := Label.new()
 	title.name = "Title"
 	title.text = "创建角色"
-	title.add_theme_font_size_override("font_size", 16)
+	# 界面标题档（设计 15 §4.4：标题 24／正文 12，**不再有 16 档**——16 ＝ 12×1.33，像素字发虚）
+	title.add_theme_font_size_override("font_size", 24)
 	column.add_child(title)
 
 	_route_box = HBoxContainer.new()

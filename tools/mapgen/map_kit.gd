@@ -14,6 +14,18 @@ const ATLAS_DIR := "res://assets/tilesets/ink_jianghu"
 const FOG_ATLAS := "res://assets/tilesets/ink_jianghu/fog_tile.png"
 const PLACEHOLDER_TEXTURE := "res://assets/sprites/props/prop_placeholder.png"
 const NPC_TEXTURE := "res://assets/sprites/characters/npc_placeholder.png"
+## 场景里的 prop（0.32.0 第一条线索链要用）：废弃渡口的**封渡木桩**——木桩 ＋ 钉在桩上的
+## 朱印木牌（不写字，32×32 塞不下），美术 2026-10-04 交付。
+##
+## **路径只写在这一处**，由生成器摆（`build_local_maps._build_ferry()`）：手往 `.tscn` 里贴一张
+## 贴图的话，下次重跑 `build_local_maps.gd` 就把它冲掉了——而且「同一个路径抄两份」正是
+## 2026-10-04 那条「同一事实只许有一处定义」要防的漂移。
+const PROP_FERRY_PILE := "res://assets/sprites/props/prop_ferry_pile.png"
+## 旧镖车的 prop（0.32.0 交付，小策划 Q83 ①）：落雁坡西边官道旁那辆车——
+## 「翻倒的车厢 ＋ 散落的镖货 ＋ 断掉的车辕 ＋ 只剩一个字的镖旗」，**64×64 ＝ 2×2 格**。
+## 尺寸是硬约束：差一格就和旁边三个 `Observe_ob_luoyanpo_cart_0N` 与林铁山的 `npc_slot_01` 错位。
+## 与上面那条同一条规矩：**路径只写在这一处**，场景由 `build_overworld._paint_old_cart()` 摆。
+const PROP_LUOYANPO_CART := "res://assets/sprites/props/prop_luoyanpo_jiuche.png"
 
 const TILE_PX := 32
 const SOURCE_ID := 0

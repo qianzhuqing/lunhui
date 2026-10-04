@@ -21,3 +21,7 @@ shop_caravan,1,item_med_02,120,40,3,行商货：药酒；比城镇贵，限量 3
 shop_caravan,2,item_potion_small,110,36,2,行商货：金创药；限量 2
 shop_caravan,3,item_potion_qi,120,38,2,行商货：回气散；限量 2
 shop_caravan,4,eq_ring_02,260,70,1,行商货：玉戒（良品）；限量 1，城镇买不到
+shop_smith,9,item_book_chensha,320,80,1,秘籍（Q3）：沉沙掌＋沉沙心法同册，买一本研读
+shop_smith,10,item_book_tieqiang,200,50,1,秘籍（Q3）：铁枪诀起手
+shop_grocery,7,item_book_liehuo,260,65,1,秘籍（Q3）：烈火掌起手
+shop_tavern,3,item_book_taixu,300,75,1,秘籍（Q3）：太虚功静心

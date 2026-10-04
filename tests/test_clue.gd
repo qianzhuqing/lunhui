@@ -68,15 +68,13 @@ func _check_long_list_ui(db, state) -> void:
 	screen.scene_id = "scene_heifengzhai"
 	scene_tree.root.add_child(screen)
 	screen.setup()
-	check_eq(screen.entry_count(), expected, "每一行都建出来了（%d 行）" % screen.entry_count())
+	screen.select_section("hidden")
+	check_eq(screen.section_row_count("hidden"), expected, "每一行都建出来了（%d 行）" % screen.section_row_count("hidden"))
 	var subtitle: Label = screen.find_child("Subtitle", true, false)
 	check_not_null(subtitle, "有「共 N 条」的小标题")
 	if subtitle != null:
-		check_true(subtitle.text.contains("共 41 条"), "小标题写清总数：%s" % subtitle.text)
-	var rows := 0
-	for node: Node in screen.find_children("Clue_*", "Label", true, false):
-		rows += 1
-	check_eq(rows, expected, "带名字的行数也对得上")
+		check_true(subtitle.text.contains("共 41 处"), "小标题写清总数：%s" % subtitle.text)
+	check_eq(screen.section_row_count("hidden"), expected, "带名字的行数也对得上")
 	scene_tree.root.remove_child(screen)
 	screen.free()
 
@@ -163,12 +161,22 @@ func _check_panel_scene(db, state) -> void:
 	panel.return_handler = func() -> void: closes.append(true)
 	scene_tree.root.add_child(panel)
 	panel.setup()
+	# 五类分页（设计 0.32.0）：默认落在「主线」，切到「隐藏」才是本图的线索清单
+	var titles: Array = []
+	for index in range(panel._tabs.get_tab_count()):
+		titles.append(panel._tabs.get_tab_title(index))
+	check_eq(titles, ["主线", "支线", "传闻", "角色", "隐藏"], "五类页签的名字与顺序")
+	panel.select_section("hidden")
+	check_eq(panel.section_id(), "hidden", "切页签后当前页跟着换")
+	# 高亮本身看面板自己记的那一份：`--script` 模式下 `TabContainer.current_tab` 不会真正生效
+	# （`character_screen` 也踩过这个坑，那边同样是自己记 `_tab_index`）
+	check_eq(panel._section_index, 4, "页签高亮（当前页索引）也跟着换")
 	check_eq(panel.entry_count(), 11, "面板按条目数渲染：%d" % panel.entry_count())
-	check_true(str(panel._subtitle.text).contains("共 11 条"), "标题写清总数：%s" % str(panel._subtitle.text))
+	check_true(str(panel._subtitle.text).contains("共 11 处"), "小标题写清总数：%s" % str(panel._subtitle.text))
 	panel.scope = "region"
 	panel.refresh()
 	check_eq(panel.entry_count(), 9, "切成野外视角后按地标列 9 条")
-	check_true(str(panel._title.text).contains("野外"), "标题跟着作用域变：%s" % str(panel._title.text))
+	check_true(str(panel._subtitle.text).contains("野外"), "小标题跟着作用域变：%s" % str(panel._subtitle.text))
 	panel.press_return()
 	check_eq(closes.size(), 1, "离开按钮触发回退")
 	scene_tree.root.remove_child(panel)

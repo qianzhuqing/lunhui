@@ -963,7 +963,10 @@ foreach ($row in $Tables['item_base.csv']) {
     Add-Warning "[可达] 道具 $($row.item_id)（$($row.name_cn)）没有任何获取来源：不在掉落表／货架／事件与隐藏奖励／NPC 兑换偷窃／代码发放里，玩家永远拿不到"
 }
 # 武学来源：已实现的是 drop／hidden／item（研读）／start（模板起始）／**story（剧情节点）**；
-# 只剩 npc（门派对话）与 shop（买武学）没实现。按来源类型汇总成一条（逐条刷屏没意义，缺的是那两套机制本身）。
+# 只剩 npc（门派传授）没实现——`shop` 自 2026-10-04（Q3）起**没有数据再用**：那 5 部武学改成
+# `item` 秘籍（四家店各上架一本）走已实现的研读通道。这里仍把 shop 留在待办扫描里当**安全网**
+# （将来谁又落一行 `source_type=shop` 就会重新出现在这条告警里）。
+# 按来源类型汇总成一条（逐条刷屏没意义，缺的是那两套机制本身）。
 #
 # 为什么把 story 从"没实现"里拿掉（2026-10-04）：0.22.0 起 `StoryService.claim_for()` 就按
 # `skill_base.source_type=story` ＋ `source_id=剧情节点` 发武学，`chapter1_end`／`xuanwei`／
@@ -983,7 +986,27 @@ foreach ($kind in @('npc', 'shop')) {
     }
 }
 if ($pendingSkillSources.Count -gt 0) {
-    Add-Warning "[可达] 武学来源还没实现的类别：$($pendingSkillSources -join '／')——分别等门派对话（`source_id` 指的是门派／地点）与「买武学」的价格列，这几类的武学玩家现在拿不到"
+    # 等什么**按实际待办生成**：别把已经落地的通道（shop → item 秘籍）挂在告警里，
+    # 读的人会照着一条不存在的待办去查（2026-10-04 Q3 落地时点出来的）。
+    $pendingReasons = @()
+    if ($skillSourceCount.ContainsKey('npc')) { $pendingReasons += '门派对话（`source_id` 指的是门派／地点）' }
+    if ($skillSourceCount.ContainsKey('shop')) { $pendingReasons += '「买武学」的价格列' }
+    Add-Warning "[可达] 武学来源还没实现的类别：$($pendingSkillSources -join '／')——分别等 $($pendingReasons -join '与')，这几类的武学玩家现在拿不到"
+}
+# NPC 的「切磋」是**两个数据凑齐**才出现的交互：npc_favor.spar_favor（赢了加多少好感）
+# ＋ npc_def.spar_team_id（打哪支队伍）。只填前者不填后者，面板**不会显示切磋按钮**
+# （`_add_spar_section` 直接 return），玩家看不到这个交互——而面板自检从不走切磋，两边都绿。
+# 2026-10-04 玩家报「NPC 面板缺少切磋」就是这么来的（spar_favor 配了 9 个人，队伍列全空）。
+$sparMissing = @()
+foreach ($row in $Tables['npc_favor.csv']) {
+    if ([int]$row.spar_favor -le 0) { continue }     # ≤0 = 设计上不切磋（黄村／囚徒／沈雁回），不要求队伍
+    $npcId = [string]$row.npc_id
+    $def = $Tables['npc_def.csv'] | Where-Object { [string]$_.npc_id -eq $npcId } | Select-Object -First 1
+    if ($null -eq $def) { continue }                  # 同伴没有 npc_def 行（走 character_base 那条），不在这里管
+    if ([string]::IsNullOrWhiteSpace([string]$def.spar_team_id)) { $sparMissing += $npcId }
+}
+if ($sparMissing.Count -gt 0) {
+    Add-Warning "[交互] 这些 NPC 配了 spar_favor（切磋赢了加好感）却没配 npc_def.spar_team_id——面板不会显示「切磋」按钮，玩家看不到这个交互（$($sparMissing -join '、')）"
 }
 # source_type=start 的武学必须真的挂在某个角色模板的 start_skill_ids 上，否则也是拿不到
 $startSkills = @{}
@@ -1030,7 +1053,7 @@ foreach ($row in $Tables['skill_base.csv']) {
     $sid = [string]$row.skill_id
     $kindOfSource = [string]$row.source_type
     if ($kindOfSource -in @('drop', 'hidden', 'item', 'story', 'origin', 'start')) { $skillReachable[$sid] = $true }
-    else { $skillReachable[$sid] = $false }     # npc（门派传授）与 shop（买武学）还没实现
+    else { $skillReachable[$sid] = $false }     # 其余（npc 门派传授／shop 买武学）还没实现——shop 目前无数据使用
 }
 $passiveCost = @{}
 foreach ($row in $Tables['skill_passive.csv']) { $passiveCost[[string]$row.skill_id] = [int]$row.slot_cost }
@@ -1892,9 +1915,13 @@ foreach ($row in $Tables['dialogue_node.csv']) {
     }
 }
 foreach ($row in $Tables['dialogue_option.csv']) {
-    $flag = [string]$row.set_flag
-    if ($flag -ne '' -and -not $flag.StartsWith('flag_') -and -not $flag.StartsWith('heart_')) {
-        Add-Error "[枚举] dialogue_option.csv $($row.option_id).set_flag='$flag' 既不是 flag_* 也不是心性（heart_*）"
+    # `set_flag` 能写多个（分号隔开：幕二「拔剑」那条一次置两个旗标，Q83）——每一段都要认得出来。
+    # 拆法是 GDScript 那边（行类 `dialogue_option_row.parse_set_flags`）的镜像，改一处要连着改另一处。
+    foreach ($part in ([string]$row.set_flag) -split ';') {
+        $flag = $part.Trim()
+        if ($flag -ne '' -and -not $flag.StartsWith('flag_') -and -not $flag.StartsWith('heart_')) {
+            Add-Error "[枚举] dialogue_option.csv $($row.option_id).set_flag='$flag' 既不是 flag_* 也不是心性（heart_*；多个旗标用分号隔开）"
+        }
     }
     $item = [string]$row.grant_item_id
     if ($item -eq '') { continue }

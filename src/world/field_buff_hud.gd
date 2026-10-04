@@ -14,7 +14,7 @@ const COLOR := Color(0.85, 0.95, 1.0, 0.95)
 ## **放在第 3 行（y=56）**：大地图第 2 行是揭雾进度（`MapProgress`，y=34）、
 ## 小地图第 2 行是副本完成度（`Progress`，y=34）——两者都是左上角，不放第 3 行就会叠字。
 ## 两个控制器各有一条断言盯着「这一行不与上面两行同 y」。
-static func build_label(position: Vector2, font_size: int = 14) -> Label:
+static func build_label(position: Vector2, font_size: int = 12) -> Label:
 	var label := Label.new()
 	label.name = "FieldBuffs"
 	label.position = position

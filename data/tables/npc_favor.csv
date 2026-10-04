@@ -6,8 +6,8 @@ npc_sun_zhanggui,0,100,item_med_01,consumable,,5,4,5
 npc_caiyao,10,100,item_herb,material,,6,6,5
 npc_huangcun,-10,100,item_med_01,consumable,,8,0,3
 npc_qiutu,20,100,item_med_01,consumable,,8,0,0
-ch_ci,0,100,,,,5,5,0
-ch_gang,0,100,,,,5,5,0
+ch_ci,0,100,,,,5,6,0
+ch_gang,0,100,,,,5,8,0
 ch_du,0,100,,,,5,5,0
-ch_qi,0,100,,,,5,5,0
+ch_qi,0,100,,,,5,7,0
 npc_shen_yanhui,0,100,,,,5,0,0

@@ -27,6 +27,10 @@ const BUFF_DIR := ROOT + "buff/"
 ## `status_effect.icon` 的值就是文件名（如 `status_poison.png`），空则退回行 id——
 ## 与 `item_base.icon`／`buff_def.icon` 同一套优先级。这条路径待设计侧在交接单里确认（`待策划确认.md` Q80）。
 const STATUS_DIR := ROOT + "status/"
+## 七维图标（15 §六 命名表，2026-10-04 设计拍）：**`attribute_def` 没有 `icon` 列**，
+## 一律按行 id 走（`icons/attr/<attr_id>.png`）；派生数值那批同理（`icons/stat/<stat_id>.png`）。
+const ATTR_DIR := ROOT + "attr/"
+const STAT_DIR := ROOT + "stat/"
 ## 角色与敌人的**剪影／立绘**不在 `icons/` 下，而在 `assets/sprites/<faction>/`（15 §六）
 const SPRITES_DIR := "res://assets/sprites/"
 
@@ -52,6 +56,14 @@ static func buff(buff_id: String) -> String:
 
 static func status(status_id: String) -> String:
 	return STATUS_DIR + status_id.strip_edges() + ".png" if not status_id.strip_edges().is_empty() else ""
+
+
+static func attr(attr_id: String) -> String:
+	return ATTR_DIR + attr_id.strip_edges() + ".png" if not attr_id.strip_edges().is_empty() else ""
+
+
+static func stat(stat_id: String) -> String:
+	return STAT_DIR + stat_id.strip_edges() + ".png" if not stat_id.strip_edges().is_empty() else ""
 
 
 ## 角色／敌人的剪影：`assets/sprites/<faction>/<enemy_id>.png`（15 §六）。

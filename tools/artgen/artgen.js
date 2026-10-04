@@ -24,6 +24,8 @@ const { buildAll: buildItems } = require("./items");
 const { buildAll: buildEquips } = require("./equips");
 const { buildAll: buildUi } = require("./ui");
 const { buildAll: buildSkills } = require("./skills");
+const { buildAll: buildStatus } = require("./status");
+const { buildAll: buildBuff } = require("./buff");
 const { buildAll: buildPortraits } = require("./portraits");
 
 const REPO = path.resolve(__dirname, "..", "..");
@@ -106,6 +108,17 @@ for (const [relative, canvas] of Object.entries(buildUi())) {
 
 // 武学图标（15 §六：assets/icons/skill/<skill_id>.png）
 for (const [relative, canvas] of Object.entries(buildSkills())) {
+  writeCanvas(`assets/${relative}`, canvas);
+}
+
+// 异常状态图标（15 §六／Q80：assets/icons/status/<icon>.png）——战斗界面「增益减益」那排 chip
+for (const [relative, canvas] of Object.entries(buildStatus())) {
+  writeCanvas(`assets/${relative}`, canvas);
+}
+
+// 增益图标（08 §181／15 §4.3：assets/icons/buff/<buff_def.icon>.png）——同一条 chip 列表，
+// 与异常共用 `badge.js` 那套「亮底＋深记号」骨架，颜色只走增益蓝
+for (const [relative, canvas] of Object.entries(buildBuff())) {
   writeCanvas(`assets/${relative}`, canvas);
 }
 

@@ -25,6 +25,7 @@ const TRIGGER_CSV := "res://data/tables/hidden_trigger.csv"
 const EVENT_CSV := "res://data/tables/event_check.csv"
 const FLAVOR_CSV := "res://data/tables/flavor_point.csv"
 const NPC_CSV := "res://data/tables/npc_def.csv"
+const BUILDING_CSV := "res://data/tables/building_def.csv"
 
 const OVERWORLD := "res://scenes/maps/overworld.tscn"
 const PARENT_REGION := "jiangnan_east"
@@ -74,6 +75,7 @@ func _run() -> int:
 	_check_exit_markers(local_scenes)
 	_check_npc_slots(local_scenes)
 	_check_facility_markers(local_scenes)
+	_check_building_markers(local_scenes)
 	_check_observe_points(local_scenes)
 	_check_only_decor_blocks()
 	_check_conditional_layers()
@@ -684,6 +686,62 @@ func _check_observe_points(local_scenes: Array) -> void:
 		print("[check] 小地图观察点合计 %d 个（另加大地图 %d 个 = %d）" % [
 			total, world_points, total + world_points,
 		])
+
+
+## 建筑位点（`Markers/Buildings/<building_id>`）两道门限：
+##   ① **名字必须是 `building_def` 里的 id**——代码就是按 id 查表的（`building_near_player`），
+##      查不到就**静默忽略**：玩家走到店门口按 E 什么都不发生，而地图验收原本一声不吭；
+##   ② **站得到跟前**——交互半径是 `BUILDING_DISTANCE`(48px)，位点周围 48px 内至少要有一个
+##      「从出生点走得到」的格子，否则**这家店永远开不了**。
+##
+## 以前这两件一条都没查（只查了 NPC 站位／观察点／无表设施）。2026-10-04 玩家报的
+## 「店铺经常打不开」里，一半是浮层挂错父节点（见 `OverlayStack.mount`），另一半正是这一类：
+## 位点写错名字或离可站格太远。**按 id 查表 + 半径站得到**这两条都得在构建期拦住。
+func _check_building_markers(local_scenes: Array) -> void:
+	var known := {}
+	for row: Dictionary in MapKit.read_csv(BUILDING_CSV):
+		var building_id := str(row.get("building_id", ""))
+		if not building_id.is_empty():
+			known[building_id] = true
+	if known.is_empty():
+		_problems.append("读不到 building_def.csv——建筑位点这条门限会静默失效")
+	var radius: float = float(LocalMapScript.BUILDING_DISTANCE)
+	for scene_id: String in local_scenes:
+		var scene: Dictionary = _scenes.get("res://scenes/maps/%s.tscn" % scene_id, {})
+		if scene.is_empty():
+			continue
+		# 建筑位点**不在** `names` 那本字典里（它只收 `MARKER_PREFIXES` 里那些前缀的节点，
+		# `bld_*` 不在其中），所以直接按控制器的取法遍历 `Markers/Buildings` 的子节点。
+		var holder: Node = scene["root"].get_node_or_null("Markers/Buildings")
+		if holder == null:
+			continue
+		var markers: Array = holder.get_children()
+		if markers.is_empty():
+			continue
+		var spawn_cell := _character_cell(scene["root"], "player_spawn")
+		var reachable: Dictionary = _flood(scene, spawn_cell) if spawn_cell.x >= 0 else {}
+		if reachable.is_empty():
+			_problems.append("%s：有建筑位点却从出生点走不到任何格子（没法验「站得到跟前」）" % scene_id)
+		for marker: Node in markers:
+			var building_id := String(marker.name)
+			if not known.has(building_id):
+				_problems.append("%s：建筑位点 %s 不是 building_def 里的 id——代码按 id 查表，查不到就静默忽略（走到跟前按 E 什么都不发生）" % [
+					scene_id, building_id])
+			var marker_px := MapKit.accumulated_position(marker)
+			var nearest := -1.0
+			for reach_cell: Vector2i in reachable:
+				var reach_px := Vector2(
+					float(reach_cell.x) * MapKit.TILE_PX + MapKit.TILE_PX * 0.5,
+					float(reach_cell.y) * MapKit.TILE_PX + MapKit.TILE_PX * 0.5)
+				var distance := reach_px.distance_to(marker_px)
+				if nearest < 0.0 or distance < nearest:
+					nearest = distance
+				if nearest <= radius:
+					break
+			if nearest > radius:
+				_problems.append("%s：建筑位点 %s（%.0f,%.0f）最近的可站格在 %.0fpx 外，超过交互半径 %.0fpx——玩家站不到跟前、这家店开不了" % [
+					scene_id, building_id, marker_px.x, marker_px.y, nearest, radius])
+		print("[check] %s：建筑位点 %d 个（交互半径 %.0fpx）" % [scene_id, markers.size(), radius])
 
 
 ## 无表设施（当铺／悬赏板／客栈）的位点名必须在控制器的 `FACILITY_LABELS` 里。

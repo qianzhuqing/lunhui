@@ -491,8 +491,21 @@ func _paint_patrol_checkpoint(decor: TileMapLayer, nodes: Dictionary) -> void:
 
 
 ## 旧镖车：车辕断、镖旗褪色，是林铁山守了十年的那辆——**摆在路肩，不挡路**。
+##
+## 0.32.0：美术的 prop（`prop_luoyanpo_jiuche.png`，**64×64 ＝ 2×2 格**）一交付就顶掉原来的
+## 4 格占位瓦片——「翻倒的车厢 ＋ 散落的镖货 ＋ 断掉的车辕 ＋ 只剩一个字的镖旗」四样都画在图里了，
+## 所以四格一起撤。
+##
+## **挂 `Decor` 下、不挂 `Markers` 下**：大地图有雾层，挂 Markers 的会盖在雾上面——
+## 车队所在那段路还没揭开时就会露出来。挂 Decor 才是「世界里的东西」，雾照样能盖住它。
+## 图缺失时退回那 4 格瓦片：别让这辆车**静静地消失**（那是这套约定最怕的一种坏法）。
 func _paint_old_cart(decor: TileMapLayer, nodes: Dictionary) -> void:
 	var cell := _cart_cell(nodes)
+	if ResourceLoader.exists(MapKit.PROP_LUOYANPO_CART):
+		# 64×64 对 2×2 格：左上角压在 `_cart_cell()` 上，所以中心落在「(cell + 1) 个格」的格心。
+		var center := Vector2((cell.x + 1) * MapKit.TILE_PX, (cell.y + 1) * MapKit.TILE_PX)
+		MapKit.add_sprite(decor, "prop_luoyanpo_jiuche", MapKit.PROP_LUOYANPO_CART, center)
+		return
 	decor.set_cell(cell, MapKit.SOURCE_ID, MapKit.T_CRATE)                     # 翻倒的车厢
 	decor.set_cell(cell + Vector2i(1, 0), MapKit.SOURCE_ID, MapKit.T_BARREL)   # 散落的镖货
 	decor.set_cell(cell + Vector2i(-1, 0), MapKit.SOURCE_ID, MapKit.T_FENCE_H) # 断掉的车辕

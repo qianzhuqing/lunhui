@@ -125,7 +125,7 @@ function npcWangTie() {
   c.rect(25, 25, 3, 6, hex("#8A6A46"));
   c.rect(23, 22, 7, 4, hex("#565E64"));
   c.hLine(23, 22, 7, hex("#9EA6AC"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -138,7 +138,7 @@ function npcZhangGui() {
   c.hLine(12, 16, 3, hex("#3A3430"));
   c.hLine(18, 16, 3, hex("#3A3430"));
   c.rect(25, 26, 4, 5, hex("#8A6A46"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -148,7 +148,7 @@ function npcQianDafu() {
   shoulders(c, { cloth: "#5E6A70", clothDark: "#44505A", collar: "#B0AA9C" });
   head(c, { hairStyle: "cloth", hair: "#5A5E62", beard: "goatee", skin: "#C0A284" });
   c.rect(25, 24, 3, 7, hex("#8A8578"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -160,7 +160,7 @@ function npcSunZhanggui() {
   c.hLine(11, 13, 4, hex("#2E2622"));
   c.hLine(17, 13, 4, hex("#2E2622"));
   c.rect(25, 26, 4, 5, hex("#6B5236"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -171,7 +171,7 @@ function npcCaiyao() {
   head(c, { hairStyle: "straw", hair: "#C8C0B0", beard: "full", skin: "#BE9E7E" });
   // 背篓的绳
   for (let i = 0; i < 6; i++) c.set(9 + i, 24 + i, hex("#8A6A46"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -189,7 +189,7 @@ function npcHuangcun() {
   // 低垂的视线：眼画成半阖
   c.hLine(12, 17, 3, hex("#3E3830"));
   c.hLine(18, 17, 3, hex("#3E3830"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -201,7 +201,7 @@ function npcQiutu() {
   // 破口：肩上撕开一道
   c.hLine(20, 27, 3, hex("#2E2A24"));
   c.set(21, 28, hex("#2E2A24"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -234,7 +234,7 @@ function npcShenYanhui() {
   c.set(10, 8, hex("#C8A24A"));
   // 领口压得整齐（她的衣着比谁都利落）
   c.hLine(13, 25, 7, hex("#C8C2B4"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -275,7 +275,7 @@ function npcPeiWujiu() {
   c.hLine(19, 26, 6, hex("#6E7E92"));
   c.set(19, 29, hex("#26303C"));
   c.set(21, 29, hex("#26303C"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -337,7 +337,7 @@ function enemySilhouette({ cloth, clothDark, trim, hat, stance, weapon, hair }) 
     c.rect(23, 15, 4, 2, hex("#8A6A46"));
     c.set(22, 16, hex("#8A6A46"));
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 

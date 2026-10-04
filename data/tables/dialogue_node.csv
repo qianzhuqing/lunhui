@@ -24,6 +24,12 @@ dl_pei_why,npc_pei_wujiu,7,解释给谁听？十年前我把船上的事写成�
 dl_pei_blood,npc_pei_wujiu,8,够多。多到不差你一个。,!flag_heifeng_confront,,20 号 §五 幕五（逐字）
 dl_pei_ledger,npc_pei_wujiu,9,你要的是账，不是理。,!flag_heifeng_confront,,20 号 §五 幕五（逐字）
 dl_pei_after,npc_pei_wujiu,10,你拿得走账册，拿不走这座山。,flag_heifeng_confront,,20 号 §五 幕五（逐字）；战后一句，接回图后的终局难题
-dl_end_yi,player,30,你没把人命算进价钱里。往后走在江边，会有人记得你——虽然未必都是好事。你的江湖从一张告示开始，会从一本账继续。,flag_open_yi,,幕结旁白·义·「仗义」（0.32.0；末句是设计原句）；由**章节推进那一刻**摆出（Q84，照小程序方案，不走 entry_node 的日常轮询）
-dl_end_mou,player,31,你把每一句话都记在心里，像记账。账总要平，只是不知道最后谁来还。你的江湖从一张告示开始，会从一本账继续。,flag_open_mou,,幕结旁白·谋·「多谋」
-dl_end_li,player,32,三十两到手了，你却比来时更穷——有些东西没法用钱数。你的江湖从一张告示开始，会从一本账继续。,flag_open_li,,幕结旁白·利·「趋利」
+dl_end_yi,player,30,你没把人命算进价钱里。往后走在江边，会有人记得你——虽然未必都是好事。你的江湖从一张告示开始，会从一本账继续。,flag_open_yi&flag_ledger_public|flag_ledger_buried|flag_ledger_scattered,,幕结旁白·义·「仗义」（0.32.0；末句是设计原句）；**Q84（2026-10-04）加了「终局已经选过」前置**——读法：`&` 先拆、再拆 `|`，所以是「flag_open_yi 且 账册三选一任一」；这样它在序幕一选完不会冒出来
+dl_end_mou,player,31,你把每一句话都记在心里，像记账。账总要平，只是不知道最后谁来还。你的江湖从一张告示开始，会从一本账继续。,flag_open_mou&flag_ledger_public|flag_ledger_buried|flag_ledger_scattered,,幕结旁白·谋·「多谋」；前置同上（Q84）
+dl_end_li,player,32,三十两到手了，你却比来时更穷——有些东西没法用钱数。你的江湖从一张告示开始，会从一本账继续。,flag_open_li&flag_ledger_public|flag_ledger_buried|flag_ledger_scattered,,幕结旁白·利·「趋利」；前置同上（Q84）
+dl_luoyanpo_lin,ch_gang,1,站住——车那边别过来。你是黑风寨的人？这车我拖了十年，谁也别想碰。,!flag_luoyanpo_met,,幕二入口（20 §五 幕二）；他把你当山贼眼线
+dl_lin_wei,ch_gang,2,威远镖局，早没了。你既知道这四个字，就该知道这车底下埋的是什么。,!flag_luoyanpo_met,,「威远镖局的人？」的应答（20 §五 幕二）
+dl_lin_buy,ch_gang,3,买？……你当这是块地？这车上死过人。,!flag_luoyanpo_met,,「这车，我买了。」的应答（20 §五 幕二）
+dl_lin_silent,ch_gang,4,不用说了。,!flag_luoyanpo_met,,「直接拔剑」的应答：设计写着这条「少一段交心」，所以只有这一句
+dl_lin_heart,ch_gang,5,十年前的镖。官差说，银子在车上，被我们镖局的人吞了。车是空的。我拖了这辆车十年，就想找一个人肯信我——银子根本没上过车。,flag_luoyanpo_met&!flag_lin_silent,,20 §五 幕二逐字（原文三句排比合成一节点）；**刻意不挂到任何选项上**——被选项指到的节点会被 entry_node 当接续排除，那样威／买／拔剑三条路就永远取不到这句（2026-10-04 落表时发现）
+dl_lin_short,ch_gang,6,车是空的。我拖了十年。,flag_luoyanpo_met&flag_lin_silent,,「直接拔剑」那条的收尾（设计说这条「少一段交心」，给一句短的代替）

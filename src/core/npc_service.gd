@@ -43,6 +43,25 @@ const STEAL_FAIL_PENALTY := -8
 const FAVOR_MIN := -10
 
 
+## 好感的三个档位（设计 20 §十 那张表，0.32.0）：**并肩 30／知心 60／生死 90**。
+## 面板要在好感条下面给出刻度——只给一条进度条，玩家看不出「还差多少能换东西」
+## （设计 19 §三 的原话就是为这个）。名字与数值**只在这一处**：`npc_favor` 没有档位列，
+## 20 §十 当初就是按固定三档写的。
+const FAVOR_TIERS := [
+	{"at": 30, "name": "并肩"},
+	{"at": 60, "name": "知心"},
+	{"at": 90, "name": "生死"},
+]
+
+
+## 档位刻度那一行的文案（面板与用例共用，避免两边各拼一份）
+static func favor_tier_text() -> String:
+	var parts := PackedStringArray()
+	for tier: Dictionary in FAVOR_TIERS:
+		parts.append("%d %s" % [int(tier["at"]), str(tier["name"])])
+	return "刻度：" + "　".join(parts)
+
+
 # ------------------------------------------------------------------ 静态查表
 
 static func def_of(db, npc_id: String) -> Resource:
@@ -182,6 +201,33 @@ static func add_favor(db, state, npc_id: String, delta: int) -> Dictionary:
 
 # ------------------------------------------------------------------ 赠礼
 
+## 送礼的**预期**收益：只算不落。面板要在按钮上写「+8·最喜」，而这条规则必须与 `gift()` 同一处，
+## 否则界面写的数与真加的数会各改各的（设计 19 §2.3 的「喜好分两级」）。
+## 返回 {delta, kind, reaction}；`kind` ∈ `best`（最爱）／`same`（同类）／`dislike`（不喜）／`plain`。
+static func gift_preview(db, npc_id: String, item_id: String) -> Dictionary:
+	var row := favor_row_of(db, npc_id)
+	if row == null:
+		return {"delta": 0, "kind": "plain", "reaction": ""}
+	var delta := int(row.gift_favor)
+	var kind := "plain"
+	var reaction := "收下了"
+	if _in_list(str(row.like_item_ids), item_id):
+		delta += LIKE_ITEM_BONUS
+		kind = "best"
+		reaction = "眼前一亮——正是他喜欢的东西"
+	elif _in_list(str(row.dislike_item_ids), item_id):
+		delta = DISLIKE_PENALTY
+		kind = "dislike"
+		reaction = "皱了皱眉，还是收下了"
+	else:
+		var item: Resource = db.get_row("item_base", item_id)
+		if item != null and _in_list(str(row.like_categories), str(item.item_type)):
+			delta += LIKE_CATEGORY_BONUS
+			kind = "same"
+			reaction = "道了声谢"
+	return {"delta": delta, "kind": kind, "reaction": reaction}
+
+
 ## 送礼：从背包扣一件，按喜好给好感。返回 {ok, delta, favor, text, error}
 static func gift(db, state, npc_id: String, item_id: String) -> Dictionary:
 	var row := favor_row_of(db, npc_id)
@@ -192,19 +238,9 @@ static func gift(db, state, npc_id: String, item_id: String) -> Dictionary:
 	if not state.inventory.has(item_id, 1):
 		return {"ok": false, "delta": 0, "favor": favor_of(db, state, npc_id),
 			"text": "", "error": "背包里没有这件东西"}
-	var delta := int(row.gift_favor)
-	var reaction := "收下了"
-	if _in_list(str(row.like_item_ids), item_id):
-		delta += LIKE_ITEM_BONUS
-		reaction = "眼前一亮——正是他喜欢的东西"
-	elif _in_list(str(row.dislike_item_ids), item_id):
-		delta = DISLIKE_PENALTY
-		reaction = "皱了皱眉，还是收下了"
-	else:
-		var item: Resource = db.get_row("item_base", item_id)
-		if item != null and _in_list(str(row.like_categories), str(item.item_type)):
-			delta += LIKE_CATEGORY_BONUS
-			reaction = "道了声谢"
+	var preview := gift_preview(db, npc_id, item_id)
+	var delta := int(preview["delta"])
+	var reaction := str(preview["reaction"])
 	var taken: Dictionary = state.inventory.remove_item(db, item_id, 1)
 	if not bool(taken.get("ok", false)):
 		return {"ok": false, "delta": 0, "favor": favor_of(db, state, npc_id),
@@ -223,6 +259,28 @@ static func gift(db, state, npc_id: String, item_id: String) -> Dictionary:
 static func spar_team(db, npc_id: String) -> String:
 	var def := def_of(db, npc_id)
 	return str(def.spar_team_id) if def != null else ""
+
+
+## 同伴与城镇 NPC 的区分只有一处：**没有 `npc_def` 行、但有 `character_base` 行**的人就是同伴
+## （`person_of` 合成的那一行就是从这儿来的）。
+static func is_companion(db, npc_id: String) -> bool:
+	if db == null or npc_id.is_empty():
+		return false
+	return def_of(db, npc_id) == null and db.get_row("character_base", npc_id) != null
+
+
+## 切磋**跟谁打**（`docs/dev/待策划确认.md` Q88 拍板 ①，2026-10-04）：
+##   · 城镇 NPC（有 `npc_def` 行）→ 按 `spar_team_id` 那支队伍；
+##   · **同伴**（没有 `npc_def` 行）→ **镜像他自己**（按 `character_base` ＋当前等级与配装现造），
+##     **不新增 `enemy_team` 行、不加列**——所以这里给 `kind=mirror` 与空队伍 id。
+## 返回 {kind, team_id}：`kind` ∈ `team`／`mirror`／`none`（`none` = 面板不摆切磋这一段）。
+static func spar_opponent(db, npc_id: String) -> Dictionary:
+	var team := spar_team(db, npc_id)
+	if not team.is_empty():
+		return {"kind": "team", "team_id": team}
+	if is_companion(db, npc_id) and favor_row_of(db, npc_id) != null:
+		return {"kind": "mirror", "team_id": ""}
+	return {"kind": "none", "team_id": ""}
 
 
 ## 切磋赢了：加好感。返回与 `add_favor` 同形，另附一句文案。

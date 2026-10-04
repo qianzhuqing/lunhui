@@ -1,42 +1,32 @@
-﻿[gd_resource type="Theme" load_steps=7 format=3]
+[gd_resource type="Theme" load_steps=13 format=3]
 
 ; 「墨色江湖」UI 主题（设计 15 §4.4）。
-; 配色、按钮四态、两档字号（默认 12／按钮与标题 16）在这里；面板底是**九宫格贴图**
-; （`assets/ui/common/panel_bg.png`，15 §4.4：切图 32×32、四角 8×8 不拉伸、中心 16×16 可平铺）。
-; **色值不许在别处再写一遍**——代码里要强调色就引用这里的 `Theme` 结果（见 `框架说明.md` 决策 375）。
+;
+; **2026-10-04 修订：面板改「宣纸浅色」。** 原先那套深色（面板底 `#1E2224`、
+; 「必须比地图更暗、更沉」）整段作废——用户拿 12 屏示意图当 demo 验收，
+; 而示意图是宣纸浅色，程序照深色做被判成「完全没有符合策划的 UI 示意图」。
+; 「面板不跟地图抢视线」这条原意改由**顶栏**承担：顶栏是唯一的大块深色。
+;
+; | 用途 | 色值 |
+; |---|---|
+; | 面板底 | 宣纸 `#F4ECD9 → #E6DBC0`（这里取中值 `#EDE3CB`：`StyleBoxFlat` 画不了渐变） |
+; | 面板描边 | `#A89A7E`，1px |
+; | 正文／次要／禁用 | `#322E26`／`#5C554A`／`#8A8070` |
+; | 强调 | `#C8A24A` 枯黄 ／ `#A8322A` 朱红 |
+; | 按钮四态 | `#F2EAD6`／`#F7F0DE`／`#C9BC9C`／`#DED5C0` |
+; | 状态条三色（**信息色，不随皮肤走**） | 气血 `#8B2E2E`／架势 `#C8A24A`／内力 `#3E6E8A` |
+;
+; **色值不许在别处再写一遍**——界面代码要色值就走 `UiKit/colors/*`
+; （`src/ui/ui_kit.gd` 是唯一的取用入口，见 `框架说明.md` 决策 375）。
+;
+; **面板底走九宫格贴图**：`assets/ui/common/panel_bg.png`，2026-10-04 由「小美术1」按本节重出——
+; 宣纸纵向渐变 `#F4ECD9 → #E6DBC0`、描边 1px `#A89A7E`，切法不变（32×32／角 8×8／边 16×8／心 16×16）。
+; **中段必须「拉伸」而不是「平铺」**（`axis_stretch_* = 0`）：渐变要纵贯整块板，
+; 沿轴平铺会把 16px 的色阶接成一条条横带。出图方也明确说了别把旧的「颗粒」加回来——
+; 那层颗粒是**平铺**语义的，拉伸后一颗 1px 会变成几十像素的浅斑。
 
-[ext_resource type="Texture2D" uid="uid://d011qafxoxwi5" path="res://assets/ui/common/panel_bg.png" id="1_panel"]
+[ext_resource type="Texture2D" path="res://assets/ui/common/panel_bg.png" id="1_panel"]
 
-[sub_resource type="StyleBoxFlat" id="btn_normal"]
-content_margin_left = 4.0
-content_margin_top = 9.0
-content_margin_right = 4.0
-content_margin_bottom = 9.0
-bg_color = Color(0.172549, 0.196078, 0.211765, 1)
-
-[sub_resource type="StyleBoxFlat" id="btn_hover"]
-content_margin_left = 4.0
-content_margin_top = 9.0
-content_margin_right = 4.0
-content_margin_bottom = 9.0
-bg_color = Color(0.227451, 0.258824, 0.278431, 1)
-
-[sub_resource type="StyleBoxFlat" id="btn_pressed"]
-content_margin_left = 4.0
-content_margin_top = 9.0
-content_margin_right = 4.0
-content_margin_bottom = 9.0
-bg_color = Color(0.0901961, 0.101961, 0.109804, 1)
-
-[sub_resource type="StyleBoxFlat" id="btn_disabled"]
-content_margin_left = 4.0
-content_margin_top = 9.0
-content_margin_right = 4.0
-content_margin_bottom = 9.0
-bg_color = Color(0.101961, 0.101961, 0.101961, 1)
-
-; 八个浮层共用这一张底板：四角固定、四边与中心按 TILE 铺（`axis_stretch_*`＝1），
-; 所以任意长宽的浮层都不会把边角拉变形。内边距仍留 10px，内容不会压到石纹上。
 [sub_resource type="StyleBoxTexture" id="panel_bg"]
 content_margin_left = 10.0
 content_margin_top = 10.0
@@ -47,20 +37,163 @@ texture_margin_left = 8.0
 texture_margin_top = 8.0
 texture_margin_right = 8.0
 texture_margin_bottom = 8.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
+axis_stretch_horizontal = 0
+axis_stretch_vertical = 0
+
+[sub_resource type="StyleBoxFlat" id="btn_normal"]
+content_margin_left = 4.0
+content_margin_top = 9.0
+content_margin_right = 4.0
+content_margin_bottom = 9.0
+bg_color = Color(0.94902, 0.917647, 0.839216, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.713725, 0.65098, 0.52549, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="btn_hover"]
+content_margin_left = 4.0
+content_margin_top = 9.0
+content_margin_right = 4.0
+content_margin_bottom = 9.0
+bg_color = Color(0.968627, 0.941176, 0.870588, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.658824, 0.196078, 0.164706, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="btn_pressed"]
+content_margin_left = 4.0
+content_margin_top = 9.0
+content_margin_right = 4.0
+content_margin_bottom = 9.0
+bg_color = Color(0.788235, 0.737255, 0.611765, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.713725, 0.65098, 0.52549, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="btn_disabled"]
+content_margin_left = 4.0
+content_margin_top = 9.0
+content_margin_right = 4.0
+content_margin_bottom = 9.0
+bg_color = Color(0.870588, 0.835294, 0.752941, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.776471, 0.733333, 0.635294, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+; 键盘焦点环：宣纸底上要看得见（玩家是真用键盘在走这一套界面）
+[sub_resource type="StyleBoxFlat" id="btn_focus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.658824, 0.196078, 0.164706, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="tab_selected"]
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.658824, 0.196078, 0.164706, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.490196, 0.12549, 0.0980392, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+
+[sub_resource type="StyleBoxFlat" id="tab_unselected"]
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.94902, 0.917647, 0.839216, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.713725, 0.65098, 0.52549, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+
+[sub_resource type="StyleBoxFlat" id="tab_hovered"]
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.968627, 0.941176, 0.870588, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.658824, 0.196078, 0.164706, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+
+; 页签里的内容区不另铺底板（卡片自己带背板），留空＝不加内容边距、不动各页的版式预算
+[sub_resource type="StyleBoxEmpty" id="blank"]
 
 [resource]
 default_font_size = 12
-Button/colors/font_color = Color(0.847059, 0.823529, 0.768627, 1)
-Button/colors/font_disabled_color = Color(0.352941, 0.352941, 0.333333, 1)
-Button/colors/font_hover_color = Color(1, 1, 1, 1)
-Button/colors/font_pressed_color = Color(0.847059, 0.823529, 0.768627, 1)
-Button/font_sizes/font_size = 16
+; —— 观感层的自定义色（`UiKit/colors/<名>`）：卡片、标题条、小节、刻度条都从这儿取。
+; 15 §4.4 的色值**只写在这一份**里（决策 375）；换一整套皮肤＝换这一个文件。
+UiKit/colors/ink = Color(0.196078, 0.180392, 0.14902, 1)
+UiKit/colors/ink_dim = Color(0.360784, 0.333333, 0.290196, 1)
+UiKit/colors/ink_off = Color(0.541176, 0.501961, 0.439216, 1)
+UiKit/colors/gold = Color(0.784314, 0.635294, 0.290196, 1)
+UiKit/colors/cinnabar = Color(0.658824, 0.196078, 0.164706, 1)
+UiKit/colors/line = Color(0.658824, 0.603922, 0.494118, 1)
+UiKit/colors/paper = Color(0.929412, 0.890196, 0.796078, 1)
+; 浮层背板：比面板底再沉一档的旧纸（面板是「一张更亮的纸」，靠这层与 1px 描边分开）。
+; **它是单一出处**——`UiKit.paint_backdrop()` 按名字找到浮层的 `Backdrop` 刷上去，
+; 面板的 `.tscn` 里不再各写一份色值。
+UiKit/colors/backdrop = Color(0.85098, 0.811765, 0.705882, 0.97)
+Button/colors/font_color = Color(0.196078, 0.180392, 0.14902, 1)
+Button/colors/font_disabled_color = Color(0.541176, 0.501961, 0.439216, 1)
+Button/colors/font_hover_color = Color(0.0901961, 0.0823529, 0.0588235, 1)
+Button/colors/font_pressed_color = Color(0.0901961, 0.0823529, 0.0588235, 1)
+Button/font_sizes/font_size = 12
 Button/styles/disabled = SubResource("btn_disabled")
+Button/styles/focus = SubResource("btn_focus")
 Button/styles/hover = SubResource("btn_hover")
 Button/styles/normal = SubResource("btn_normal")
 Button/styles/pressed = SubResource("btn_pressed")
-Label/colors/font_color = Color(0.847059, 0.823529, 0.768627, 1)
+Label/colors/font_color = Color(0.196078, 0.180392, 0.14902, 1)
 Panel/styles/panel = SubResource("panel_bg")
 PanelContainer/styles/panel = SubResource("panel_bg")
+TabContainer/colors/font_hovered_color = Color(0.0901961, 0.0823529, 0.0588235, 1)
+TabContainer/colors/font_selected_color = Color(0.976471, 0.945098, 0.886275, 1)
+TabContainer/colors/font_unselected_color = Color(0.196078, 0.180392, 0.14902, 1)
+TabContainer/styles/panel = SubResource("blank")
+TabContainer/styles/tab_hovered = SubResource("tab_hovered")
+TabContainer/styles/tab_selected = SubResource("tab_selected")
+TabContainer/styles/tab_unselected = SubResource("tab_unselected")

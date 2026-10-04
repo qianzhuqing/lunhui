@@ -22,7 +22,6 @@
 const { Canvas, hex } = require("./pixel");
 
 const S = 32;
-const INK = "#1E2224";
 
 /** 材料色板：hi＝受光面（刃口／高光），body＝本体，dark＝背光面。 */
 const MAT = {
@@ -89,7 +88,7 @@ function swordIcon(opts) {
     c.set(x0 + 11, y0 - 13, hex("#C8D4D8"));
     c.set(x0 + 10, y0 - 12, hex("#8A98A0"));
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -115,7 +114,7 @@ function saberIcon(opts) {
     c.set(x0 - 3, y0 + 6, hex("#A83A2E"));
     c.set(x0 - 2, y0 + 7, hex("#A83A2E"));
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -140,7 +139,7 @@ function spearIcon(opts) {
   c.set(ex + 1, ey - 1, hex(t.hi));
   const [bx, by] = axis(x0, y0, 0);
   c.rect(bx, by, 3, 2, hex(s.dark));                // 杆尾
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -165,7 +164,7 @@ function fistIcon(opts) {
   c.set(19, 12, hex(MAT.iron.hi));
   c.rect(15, 18, 6, 2, hex(st.body));               // 腕带
   c.set(20, 12, hex(m.hi));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -217,7 +216,7 @@ function coatIcon(opts) {
     c.rect(18, 17, 4, 3, hex(t.dark));
     c.set(19, 18, hex(t.hi));
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -248,7 +247,7 @@ function legsIcon(opts) {
       c.set(21, y, hex(m.dark));
     }
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -283,7 +282,7 @@ function shoulderIcon(opts) {
   } else {
     for (const x of [10, 15, 20]) c.set(x, 20, hex(t.hi));   // 铆钉／针脚
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -310,7 +309,7 @@ function beltIcon(opts) {
     c.set(15, 15, hex(b.hi));
     for (const x of [22, 25]) c.set(x, 16, hex(m.dark));
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -345,7 +344,7 @@ function ringIcon(opts) {
   } else {                                          // 铜戒：素面
     c.rect(14, 6, 4, 2, hex(m.dark));
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -363,7 +362,7 @@ function coinString() {
   }
   c.set(16, 3, hex("#A83A2E"));                     // 绳结
   c.set(17, 4, hex("#A83A2E"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -384,7 +383,7 @@ function jadePendant() {
   c.set(19, 20, hex(j.dark));
   c.rect(14, 26, 2, 4, hex("#A83A2E"));             // 穗
   c.set(17, 27, hex("#8A2A22"));
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 
@@ -415,7 +414,7 @@ function medicineTalisman() {
     c.set(dx, dy, hex("#6E9E5E"));
     c.set(dx + 1, dy - 1, hex("#8ABE72"));
   }
-  c.outline(hex(INK));
+  c.edge();
   return c;
 }
 

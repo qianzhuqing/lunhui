@@ -1,4 +1,4 @@
-﻿[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://src/ui/dungeon_screen.gd" id="1_dungeon_screen"]
 
@@ -42,7 +42,7 @@ theme_override_constants/separation = 6
 
 [node name="Title" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "副本完成度"
 
 [node name="Summary" type="Label" parent="Panel/Margin/Column"]
@@ -54,7 +54,6 @@ autowrap_mode = 3
 
 [node name="FloorHeader" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
 text = "楼层（已通关的层可以扫荡：只结算掉落、不给经验）"
 
 [node name="Body" type="ScrollContainer" parent="Panel/Margin/Column"]

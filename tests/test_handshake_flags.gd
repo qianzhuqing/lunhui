@@ -5,6 +5,12 @@
 ## 加检查就写在对应族里；跨族要用某个函数先看它是不是该挪进基类。
 extends "res://tests/test_handshake.gd"
 
+## Q83（2026-10-04）让 `dialogue_option.set_flag` 支持分号多值（`flag_a;flag_b`）——
+## 那一版只改了运行期／构建期／PS1 三处，**漏了本文件**：`_note_flag` 把整格当一个旗标名，
+## 于是 `flag_a;flag_b` 里那串复合名字进了桶、`flag_a` 反被判成"没人点亮"。
+## 口径与那三处一致：**只在这一处拆**，拆法调行类自己那份 `parse_set_flags`（单一源）。
+const DialogueOptionRowScript := preload("res://src/data/tables/dialogue_option_row.gd")
+
 
 func suite_name() -> String:
 	return "旗标与可达性"
@@ -32,7 +38,8 @@ func _check_flag_reachability() -> void:
 
 	var produced := PackedStringArray()
 	for row: Resource in db.rows("dialogue_option"):
-		_note_flag(produced, str(row.set_flag))
+		for flag_id: String in DialogueOptionRowScript.parse_set_flags(str(row.set_flag)):
+			_note_flag(produced, flag_id)
 	for table_name: String in ["event_check", "hidden_trigger"]:
 		for row: Resource in db.rows(table_name):
 			if str(row.reward_type) == "event":

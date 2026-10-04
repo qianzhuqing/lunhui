@@ -1191,7 +1191,10 @@ func open_npc(npc_id: String, mode: String = NpcPanelMode.MODE_INTERACT) -> Dict
 	panel.npc_id = npc_id
 	panel.mode = mode
 	panel.return_handler = func() -> void: close_npc()
-	add_child(panel)
+	# 同伴的交往入口现在在角色面板（Q67 拍板 ④），而角色面板在大地图上也能开——
+	# 所以大地图这一侧同样要把切磋接上，否则那一按会落到「这里不能切磋」。
+	panel.spar_handler = func(who: String, team: String) -> void: _start_spar(who, team)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	npc_panel = panel
 	_push_overlay("npc")
@@ -1200,6 +1203,37 @@ func open_npc(npc_id: String, mode: String = NpcPanelMode.MODE_INTERACT) -> Dict
 
 func close_npc() -> void:
 	_close_overlay("npc")
+
+
+## 切磋（与 `local_map_controller._start_spar` 同一套口径）：空队伍 id = **打他自己的镜像**
+## （同伴，Q88 拍板 ①）；有队伍 id 就走表里那支队伍。
+func _start_spar(npc_id: String, team_id: String) -> Dictionary:
+	var team: Resource = db.get_row("enemy_team", team_id) if not team_id.is_empty() else null
+	if not team_id.is_empty() and team == null:
+		push_error("[overworld] 切磋队伍不存在：enemy_team 缺少 %s（npc %s）" % [team_id, npc_id])
+		_set_status("切磋对手的配置对不上（数据错，已记进日志）")
+		return {"ok": false, "error": "no_team"}
+	var data := {
+		"spawn_id": "spar_%s" % npc_id,
+		"source_scene": current_region_id(),
+		"source_key": "spar_%s" % npc_id,
+		"team_id": team_id,
+		"is_elite": false,
+	}
+	if team_id.is_empty():
+		data["mirror_char"] = npc_id
+	var encounter = EncounterScript.build(
+		db, data, team, EncounterScript.CONTACT_FRONT, str(current_state().difficulty_id))
+	if team_id.is_empty():
+		var person: Resource = NpcServiceScript.person_of(db, current_state(), npc_id)
+		encounter.team_name = "%s的镜像" % (str(person.name_cn) if person != null else npc_id)
+	encounter.spar_npc = npc_id
+	close_npc()
+	if battle_switch_handler.is_valid():
+		battle_switch_handler.call(encounter)
+	else:
+		_change_scene(BATTLE_SCENE)
+	return {"ok": true, "team_id": team_id, "npc_id": npc_id}
 
 
 ## 看一个观察点：只出一句碎句——不发奖励、不锁任何路（设计 20 §3.2）
@@ -1520,7 +1554,9 @@ func open_character_overlay(tab_index: int = 0) -> Dictionary:
 	panel.name = "CharacterPanel"
 	panel.state_override = current_state()
 	panel.back_handler = func() -> void: _close_overlay("character")
-	add_child(panel)
+	# Q67 拍板 ④：同伴的交往入口在角色面板（同伴不站位）——这里把「谁」接到既有那条 `open_npc()`
+	panel.npc_open_handler = func(npc_id: String) -> void: open_npc(npc_id)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	panel.select_tab(tab_index)
 	_push_overlay("character")
@@ -1541,11 +1577,11 @@ func open_clues() -> Dictionary:
 	panel.state_override = current_state()
 	panel.scope = "region"
 	panel.return_handler = func() -> void: close_clues()
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	clue_panel = panel
 	_push_overlay("clue")
-	_set_status("线索本：野外的可交互点按地标列在这里（Esc 或点「离开」出来）")
+	_set_status("线索本：五类都在里面；野外的可交互点按地标列在「隐藏」那一页（Esc 或点「离开」出来）")
 	return {"ok": true, "error": "", "reopened": false}
 
 
@@ -1571,7 +1607,7 @@ func open_shop(building_id: String) -> Dictionary:
 	panel.state_override = current_state()
 	panel.building_id = building_id
 	panel.return_handler = func() -> void: close_shop()
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	shop_panel = panel
 	_push_overlay("shop")
@@ -1613,7 +1649,7 @@ func open_waypoint() -> Dictionary:
 	panel.travel_handler = func(scene_id: String, _name: String) -> void:
 		close_waypoint()
 		enter_local_map(scene_id, true)   # 传送：回程落点记目的地地标，别把人拽回驿站
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	waypoint_panel = panel
 	_push_overlay("waypoint")

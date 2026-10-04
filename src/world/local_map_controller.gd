@@ -1128,7 +1128,10 @@ func open_character_overlay(tab_index: int = 0) -> Dictionary:
 	panel.name = "CharacterPanel"
 	panel.state_override = current_state()
 	panel.back_handler = func() -> void: _close_overlay("character")
-	add_child(panel)
+	# Q67 拍板 ④：角色面板点同伴 → 开交往屏。走的就是场景层**现成那条** `open_npc()`
+	# （浮层栈、刷新、偷窃不摆都在那边），面板只把「谁」递过来。
+	panel.npc_open_handler = func(npc_id: String) -> void: open_npc(npc_id)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	panel.select_tab(tab_index)
 	_push_overlay("character")
@@ -1155,7 +1158,7 @@ func open_dungeon_panel() -> Dictionary:
 	panel.return_handler = func() -> void: close_dungeon_panel()
 	# 扫荡还是走小地图控制器（它管会话状态、玩家位置与掉落入包）
 	panel.sweep_handler = func(floor_number: int) -> Dictionary: return sweep_floor(floor_number)
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	dungeon_panel = panel
 	_push_overlay("dungeon")
@@ -1181,7 +1184,7 @@ func open_clues() -> Dictionary:
 	panel.scope = "scene"
 	panel.scene_id = scene_id
 	panel.return_handler = func() -> void: close_clues()
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	clue_panel = panel
 	_push_overlay("clue")
@@ -1391,7 +1394,7 @@ func open_npc(npc_id: String, mode: String = NpcPanelMode.MODE_INTERACT,
 	panel.kill_styles = _last_kill_styles()
 	panel.return_handler = func() -> void: close_npc()
 	panel.spar_handler = func(who: String, team: String) -> void: _start_spar(who, team)
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	npc_panel = panel
 	_push_overlay("npc")
@@ -1405,19 +1408,29 @@ func close_npc() -> void:
 ## 切磋：组一场「和这个人打」的遭遇交给战斗场景；赢了由战斗结算加好感
 ## （`encounter.spar_npc` 就是干这个的——切过场景之后会话里的临时标记早没了）。
 func _start_spar(npc_id: String, team_id: String) -> Dictionary:
-	var team: Resource = db.get_row("enemy_team", team_id)
-	if team == null:
+	# **空队伍 id 是有意的**：同伴的切磋打的是「他自己的镜像」（Q88 拍板 ①）——
+	# 表里没有、也不该有这支队伍，战斗层按这位同伴现造（见 `battle_screen._build_mirror_enemy`）。
+	var team: Resource = db.get_row("enemy_team", team_id) if not team_id.is_empty() else null
+	if not team_id.is_empty() and team == null:
 		# 数据错：id 只进日志，玩家看一句人话（AGENTS：玩家可见文案不许出现表内 id，见决策 242／329）
 		push_error("[local_map] 切磋队伍不存在：enemy_team 缺少 %s（npc %s 的 spar_team_id）" % [team_id, npc_id])
 		_set_status("切磋对手的配置对不上（数据错，已记进日志）")
 		return {"ok": false, "error": "no_team"}
-	var encounter = EncounterScript.build(db, {
+	var data := {
 		"spawn_id": "spar_%s" % npc_id,
 		"source_scene": scene_id,
 		"source_key": "spar_%s" % npc_id,   # 不写房间名：切磋不进副本完成度
 		"team_id": team_id,
 		"is_elite": false,
-	}, team, EncounterScript.CONTACT_FRONT, str(current_state().difficulty_id))
+	}
+	if team_id.is_empty():
+		data["mirror_char"] = npc_id
+	var encounter = EncounterScript.build(
+		db, data, team, EncounterScript.CONTACT_FRONT, str(current_state().difficulty_id))
+	if team_id.is_empty():
+		# 战报抬头要有个名字（`Encounter.headline()` 直接用 team_name）；镜像就是那位同伴自己
+		var person: Resource = NpcServiceScript.person_of(db, current_state(), npc_id)
+		encounter.team_name = "%s的镜像" % (str(person.name_cn) if person != null else npc_id)
 	encounter.spar_npc = npc_id
 	close_npc()
 	if battle_switch_handler.is_valid():
@@ -1531,7 +1544,7 @@ func open_shop(building_id: String) -> Dictionary:
 	panel.state_override = current_state()
 	panel.building_id = building_id
 	panel.return_handler = func() -> void: close_shop()
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	shop_panel = panel
 	_push_overlay("shop")
@@ -1559,7 +1572,7 @@ func open_cultivate() -> Dictionary:
 	panel.name = "CultivatePanel"
 	panel.state_override = current_state()
 	panel.return_handler = func() -> void: close_cultivate()
-	add_child(panel)
+	OverlayStackScript.mount(self, panel)
 	panel.setup()
 	cultivate_panel = panel
 	_push_overlay("cultivate")

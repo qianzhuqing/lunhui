@@ -43,6 +43,22 @@ func party_state(db, count: int, difficulty: String = "normal") -> SoloStateScri
 	return SoloStateScript.new_game(db, difficulty, ids)
 
 
+## 把一条**条件**点亮（夹具用）：`a&b` 两段都置、`a|b` 两段都置（"任一满足"自然成立）、
+## `!x` 段跳过（要求的是"它没被点亮"，夹具不该去点亮它）。
+## `origin:`／`item:` 这些不是旗标的条件也跳过——那些得靠造出对应状态来满足。
+##
+## 为什么要有它：夹具以前直接 `state.set_flag(join_condition)`，条件里一出现 `|`／`&`，
+## 置进去的就是个**假旗标**（名字叫 `flag_a|flag_b`），条件仍然不成立，
+## 「走到地标旁入队」直接掉进"没点亮"那条分支（2026-10-04 Q83 实测踩到）。
+func satisfy_condition(state, condition: String) -> void:
+	for group: String in condition.replace("|", "&").split("&", false):
+		var token := group.strip_edges()
+		if token.is_empty() or token.begins_with("!"):
+			continue
+		if token.begins_with("flag_"):
+			state.set_flag(token)
+
+
 ## 把**所有角色模板的资质**（悟性／根骨）直接改成指定值的内存夹具。
 ##
 ## 设计 0.13.0 把悟性／根骨锁成「资质」（不能加点），而第一章也没有别的来源能把根骨抬到

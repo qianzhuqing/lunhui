@@ -22,6 +22,24 @@ if not exist ".logs" mkdir ".logs"
 
 rem Hand the windowed switch to check_scene.bat: same verdict marker, same runtime-error log gate,
 rem just without --headless and with its own log file names.
+rem Rebuild the generated tables first: every scene self-check reads data/generated/*.tres, and
+rem only the run_tests chain rebuilt them -- editing a CSV and running this smoke directly would
+rem judge the OLD data (a full round was chased on a stale copy, 2026-10-04).
+if not defined CHECK_SCRIPT_MAX_FRAMES set "CHECK_SCRIPT_MAX_FRAMES=2000"
+echo [build] rebuilding config tables ...
+"%GODOT_BIN%" --headless --path . --log-file ".logs\build.log" --quit-after %CHECK_SCRIPT_MAX_FRAMES% --script res://tools/build_tables.gd
+if errorlevel 1 (
+	echo [error] table build failed, see .logs\build.log
+	exit /b 1
+)
+rem Scan the build log too: this file now starts an engine itself, so it owes the same runtime-error
+rem gate as the other engine-starting scripts (the repo gate enforces check_log_errors.bat here).
+call "tools\check_log_errors.bat" ".logs\build.log"
+if errorlevel 1 (
+	echo [error] table build left a runtime error in .logs\build.log
+	exit /b 1
+)
+
 set "CHECK_SCENE_WINDOWED=1"
 
 set "FAILED_STEPS="

@@ -9,6 +9,10 @@ opt_ci_leave,dl_qingfengyi_ci,4,（不接话，起身就走）,,,,0,,心性不�
 opt_ledger_public,dl_ledger_choice,1,「交给公门。死人的名字，不能再背着。」,,dl_ledger_reply_public,flag_ledger_public,0,,呈官（20 §七 7.1）；正式台词（文案批次 0.32.0）；永久增益「清名」走 story_node(ledger_public)
 opt_ledger_buried,dl_ledger_choice,2,「烧了它。名字沉了，人还在。」,,dl_ledger_reply_buried,flag_ledger_buried,0,,沉底（20 §七 7.1）；正式台词（文案批次 0.32.0）；永久增益「藏锋」走 story_node(ledger_buried)
 opt_ledger_scattered,dl_ledger_choice,3,「抄成散页，撒进江湖——一个人扛不住，就让整条江扛。」,,dl_ledger_reply_scattered,flag_ledger_scattered,0,,散页（20 §七 7.2 第三条路）；正式台词（文案批次 0.32.0）；永久增益「江湖」走 story_node(ledger_scattered)
+opt_lin_chetai,dl_luoyanpo_lin,1,「车是空的——车辙太浅。」,flag_obs_ob_luoyanpo_cart_01,,heart_mou;flag_luoyanpo_met,8,,免战那条（20 §五 幕二）；前置＝看过车辙观察点；**next 刻意留空**，理由见 dl_lin_heart 那行
+opt_lin_wei,dl_luoyanpo_lin,2,「威远镖局的人？」,,,heart_yi;flag_luoyanpo_met,0,,义 +1；他松手（20 §五 幕二）
+opt_lin_buy,dl_luoyanpo_lin,3,「这车，我买了。」,,,heart_li;flag_luoyanpo_met,0,,利 +1；他骂你一句。**好感数设计没给**，先留 0 待策划
+opt_lin_fight,dl_luoyanpo_lin,4,（不答话，先把剑拔出来）,,,flag_lin_silent;flag_luoyanpo_met,0,,无加成；少一段交心（20 §五 幕二）
 opt_shen_take,dl_shen_cell,1,「我带你走。」,,dl_shen_why,heart_yi,0,,20 §五 幕四（逐字）：义 +1；她跟你走＝快通关那条（flag_shen_rescued 由地牢那次判定发）；答完接「你为什么帮我」
 opt_shen_ledger,dl_shen_cell,2,「账册在哪？」,,dl_shen_why,heart_mou,0,,20 §五 幕四（逐字）：谋 +1；她第一次正眼看你；答完接「你为什么帮我」
 opt_shen_thirty,dl_shen_cell,3,「三十两是我的。」,,dl_shen_why,heart_li,-5,,20 §五 幕四（逐字）：利 +1、好感 −5；她认了你「实话，说得不难听」；答完接「你为什么帮我」

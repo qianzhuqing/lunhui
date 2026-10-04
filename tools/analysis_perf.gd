@@ -160,7 +160,8 @@ func _measure_long_clue_list(db, helper) -> Dictionary:
 	root.add_child(screen)
 	screen.setup()
 	var panel_ms := _ms_since(t1)
-	var rows: int = screen.entry_count()
+	# 面板现在是五类分页，长列表那批全在「隐藏」页里
+	var rows: int = screen.section_row_count("hidden")
 	root.remove_child(screen)
 	screen.free()
 	return {"查询": query_ms, "面板": panel_ms, "entries": entries.size(), "rows": rows}

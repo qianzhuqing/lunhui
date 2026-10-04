@@ -11,6 +11,7 @@ extends Control
 const NpcServiceScript := preload("res://src/core/npc_service.gd")
 ## 对话容器（设计 20 §十一）：台词与选项都在 `dialogue_node`／`dialogue_option` 里
 const DialogueServiceScript := preload("res://src/core/dialogue_service.gd")
+const RecruitServiceScript := preload("res://src/core/recruit_service.gd")
 const TableDbScript := preload("res://src/core/table_db.gd")
 const RngServiceScript := preload("res://src/core/rng_service.gd")
 const CopyGuardScript := preload("res://src/ui/copy_guard.gd")
@@ -18,6 +19,9 @@ const LayoutBudgetScript := preload("res://src/ui/layout_budget.gd")
 
 ## 自检与用例的注入点
 var state_override = null
+## 夹具注入用的表（与 `shop_screen.db_override` 同款）：用例要拿**改过的内存副本**开面板
+## （例：给某个 NPC 临时配一支 `spar_team_id` 验「切磋」按钮的接线），不能只靠 GameData 那份。
+var db_override = null
 var npc_id: String = ""
 ## 两种模式（设计 0.28.0 的 Q62：**E 进交互、Q 看信息**）：
 ##   `info`     = **只读**信息面板：名字／称号／等级／好感／介绍，Esc 返回，**不带任何副作用**；
@@ -46,6 +50,7 @@ var db
 var _name_label: Label
 var _info_label: Label
 var _favor_label: Label
+var _favor_ticks: Label
 ## 头像：**原生 32×32、显示 2 倍到 64×64**，放左上角，与名字／称号／等级／好感同排
 ## （设计 14 §「NPC 信息面板的结构」——这几项是「这人是谁」的一组信息，不要拆到两处）。
 var _avatar: TextureRect = null
@@ -79,6 +84,8 @@ func setup() -> void:
 
 
 func _resolve_db():
+	if db_override != null:
+		return db_override
 	var game_data := _session_node("GameData")
 	if game_data != null and game_data.db != null and not game_data.db.tables.is_empty():
 		return game_data.db
@@ -125,11 +132,16 @@ func leave() -> void:
 
 # ------------------------------------------------------------------ 界面
 
+## 界面配件（卡片、色值）走共享构件——`const` 就近放在用它的这一段上面
+const UiKitScript := preload("res://src/ui/ui_kit.gd")
+
+
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.name = "Backdrop"
-	bg.color = Color(0.06, 0.07, 0.08, 0.97)   # 盖在场景上的面板要够不透明（版式预算也会查）
+	# 盖在场景上的面板要够不透明（版式预算会查 0.9）；色值只在主题里一处
+	bg.color = UiKitScript.color("backdrop")
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 	var margin := MarginContainer.new()
@@ -161,11 +173,17 @@ func _build_ui() -> void:
 	head.add_child(who)
 	_name_label = Label.new()
 	_name_label.name = "NameLabel"
-	_name_label.add_theme_font_size_override("font_size", 16)
+	# 名字／称号／等级那一行＝面板的界面标题档（设计 15 §4.4：标题 24／正文 12，16 档已取消）
+	_name_label.add_theme_font_size_override("font_size", 24)
 	who.add_child(_name_label)
 	_favor_label = Label.new()
 	_favor_label.name = "FavorLabel"
 	who.add_child(_favor_label)
+	# 好感条的**档位刻度**（设计 20 §十 的三个档位：并肩／知心／生死）：只给条不给刻度，
+	# 玩家看不出「还差多少能换东西」（设计 19 §三 的原话就是为这个）。
+	_favor_ticks = Label.new()
+	_favor_ticks.name = "FavorTicks"
+	who.add_child(_favor_ticks)
 	_info_label = Label.new()
 	_info_label.name = "InfoLabel"
 	_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -205,11 +223,13 @@ func refresh() -> void:
 		_name_label.text = "（不认识这个人）"
 		_info_label.text = ""
 		_favor_label.text = ""
+		_favor_ticks.text = ""
 		return
 	var favor := NpcServiceScript.favor_of(db, current_state(), npc_id)
 	# 名字/称号/等级/好感是**一组**信息（14 §「NPC 信息面板的结构」）
 	_name_label.text = "%s　%s　Lv.%d" % [str(def.name_cn), str(def.title_cn), int(def.level)]
 	_favor_label.text = "好感 %d　%s" % [favor, _favor_bar(favor)]
+	_favor_ticks.text = NpcServiceScript.favor_tier_text()
 	_info_label.text = str(def.info_text_cn)
 	_refresh_avatar()
 	# 先摘再 queue_free：队列里的旧条目要到帧末才走，名字会撞（见 creation_screen._rebuild_body 的注释）
@@ -223,9 +243,12 @@ func refresh() -> void:
 	_add_talk_section()
 	_add_gift_section()
 	_add_spar_section()
-	_add_steal_section()
-	_add_offer_section()
-	_add_quest_section()
+	# **同伴只摆「赠与 ＋ 切磋」两段**（Q88 拍板，2026-10-04）：偷窃对他本来就不适用
+	# （`steal_difficulty=0`），兑换／委托本章不给同伴配行——三段**整段不摆**，不摆灰按钮。
+	if not NpcServiceScript.is_companion(db, npc_id):
+		_add_steal_section()
+		_add_offer_section()
+		_add_quest_section()
 
 
 ## 「聊聊」（设计 20 §十一 的对话容器）：**台词与选项都从表里来**，面板只呈现与转发。
@@ -237,6 +260,8 @@ func _refresh_story() -> void:
 	_name_label.text = ""
 	_info_label.text = ""
 	_favor_label.text = ""
+	if _favor_ticks != null:
+		_favor_ticks.text = ""
 	if _avatar != null:
 		_avatar.visible = false
 	# 先摘再 queue_free：队列里的旧条目要到帧末才走，名字会撞（见 creation_screen._rebuild_body 的注释）
@@ -371,7 +396,17 @@ func _add_gift_section() -> void:
 		shown += 1
 		var button := Button.new()
 		button.name = "Gift_%s" % item_id
-		button.text = "赠送 %s（持有 %d）" % [str(row.name_cn), state.inventory.count(item_id)]
+		# 预期收益写在按钮上（设计示意图「可赠之物」那一栏的信息层级）：玩家要能看出
+		# 「送对喜好加得多」，而不是送完才知道。数只有 `gift_preview()` 一处算。
+		var preview: Dictionary = NpcServiceScript.gift_preview(db, npc_id, item_id)
+		var tag := ""
+		match str(preview.get("kind", "plain")):
+			"best": tag = "（最喜）"
+			"same": tag = "（同类）"
+			"dislike": tag = "（不喜）"
+		button.text = "赠送 %s（持有 %d）好感 %+d%s" % [
+			str(row.name_cn), state.inventory.count(item_id), int(preview.get("delta", 0)), tag,
+		]
 		button.custom_minimum_size = Vector2(420, 36)
 		button.pressed.connect(func() -> void: gift(item_id))
 		_actions.add_child(button)
@@ -380,14 +415,18 @@ func _add_gift_section() -> void:
 
 
 func _add_spar_section() -> void:
-	var team := NpcServiceScript.spar_team(db, npc_id)
-	if team.is_empty():
+	# 打谁由 `spar_opponent()` 一处判：城镇 NPC 是一支队；**同伴是镜像他自己**（Q88 拍板 ①）
+	var opponent := NpcServiceScript.spar_opponent(db, npc_id)
+	if str(opponent.get("kind", "none")) == "none":
 		return
 	var row: Resource = NpcServiceScript.favor_row_of(db, npc_id)
 	var gain := int(row.spar_favor) if row != null else 0
 	var button := Button.new()
 	button.name = "SparButton"
-	button.text = "切磋（赢了好感 +%d）" % gain
+	var text := "切磋（赢了好感 +%d）" % gain
+	if str(opponent["kind"]) == "mirror":
+		text = "切磋（与自己的镜像过招；赢了好感 +%d）" % gain
+	button.text = text
 	button.custom_minimum_size = Vector2(420, 36)
 	button.pressed.connect(func() -> void: spar())
 	_actions.add_child(button)
@@ -396,6 +435,11 @@ func _add_spar_section() -> void:
 func _add_steal_section() -> void:
 	var steals: Array = NpcServiceScript.offers_of(db, npc_id, "steal")
 	if steals.is_empty():
+		# `steal_difficulty=0` = **不可偷**（设计 19 §2.2 给善意的人留的口子）：摆一行说明、不给按钮
+		# ——什么都不写会被当成漏做（UI 清单 §二-7）。同伴整段不摆，那一层在 `refresh()` 就拦掉了。
+		var favor_row: Resource = NpcServiceScript.favor_row_of(db, npc_id)
+		if favor_row != null and int(favor_row.steal_difficulty) == 0:
+			_actions.add_child(_section("偷窃：此人不可偷"))
 		return
 	_actions.add_child(_section("偷窃（走敏／运判定；失败扣好感）"))
 	for offer: Resource in steals:
@@ -463,13 +507,15 @@ func gift(item_id: String) -> Dictionary:
 
 
 func spar() -> Dictionary:
-	var team := NpcServiceScript.spar_team(db, npc_id)
-	if team.is_empty():
+	# 空队伍 id 对同伴是**有意的**：那表示「打他自己的镜像」，由场景层照人物现造（Q88 拍板 ①）
+	var opponent := NpcServiceScript.spar_opponent(db, npc_id)
+	if str(opponent.get("kind", "none")) == "none":
 		_status.text = "这个人不切磋"
 		return {"ok": false, "error": "no_spar"}
 	if not spar_handler.is_valid():
 		_status.text = "这里不能切磋（没有战斗入口）"
 		return {"ok": false, "error": "no_handler"}
+	var team := str(opponent.get("team_id", ""))
 	spar_handler.call(npc_id, team)
 	return {"ok": true, "team_id": team}
 
@@ -539,6 +585,27 @@ func _run_npc_selftest() -> void:
 	lines.append("信息面板：%s（好感 %d）" % [_name_label.text, NpcServiceScript.favor_of(db, state, npc_id)])
 	ok = ok and not _info_label.text.is_empty()
 	ok = ok and _favor_label.text.contains("█") or _favor_label.text.contains("░")
+	# 好感条的**档位刻度**（设计 20 §十：并肩 30／知心 60／生死 90；UI 清单 §二-7「必须给阈值刻度」）：
+	# 只给一条进度条，玩家看不出「还差多少能换东西」
+	var tier_ok: bool = _favor_ticks != null and _favor_ticks.text.contains("并肩") \
+		and _favor_ticks.text.contains("知心") and _favor_ticks.text.contains("生死") \
+		and _favor_ticks.text.contains("30") and _favor_ticks.text.contains("90")
+	ok = ok and tier_ok
+	lines.append("好感档位刻度=%s（%s）" % [tier_ok, _favor_ticks.text if _favor_ticks != null else "缺"])
+	# 不可偷的人（`steal_difficulty=0`）：**摆一行说明、不给按钮**——静默会被当成漏做
+	npc_id = "npc_qiutu"
+	refresh()
+	var quiet_blob := ""
+	var quiet_has_button := false
+	for child_row in _actions.get_children():
+		quiet_blob += str(child_row.get("text")) + "｜"
+		if str(child_row.name).begins_with("Steal_"):
+			quiet_has_button = true
+	var quiet_ok: bool = quiet_blob.contains("不可偷") and not quiet_has_button
+	ok = ok and quiet_ok
+	lines.append("不可偷的人只给说明、不给按钮=%s" % quiet_ok)
+	npc_id = "npc_qian_dafu"
+	refresh()
 	# 头像（设计 14：原生 32×32、显示 2 倍到 64×64，与名字／称号／等级同排）
 	var avatar_ok: bool = _avatar != null \
 		and _avatar.custom_minimum_size == Vector2(64, 64) \
@@ -559,6 +626,16 @@ func _run_npc_selftest() -> void:
 	var refused: Dictionary = gift("item_iron")
 	ok = ok and not bool(refused["ok"]) and not status_text().is_empty()
 	lines.append("送没有的东西被拒=%s（%s）" % [not bool(refused["ok"]), status_text()])
+	# 按钮上要写出**预期收益**（设计示意图「可赠之物」那一栏的信息层级）：种类与数字都来自
+	# `gift_preview()`——与真加的那一笔同一个函数，改规则不会只改一半
+	state.inventory.add_item(db, "item_herb", 1)
+	refresh()
+	var gift_btn: Button = _actions.find_child("Gift_item_herb", true, false)
+	var wish: Dictionary = NpcServiceScript.gift_preview(db, npc_id, "item_herb")
+	var preview_ok: bool = gift_btn != null and gift_btn.text.contains("最喜") \
+		and gift_btn.text.contains("%+d" % int(wish["delta"]))
+	ok = ok and preview_ok
+	lines.append("赠礼按钮写出预期收益=%s（%s）" % [preview_ok, gift_btn.text if gift_btn != null else "缺"])
 
 	# 偷窃：判定是 `掷点 ≤ 成功率`——掷 0 必成功、掷 1 必失败（固定掷点，用例可复现）
 	var steal_win: Dictionary = NpcServiceScript.steal(db, state, npc_id, "item_potion_small", 0.0)
@@ -586,6 +663,33 @@ func _run_npc_selftest() -> void:
 		var done: Dictionary = complete_quest(str(quest.quest_id))
 		ok = ok and bool(done["ok"]) and state.has_flag("npc_quest_done_%s" % str(quest.quest_id))
 		lines.append("交委托 ok=%s（好感 %d）：%s" % [done["ok"], int(done["favor"]), status_text()])
+
+	# 同伴的交往屏（Q88 拍板 ①，2026-10-04）：**只摆「赠与 ＋ 切磋」两段**——
+	# 偷窃／兑换／委托对同伴**整段不摆**（不摆灰按钮）；切磋那一按打的是「他自己的镜像」
+	# （同伴没有 enemy_team 行，战斗层按人物现造）。
+	npc_id = "ch_ci"
+	dialogue_node_id = ""
+	var mate_join: Dictionary = RecruitServiceScript.join(db, state, npc_id)
+	refresh()
+	var mate_spar: Button = _actions.find_child("SparButton", true, false)
+	var mate_blob := ""
+	var mate_gift := false
+	for child in _actions.get_children():
+		var mate_text := str(child.get("text"))
+		mate_blob += mate_text + "｜"
+		if mate_text.begins_with("赠送 "):
+			mate_gift = true
+	var mate_ok: bool = bool(mate_join.get("ok", false)) and mate_spar != null \
+		and mate_spar.text.contains("镜像") and mate_gift \
+		and not mate_blob.contains("偷窃") and not mate_blob.contains("兑换") \
+		and not mate_blob.contains("委托")
+	ok = ok and mate_ok
+	lines.append("同伴交往屏只摆赠与＋切磋（镜像过招）=%s（%s）" % [
+		mate_ok, mate_spar.text if mate_spar != null else "缺",
+	])
+	var mate_kind_ok: bool = str(NpcServiceScript.spar_opponent(db, npc_id).get("kind", "")) == "mirror"
+	ok = ok and mate_kind_ok
+	lines.append("同伴的切磋判成镜像=%s" % mate_kind_ok)
 
 	# 版式与背板（面板自检的既有两条）+ 文案守卫
 	# 对话容器（设计 20 §十一）：陈氏那条是照 20 号 §四 幕三 落的（她说的话 ＋ 三个选项）
