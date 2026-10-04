@@ -68,7 +68,13 @@ func discovery_target_revealed(suffix: String) -> bool:
 func apply_initial_reveals() -> PackedStringArray:
 	var out := PackedStringArray()
 	for row: Resource in all_nodes():
-		if bool(row.reveal_on_map) and _reveal(str(row.node_id)):
+		if not bool(row.reveal_on_map):
+			continue
+		# `reveal_on_map=1` 只说明「这类地点默认出现在地图上」——**持有类条件还要先满足**
+		# （设计 0.26 §六：没拿到藏宝图之前，石隙迷窟在大地图上根本不存在）
+		if not _held_condition_met(str(row.unlock_condition)):
+			continue
+		if _reveal(str(row.node_id)):
 			out.append(str(row.node_id))
 	return out
 
@@ -109,6 +115,89 @@ func apply_proximity_reveals(player_position: Vector2, markers: Dictionary) -> P
 					out.append(node_id)
 					changed = true
 	return out
+
+
+## 持有类解锁：`unlock_condition` 写的是**物品 id**（`item_treasure_map`），
+## 也接受 `item:<id>` 这种带冒号的写法。
+##
+## 注意 `item_treasure_map` 这种 id **本身就带 `item_` 前缀**——所以不能一律按
+## 「去掉 `item_`」解析（那样会得到 `treasure_map`，永远查不到）。这里先按**整串**查表，
+## 查不到再看是不是 `item:` 写法。返回空串 = 这条不是持有类条件。
+##
+## **是静态的**：构建期校验器也要按同一条规则判「哪个兴趣点允许带图标」
+## （0.32.0：兴趣点不给图标，例外只有「藏宝图指向的那一个」）——抄第二份就会漂。
+## 这里只判「这个条件是持有类」，背包里有没有由 `_held_condition_met` 补。
+static func held_item_id(table_db, condition: String) -> String:
+	if condition.is_empty():
+		return ""
+	if table_db == null:
+		return ""
+	if condition.begins_with("item:"):
+		var colon_id := condition.substr("item:".length())
+		return colon_id if table_db.get_row("item_base", colon_id) != null else ""
+	if table_db.get_row("item_base", condition) != null:
+		return condition
+	return ""
+
+
+func _held_condition_met(condition: String) -> bool:
+	var item_id := held_item_id(db, condition)
+	if item_id.is_empty():
+		return true   # 不是持有类条件（其余写法由各自的分支管，别在这里拦）
+	if state == null or state.inventory == null:
+		return false
+	return state.inventory.has(item_id, 1)
+
+
+## 背包里拿到了持有类条件要的东西 → 立刻揭开（`偷到图` 不该等到下次走近刷新点）。
+func apply_held_reveals() -> PackedStringArray:
+	var out := PackedStringArray()
+	for row: Resource in all_nodes():
+		var node_id := str(row.node_id)
+		if is_revealed(node_id):
+			continue
+		var condition := str(row.unlock_condition)
+		if held_item_id(db, condition).is_empty():
+			continue
+		if not _held_condition_met(condition):
+			continue
+		if _reveal(node_id):
+			out.append(node_id)
+	return out
+
+
+## 条件地表层（`Conditional`，设计 16 §3.2 的第 5 层，0.32.0 新增）：**整层**显隐的地表。
+##
+## 现在唯一的用法是大地图那条「落雁坡西 → 石隙迷窟」的碎石细径（22 格）：藏宝图到手之前
+## 它在地图上不存在——「藏宝图上的一条线」（18 号 §5.6／19 号）。**条件不在这里写死物品 id**：
+## 问这些地标的 `unlock_condition`，把持有类的那些要的东西列出来；
+## **任一件到手 → 整层显示**（层是整层的，不为每个地标切一半）。
+## 没有持有类地标 → apply=false（这层没有条件可依，保持地编摆的样子）。
+##
+## 静态：大地图与小地图两个控制器读同一条规则（谁都不许再抄一份）。
+static func conditional_layer_rule(table_db, node_ids: PackedStringArray) -> Dictionary:
+	var items := PackedStringArray()
+	for node_id: String in node_ids:
+		var row: Resource = table_db.get_row("map_region", node_id) if table_db != null else null
+		if row == null:
+			continue
+		var item_id := held_item_id(table_db, str(row.unlock_condition))
+		if not item_id.is_empty() and not items.has(item_id):
+			items.append(item_id)
+	return {"apply": not items.is_empty(), "items": items}
+
+
+## 条件地表该不该显示（上一条规则 ＋ 背包里有没有）
+static func conditional_layer_visible(table_db, state, node_ids: PackedStringArray) -> bool:
+	var rule := conditional_layer_rule(table_db, node_ids)
+	if not bool(rule["apply"]):
+		return true
+	if state == null or state.inventory == null:
+		return false
+	for item_id: String in rule["items"]:
+		if state.inventory.has(item_id, 1):
+			return true
+	return false
 
 
 func _reveal(node_id: String) -> bool:

@@ -58,6 +58,10 @@ var pending_rules: PackedStringArray = PackedStringArray()
 ## 结算时按它跳过掉落／铜钱／首杀／击败领悟，并把经验与熟练度卡在 `growth_const.dummy_*`。
 ## 组这场遭遇的地方是 `PracticeService.build_encounter()`。
 var practice: bool = false
+## 切磋（设计 19 §2.2）：赢了要给这位 NPC 加好感，所以遭遇里记下他是谁。
+## 记在这里而不是会话里：结算发生在战斗场景，那时会话里的临时标记早没了（切过场景）。
+## 空串 = 普通遭遇。组这场遭遇的地方是 `local_map_controller._start_spar()`。
+var spar_npc: String = ""
 ## 背袭时敌方架势初始值降低比例（0 表示不降；数值取 combat_const.backstab_poise_reduce）
 var enemy_poise_reduce: float = 0.0
 

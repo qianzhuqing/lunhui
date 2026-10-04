@@ -56,6 +56,11 @@ var drop_group: String = ""
 ## 武学熟练度：skill_id → 等级（0 表示没练过，倍率系数按 0 算）
 var skill_mastery: Dictionary = {}
 
+## 天赋里 `rule:` 那几条（设计 12 §五）：`{rule_id: 合计值}`，由 `PartyBuilder` 从存档算好。
+## **谁消费谁读**（先手在回合顺序里读、招式伤害在伤害管线里读），这里只当一条快照。
+## 敌人没有天赋 → 空字典，读不到就是 0。
+var talent_rules: Dictionary = {}
+
 ## 异常状态（DoT）。按 04_战斗与伤害.md 的持续伤害规则：
 ##   同源同类叠层、刷新时长（键 = status_id + source_id，不同来源独立计算）；
 ##   每层伤害在**施加那一刻锁定**（快照制，增益掉光也照原值跳）。
@@ -273,6 +278,8 @@ func status_rows(db) -> Array:
 			"stacks": Array(entry["stacks"]).size(),
 			"remaining": int(entry["remaining"]),
 			"color": str(type_row.display_color) if type_row != null else "#FFFFFF",
+			# 图标**交给界面按表拼路径**（这里只递数据，不碰 UI 路径——core 不依赖界面）
+			"icon": str(row.icon) if row != null else "",
 		})
 	return out
 
@@ -381,7 +388,9 @@ func add_buff(
 	if service == null:
 		return {"applied": false, "reason": "这个单位没有接配置表（buff 需要 db）", "buff_id": buff_id}
 	if not service.exists(buff_id):
-		return {"applied": false, "reason": "buff_def 里没有 %s" % buff_id, "buff_id": buff_id}
+		# 数据错：id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[BattleActor] buff_def 里没有 %s" % buff_id)
+		return {"applied": false, "reason": "这条增益的配置对不上（数据错，已记进日志）", "buff_id": buff_id}
 	var rule: String = service.stack_rule_of(buff_id)
 	var cap := maxi(1, service.max_stack_of(buff_id))
 	var add := maxi(1, grant_stacks)
@@ -475,6 +484,7 @@ func buff_rows(db) -> Array:
 			"permanent": int(entry["remaining"]) == 0,
 			"is_debuff": bool(row.is_debuff) if row != null else false,
 			"desc": str(row.desc) if row != null else "",
+			"icon": str(row.icon) if row != null else "",
 			"kind": "buff",
 		})
 	# 悬浮说明里带上数值修正的中文名，玩家才知道这条 buff 到底给了什么
@@ -665,7 +675,14 @@ static func from_enemy(
 	actor._stats_baseline = stats.duplicate(true)
 	actor.skills = skills
 	actor.resistances = enemy_row.resistances()
-	actor.base_accuracy = 0.0
+	# 命中基准敌我统一成 1.0（设计 10 §七第四条，0.28.0 答 Q57）。
+	#
+	# 以前敌人是 0.0、把 `enemy_base.hit_rate` 当**绝对**命中率用；七维改造之后
+	# `hit_rate` 是 `attr_to_stat` 用 diminishing 曲线从**敏**算出来的加成
+	# （cap 0.95／param 80）——敏 24 只给 0.22，敌人若还留着 0 基准就成了「十刀九空」，
+	# 而且这条在数值表里完全看不出来。真正决定打不打得中的是**对方的闪避**
+	# （10 §五：「想让敌人血厚防薄，用敏表达」）。
+	actor.base_accuracy = 1.0
 	actor.poise_max = maxi(1, int(enemy_row.poise))
 	actor.poise_regen_ratio = POISE_REGEN_BOSS if str(enemy_row.ai_template) == "ai_boss" else POISE_REGEN_DEFAULT
 	actor.tags = {

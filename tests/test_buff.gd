@@ -1,7 +1,9 @@
 ## 统一 buff 与套装（设计 0.7.0 的 `08_增益与套装.md`；6 张新表）。
 ##
 ## 这个用例管两件事：
-##   ① **表本身自洽**：id 不重复、引用存在、枚举在 08 写的取值里、套装档位真的凑得齐；
+##   ① **表本身自洽**：id 不重复、引用存在、枚举在 08 写的取值里、套装档位的**计数口径**对得上；
+##      （**「玩家凑不凑得齐」不在这里**——那要按来源算，见 `test_handshake::_check_set_tier_reachability`
+##       与 `validate_tables.ps1` 5.19b；当前三个档位凑不出来，记在 `当前状态.md` 3.1 #28）
 ##   ② **两类规则落成代码**：`BuffService` 的静态规则、`SetService` 的计数口径
 ##      （只算已装备／已装配；内功套按**占格数之和**；档位向下兼容）。
 ## 结算（上 buff／递减／并进属性）不在这里——那要动战斗管线，见框架说明后续决策。
@@ -52,7 +54,7 @@ func run() -> void:
 
 ## ① 表自洽：06 写的行数、引用、枚举、档位可达
 func _check_tables(db) -> void:
-	var expected_rows := {"buff_def": 19, "buff_stat": 31, "buff_grant": 35, "set_def": 3, "set_member": 14, "set_bonus": 6}
+	var expected_rows := {"buff_def": 19, "buff_stat": 31, "buff_grant": 41, "set_def": 3, "set_member": 14, "set_bonus": 6}
 	for table_name: String in expected_rows:
 		check_eq(
 			db.rows(table_name).size(), int(expected_rows[table_name]),
@@ -211,7 +213,8 @@ func _check_set_service(db) -> void:
 	)
 	check_eq(
 		service.count_for("set_xuanwei_qi", char_id, inventory, state) >= 7, true,
-		"7 格档真的凑得齐（设计要的 4 格／7 格两档）"
+		"五部占格之和够得上 7 格档（设计要的 4 格／7 格两档）——这里验的是**格数口径**；"
+			+ "这几部武学能不能全拿到是另一回事（现在拿不到，见 KNOWN_UNREACHABLE_SET_TIERS）"
 	)
 
 

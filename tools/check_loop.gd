@@ -14,6 +14,8 @@ extends SceneTree
 const WORLD := "res://scenes/world_run.tscn"
 const LOCAL_RUN := "res://scenes/local_run.tscn"
 const MENU := "res://scenes/main_menu.tscn"
+## 创建角色界面（0.17.0）：新建游戏先过这里，「确认创建」才落盘
+const CREATION := "res://scenes/creation_screen.tscn"
 
 
 func _initialize() -> void:
@@ -50,7 +52,13 @@ func _initialize() -> void:
 	var portal: Vector2 = world.player.global_position
 	var region: Resource = db.get_row("map_region", "n_heifengzhai")
 	portal = Vector2(float(region.pos_x), float(region.pos_y))
-	# 地标名字：已揭开的才有（未揭开写出来就是剧透）——默认至少落雁坡/清风驿/黑风寨有三处
+	# 0.32.0：**开局只有城镇与驿站亮着**，落雁坡（野外）要走到跟前才揭开；而黑风寨的入口条件
+	# 正是 `discover_luoyanpo`——所以先按真实走位把主路走一趟（别绕过入口条件去开那扇门）。
+	var slope: Node2D = world.world.get_node_or_null("Markers/Node_n_luoyanpo")
+	if slope != null:
+		world.player.global_position = slope.global_position
+		await _frames(2)
+	# 地标名字：已揭开的才有（未揭开写出来就是剧透）——走完这一趟是清风驿／驿站／落雁坡／黑风寨四处
 	var named := 0
 	for label in world.find_children("NodeLabel_*", "Label", true, false):
 		if label.visible:
@@ -68,7 +76,7 @@ func _initialize() -> void:
 		in_local, str(local.scene_id) if in_local else "-",
 		local.chests.size() if in_local else -1, local.triggers.size() if in_local else -1, named,
 	])
-	ok = ok and named >= 3
+	ok = ok and named >= 4
 	if not in_local:
 		print("LOOPCHECK: FAIL 进不了小地图")
 		quit(1)
@@ -135,6 +143,13 @@ func _initialize() -> void:
 
 	# ---------- ⑪ 宝箱守卫：荒村屠夫挡箱 → 文取（给草药汤）→ 开箱 → 存档往返不复活 ----------
 	ok = ok and await _guard_round(db, session, lines)
+
+	# ---------- ⑫ 幕五对质 → 账册 → 终局三选一（跨场景：战斗场景写、小地图读） ----------
+	# 为什么单独有这一段：这条链的**交接面**是「战斗结算（写 `last_battle`）→ 回到小地图
+	# （`setup()` 里按它摆出择念）」。两半用例各验一半（test_battle_ui 验首杀发账册、
+	# test_local_map 验摆面板），中间那一跳没人跑过——而"跨场景交接"正是历史上最爱出错的一层
+	# （决策 48／49／50 的四个真 bug 全在这一层）。
+	ok = ok and await _ledger_round(db, session, lines)
 
 	for line: String in lines:
 		# 行首留 ASCII 标记：run_bat 用 findstr 抓 `LOOP`（中文模式 findstr 抓不到）
@@ -267,11 +282,25 @@ func _menu_and_town_round(db, lines: PackedStringArray) -> bool:
 	menu.controller = null          # 让 setup 用注入的 store 重建
 	menu.setup()
 	var created: Dictionary = menu.press_new_game()
+	# 0.17.0 起「新建游戏」先过**创建角色界面**（创建没走完不写存档），
+	# 所以这里要接着把创建界面走完——落盘发生在「确认创建」那一刻。
+	var went_creation: bool = menu.pending_scene == menu.PLACEHOLDER_SCENE
+	change_scene_to_file(CREATION)
+	await _frames(3)
+	var creation = current_scene
+	var creation_ok := creation != null and creation.has_method("confirm")
+	if creation_ok:
+		creation.store_override = store
+		creation.setup()
+		creation.pick_origin("ori_scholar")
+		var confirmed: Dictionary = creation.confirm()
+		creation_ok = bool(confirmed.get("ok", false))
 	var session = root.get_node_or_null("GameSession")
 	var state = session.state if session != null else null
-	var new_ok: bool = bool(created.get("ok", false)) and state != null and store.slot_exists(1)
-	lines.append("主菜单新建游戏：ok=%s 槽=%s 落盘=%s" % [
-		created.get("ok", false), created.get("slot", "?"), store.slot_exists(1),
+	var new_ok: bool = bool(created.get("ok", false)) and went_creation and creation_ok \
+		and state != null and store.slot_exists(1)
+	lines.append("主菜单新建游戏（经创建界面）：ok=%s 落盘=%s" % [
+		creation_ok, store.slot_exists(1),
 	])
 	if not new_ok:
 		return false
@@ -543,11 +572,22 @@ func _recruit_round(db, session, lines: PackedStringArray) -> bool:
 	var board: Node2D = town.world.get_node_or_null("Markers/Facilities/facility_bounty_board")
 	var board_ok := false
 	var guide_text := ""
+	## 序幕·择念（20 §3.1）：同一按摆出来、**真选一条**（面板走旁白模式、心性真的进档）。
+	## 这里走的是**真场景 + 真按键**：`test_local_map` 那一条是同一个控制器上的直调，
+	## 而这一段验的是"跨场景之后它还认不认账"（第二次进图不该再问）。
+	var opening_ok := false
+	var opening_once := false
 	if board != null:
 		town.player.global_position = board.global_position
 		var posted: Dictionary = town.interact()
 		board_ok = bool(posted.get("ok", false)) and state.has_flag("flag_board_read")
 		guide_text = guide.hud_text(db, state)
+		opening_ok = str(posted.get("story", "")) == "dl_opening_choice" \
+			and town.npc_panel != null and str(town.npc_panel.mode) == "story"
+		if opening_ok:
+			var picked: Dictionary = town.npc_panel.choose_dialogue("opt_open_li")
+			opening_ok = bool(picked.get("ok", false)) and state.has_flag("heart_li")
+			town.close_npc()
 
 	# 出图（回大地图），再进来——「条件在上一次进图点亮」这件事只有跨场景才验得到
 	town.leave_to_overworld()
@@ -560,6 +600,13 @@ func _recruit_round(db, session, lines: PackedStringArray) -> bool:
 	var joined := false
 	var refused_elsewhere := false
 	if town2 != null and town2.has_method("interact"):
+		# 先回悬赏板再按一次：心性已经定过（选过一条），这句**不该再弹**
+		var board2: Node2D = town2.world.get_node_or_null("Markers/Facilities/facility_bounty_board")
+		if board2 != null:
+			town2.player.global_position = board2.global_position
+			var posted_again: Dictionary = town2.interact()
+			opening_once = not posted_again.has("story")
+			town2.close_npc()
 		# 先站在**当铺**按一次 E：城镇只认客栈，这一步不该收人（09 §3.2 的口径）
 		var pawn: Node2D = town2.world.get_node_or_null("Markers/Facilities/facility_pawnshop")
 		if pawn != null:
@@ -579,12 +626,84 @@ func _recruit_round(db, session, lines: PackedStringArray) -> bool:
 	var persisted: bool = bool(loaded.get("ok", false)) and loaded["state"] != null \
 		and loaded["state"].party_size() == state.party_size() \
 		and loaded["state"].has_flag("flag_ch_ci_joined")
-	lines.append("招募链：读告示板=%s 引导「%s」｜出图回大地图=%s｜当铺不收人=%s｜客栈入队=%s（%d→%d 人）｜存档往返=%s" % [
-		board_ok and not state_before_board, guide_text, back_to_world, refused_elsewhere,
-		joined, before_party, state.party_size(), persisted,
+	lines.append("招募链：读告示板=%s 引导「%s」｜序幕择念=%s（再进图不再问=%s）｜出图回大地图=%s｜当铺不收人=%s｜客栈入队=%s（%d→%d 人）｜存档往返=%s" % [
+		board_ok and not state_before_board, guide_text, opening_ok, opening_once, back_to_world,
+		refused_elsewhere, joined, before_party, state.party_size(), persisted,
 	])
-	return board_ok and not state_before_board and guide_text.contains("2/4") \
-		and back_to_world and refused_elsewhere and joined and persisted
+	# 分母**不写死**：引导步数会随设计扩表（0.22.0 由 4 步扩到 6 步）。
+	# 写死 2/4 的那版在扩表当天就假红——这里改成按表算，分母错了照样抓得住。
+	var guide_second := "2/%d" % guide.steps(db).size()
+	return board_ok and not state_before_board and guide_text.contains(guide_second) \
+		and opening_ok and opening_once and back_to_world and refused_elsewhere and joined and persisted
+
+
+## ⑫ 幕五对质 → 账册 → 终局三选一：**真打一场大寨主**、真回图、真选一条。
+##
+## 交接面：战斗结算把这一场的队伍 id 写进会话 → 回到小地图时 `setup()` 按 `TEAM_WIN_DIALOGUES`
+## 翻出 `dl_ledger_choice` 摆成面板。所以这一段要看四件事：
+##   ① 首杀打赢大寨主 → **账册真的进背包**（`TEAM_WIN_ITEMS`）；
+##   ② 回图时面板**自动摆出来**、说的就是那条（条件：对质打过 ＋ 账册在手 ＋ 一条都没选过）；
+##   ③ 选一条 → 旗标落地（这里选「呈官」），三样永久增益由此拿得到；
+##   ④ 存档往返仍认账（这条决定第二章开场关系，不能只活在本局里）。
+func _ledger_round(db, session, lines: PackedStringArray) -> bool:
+	var state = session.state
+	if state == null:
+		lines.append("终局三选一：没有会话状态")
+		return false
+	session.pending_local_scene = "scene_heifengzhai"
+	session.pending_local_room = "hf3_boss"
+	session.local_position_scene = ""
+	change_scene_to_file(LOCAL_RUN)
+	await _frames(6)
+	var map = current_scene
+	if map == null or not map.has_method("current_room_id"):
+		lines.append("终局三选一：进不了黑风寨")
+		return false
+	# 大寨主那支队伍（房间敌人是接触开战，与明雷同一套）
+	var boss = null
+	for candidate in map.teams:
+		if str(candidate.spawn_id) == "team_boss" or str(candidate.team_row.team_id) == "team_boss":
+			boss = candidate
+			break
+	if boss == null:
+		lines.append("终局三选一：图里没有大寨主那支队伍")
+		return false
+	map.player.global_position = boss.global_position
+	await _frames(8)
+	var battle = current_scene
+	if battle == null or not battle.has_method("press_return") or battle.encounter == null:
+		lines.append("终局三选一：接触没进战斗")
+		return false
+	var team_id := str(battle.encounter.team_id)
+	# 打死再走真结算（验的是结算与交接，不是打得赢打不赢）
+	for enemy in battle.enemies:
+		enemy.hp = 0
+	battle._settle()
+	var got_ledger: bool = state.inventory.has("item_bd_ledger")
+	battle.press_return()
+	await _frames(8)
+	var back = current_scene
+	var back_ok: bool = back != null and back.has_method("current_room_id")
+	var panel = back.npc_panel if back_ok else null
+	var panel_ok: bool = panel != null and str(panel.dialogue_node_id) == "dl_ledger_choice"
+	var flag_before: bool = state.has_flag("flag_ledger_public")
+	var chosen_ok := false
+	if panel_ok:
+		var picked: Dictionary = panel.choose_dialogue("opt_ledger_public")
+		chosen_ok = bool(picked.get("ok", false)) and state.has_flag("flag_ledger_public")
+		back.close_npc()
+	# 存档往返：这条旗标决定第二章开场，必须跟着存档走
+	var store = load("res://src/core/save_store.gd").new("res://.logs/loopcheck/saves", 3)
+	store.save_slot(2, state)
+	var loaded: Dictionary = store.load_slot(2, db)
+	var persisted: bool = bool(loaded.get("ok", false)) and loaded["state"] != null \
+		and loaded["state"].has_flag("flag_ledger_public") \
+		and loaded["state"].inventory.has("item_bd_ledger")
+	lines.append("终局三选一（打赢大寨主→账册→三选一）：队伍=%s 拿到账册=%s 回图=%s 摆出面板=%s 选「呈官」=%s（选前=%s）存档往返=%s" % [
+		team_id, got_ledger, back_ok, panel_ok, chosen_ok, flag_before, persisted,
+	])
+	return team_id == "team_boss" and got_ledger and back_ok and panel_ok \
+		and chosen_ok and not flag_before and persisted
 
 
 ## ⑪ 宝箱守卫（设计 09 §一）：荒村 `hc_02` 的银箱被屠夫守着——

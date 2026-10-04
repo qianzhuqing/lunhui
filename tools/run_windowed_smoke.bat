@@ -38,6 +38,8 @@ call "tools\check_scene.bat" "cultivate" "res://scenes/cultivate_screen.tscn" "-
 call "tools\check_scene.bat" "waypoint" "res://scenes/waypoint_screen.tscn" "--waypoint-selftest" "" && (echo   [OK] windowed:waypoint& set /a PASSED_STEPS+=1) || (echo   [FAIL] windowed:waypoint& set "FAILED_STEPS=!FAILED_STEPS! waypoint")
 call "tools\check_scene.bat" "clue" "res://scenes/clue_screen.tscn" "--clue-selftest" "" && (echo   [OK] windowed:clue& set /a PASSED_STEPS+=1) || (echo   [FAIL] windowed:clue& set "FAILED_STEPS=!FAILED_STEPS! clue")
 call "tools\check_scene.bat" "dungeon" "res://scenes/dungeon_screen.tscn" "--dungeon-selftest" "" && (echo   [OK] windowed:dungeon& set /a PASSED_STEPS+=1) || (echo   [FAIL] windowed:dungeon& set "FAILED_STEPS=!FAILED_STEPS! dungeon")
+call "tools\check_scene.bat" "creation" "res://scenes/creation_screen.tscn" "--creation-selftest" "" && (echo   [OK] windowed:creation& set /a PASSED_STEPS+=1) || (echo   [FAIL] windowed:creation& set "FAILED_STEPS=!FAILED_STEPS! creation")
+call "tools\check_scene.bat" "npc" "res://scenes/npc_panel.tscn" "--npc-selftest" "" && (echo   [OK] windowed:npc& set /a PASSED_STEPS+=1) || (echo   [FAIL] windowed:npc& set "FAILED_STEPS=!FAILED_STEPS! npc")
 call "tools\check_scene.bat" "menu" "res://scenes/main_menu.tscn" "--menu-selftest" "--save-dir=res://.logs/menu_selftest" && (echo   [OK] windowed:menu& set /a PASSED_STEPS+=1) || (echo   [FAIL] windowed:menu& set "FAILED_STEPS=!FAILED_STEPS! menu")
 
 echo.

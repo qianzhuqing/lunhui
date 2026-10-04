@@ -8,6 +8,11 @@
 class_name SaveStore
 extends RefCounted
 
+## `GameState` 走 `preload` 常量：这个文件**全是静态调用**（`from_dict`／`is_valid_dict`／`format_time`）
+## 与类型标注——以前一个 `preload` 都没有，等于"能不能读档"压在 `.godot` 的全局类名缓存上
+## （AGENTS 的硬规矩就是别这么干；2026-10-04 补：那是全项目唯一一处真调用的漏网）。
+const GameStateScript := preload("res://src/core/game_state.gd")
+
 const DEFAULT_DIR := "user://saves"
 const DEFAULT_SLOT_COUNT := 6
 const FILE_PREFIX := "slot_"
@@ -77,10 +82,10 @@ func describe_slot(slot: int, db = null) -> Dictionary:
 		entry["label"] = "存档损坏"
 		entry["error"] = result["error"]
 		return entry
-	var state: GameState = result["state"]
+	var state: GameStateScript = result["state"]
 	entry["state"] = state
 	entry["saved_unix"] = state.saved_unix
-	entry["label"] = state.short_label(db) if db != null else GameState.format_time(state.saved_unix)
+	entry["label"] = state.short_label(db) if db != null else GameStateScript.format_time(state.saved_unix)
 	return entry
 
 
@@ -107,9 +112,9 @@ func load_slot(slot: int, db = null) -> Dictionary:
 		# 把原因交给菜单显示给玩家。
 		return {"ok": false, "error": "存档损坏：%s" % json.get_error_message(), "state": null}
 	var parsed: Variant = json.data
-	if not GameState.is_valid_dict(parsed):
+	if not GameStateScript.is_valid_dict(parsed):
 		return {"ok": false, "error": "存档格式不对或已损坏：%s" % path, "state": null}
-	var state := GameState.from_dict(parsed, db)
+	var state := GameStateScript.from_dict(parsed, db)
 	if state == null:
 		return {"ok": false, "error": "存档解析失败：%s" % path, "state": null}
 	state.slot = slot
@@ -117,7 +122,7 @@ func load_slot(slot: int, db = null) -> Dictionary:
 
 
 ## 写一个槽。返回 {ok, error}
-func save_slot(slot: int, state: GameState) -> Dictionary:
+func save_slot(slot: int, state: GameStateScript) -> Dictionary:
 	if not ensure_dir():
 		return {"ok": false, "error": "存档目录建不出来，user:// 可能不可写"}
 	var file := FileAccess.open(slot_path(slot), FileAccess.WRITE)

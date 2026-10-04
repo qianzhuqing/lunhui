@@ -1,0 +1,7 @@
+﻿quest_id,npc_id,sort_order,requirement,reward_item_ids,reward_favor,text_cn,note
+nq_wang_01,npc_wang_tie,1,item:item_iron:10,item_money,15,给他十块铁矿石,铁匠的日常采买；只能交一次
+nq_wang_02,npc_wang_tie,2,flag_bd_uniform,item_money,25,弄一件黑风寨号衣来看看,他想看看山贼的甲是怎么打的；给的是工钱——铁匠印记归好感兑换（20 §九 #5），同一件东西不设两个来源
+nq_qian_01,npc_qian_dafu,1,flag_qiutu_saved,item_med_01,30,把地牢里的人救出来,救出阿福后回来复命；给的是草药汤——药王符归好感兑换（20 §九 #6），同一件东西不设两个来源
+nq_caiyao_01,npc_caiyao,1,event:ev_herbalist_help,eq_shoulder_03,20,先治他的腿，再聊山里的路,医术判定 2；治好给披肩
+nq_sun_01,npc_sun_zhanggui,1,flag_ch_ci_joined,item_med_01,20,替我给燕小七带句话,客栈掌柜与燕小七是旧识
+nq_huangcun_01,npc_huangcun,1,kill_style:poison,item_scroll_wudu,25,替荒村的人讨个说法,毒杀屠夫后她愿意开口

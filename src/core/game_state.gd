@@ -8,6 +8,8 @@ extends RefCounted
 const InventoryScript := preload("res://src/core/inventory.gd")
 const SkillLoadoutScript := preload("res://src/core/skill_loadout.gd")
 const PityTrackerScript := preload("res://src/core/pity_tracker.gd")
+## 章节显示名从表里取（0.22.0 起 `chapter_def` 才是章节的唯一出处）
+const ChapterServiceScript := preload("res://src/core/chapter_service.gd")
 
 ## 存档结构版本，格式变了要升这个号并写迁移。
 ## v1 → v2：加入背包与装备（inventory）、加点（char_allocations）与队伍经验池（party_exp）。
@@ -29,7 +31,14 @@ const PityTrackerScript := preload("res://src/core/pity_tracker.gd")
 ## v12 → v13：加入大地图坐标（world_pos）。设计 09 §二：读档一律回大地图，落点用这个坐标；
 ##            小地图／副本内的位置**故意不存**（那部分进度已各自持久化，存坐标只会让玩家
 ##            读档后卡在一个已经清空的房间里）。老档（v12 及更早）= 没有记录，用大地图默认出生点。
-const VERSION := 13
+## v13 → v14：加入创建角色（0.16.0／0.17.0）的两份记录——
+##            `talent_picks`（谁选了哪几个天赋）与 `custom_templates`（「不使用模板」那条路
+##            玩家自己分的七维／武器／起始武学）。后者必须进存档：模板平时从 `character_base`
+##            读，自建角色不在任何 CSV 里，读档时要重新注入（`TableDb.inject_row`）。
+##            老档（v13 及更早）= 没有天赋、没有自建角色。
+## v14 → v15：加入 NPC 好感度（`npc_favor`：npc_id → 当前好感）。设计 19 的赠礼／切磋／偷窃／兑换
+##            都会改它；不进存档的话「送完礼退出重进」等于白送。任务进度不用新字段——它记在旗标里。
+const VERSION := 15
 
 ## 开局队伍人数上限。
 ##
@@ -54,6 +63,13 @@ var saved_unix: int = 0
 var inventory
 ## char_id → {attr_id: 点数}
 var char_allocations: Dictionary = {}
+## char_id → [talent_id]（0.16.0 的天赋；创建时选，之后不改）
+var talent_picks: Dictionary = {}
+## char_id → 自建角色的模板字段（0.17.0「不使用模板」那条路）。
+## 正常角色不在这里——他们读 `character_base`。读档时由 `apply_custom_templates()` 注入回 db。
+var custom_templates: Dictionary = {}
+## npc_id → 当前好感（设计 19；初始值在 npc_favor.csv 的 initial_favor）
+var npc_favor: Dictionary = {}
 ## 队伍共享经验池：经验分配与升级规则未定，先记账不分人
 var party_exp: int = 0
 ## char_id → {skill_id: 熟练度等级}（0~mastery_max）
@@ -195,7 +211,7 @@ func add_character(db, char_id: String) -> Dictionary:
 	var row: Resource = db.get_row("character_base", char_id)
 	if row == null:
 		push_error("[GameState] 招募失败：character_base 里没有角色 %s" % char_id)
-		return {"ok": false, "error": "character_base 里没有这个角色", "char_id": char_id}
+		return {"ok": false, "error": "这个角色不在配置里（数据错，已记进日志）", "char_id": char_id}
 	char_ids.append(char_id)
 	char_levels[char_id] = maxi(1, int(row.start_level))
 	if inventory == null:
@@ -457,7 +473,7 @@ func short_label(db) -> String:
 ## 进入游戏后的详细摘要。
 func summary_lines(db) -> PackedStringArray:
 	return PackedStringArray([
-		"章节：%s" % chapter_label(),
+		"章节：%s" % chapter_label(db),
 		"难度：%s" % difficulty_name(db),
 		"队伍：%s" % party_label(db),
 		"存档槽：%s" % ("未落盘" if slot <= 0 else "第 %d 格" % slot),
@@ -469,10 +485,15 @@ func summary_lines(db) -> PackedStringArray:
 ## 章节显示名：`chapter_01` → 「第 1 章」。
 ##
 ## **不给玩家看 id**：这里原来写的是「第 1 章（chapter_01）」，枢纽页那行直接就把
-## `chapter_01` 甩给了玩家（2026-10-03 实机截图里能看到）。表里没有章节表——设计把章节信息
-## 放在 `00_总览.md` 的散文里（第一章「黑风寨」），所以显示名从 id 里取编号；
-## 认不出来就退回「第 1 章」（本作现在只有第一章）。
-func chapter_label() -> String:
+## `chapter_01` 甩给了玩家（2026-10-03 实机截图里能看到）。
+##
+## 0.22.0 起**章节有了真正的表**（`chapter_def`）：显示名直接取 `name_cn`
+## （「第一章·黑风寨」这种），不再从 id 里猜编号。db 没传或表里没有时退回旧口径。
+func chapter_label(db = null) -> String:
+	if db != null:
+		var name_cn := ChapterServiceScript.label_of(db, self)
+		if not name_cn.is_empty():
+			return name_cn
 	var suffix := chapter_id.trim_prefix("chapter_")
 	if suffix.is_valid_int():
 		return "第 %d 章" % int(suffix)
@@ -507,6 +528,9 @@ func to_dict() -> Dictionary:
 		"saved_unix": saved_unix,
 		"inventory": (inventory if inventory != null else InventoryScript.new()).to_dict(),
 		"char_allocations": char_allocations.duplicate(true),
+		"talent_picks": talent_picks.duplicate(true),
+		"custom_templates": custom_templates.duplicate(true),
+		"npc_favor": npc_favor.duplicate(),
 		"party_exp": party_exp,
 		"skill_mastery": skill_mastery.duplicate(true),
 		"char_learned": char_learned.duplicate(true),
@@ -884,6 +908,13 @@ static func from_dict(data: Dictionary, db = null) -> GameState:
 		state._read_field_buffs(data)
 	if source_version >= 13:
 		state._read_world_pos(data)
+	if source_version >= 14:
+		state._read_talent_picks(data)
+		# **必须在 `_prune_unknown_characters()` 之前**：自建角色不在任何 CSV 里，
+		# 先注入模板，它才不会被当成「模板下架的角色」清掉。
+		state._read_custom_templates(data, db)
+	if source_version >= 15:
+		state._read_npc_favor(data)
 	# 老档补齐：v1 补背包与初始装备，v1~v3 补「已学 + 装配」
 	if source_version < 2:
 		state.inventory = InventoryScript.new()
@@ -901,6 +932,74 @@ static func from_dict(data: Dictionary, db = null) -> GameState:
 		state.migrated_from = source_version
 	state.version = VERSION
 	return state
+
+
+## 天赋（v14 起）：`char_id → [talent_id]`，只保留表里还存在的天赋。
+func _read_talent_picks(data: Dictionary) -> void:
+	if not (data.get("talent_picks") is Dictionary):
+		return
+	for char_id: Variant in Dictionary(data["talent_picks"]):
+		var picks: Variant = Dictionary(data["talent_picks"])[char_id]
+		if not (picks is Array):
+			continue
+		var out: Array = []
+		for talent_id: Variant in Array(picks):
+			out.append(str(talent_id))
+		talent_picks[str(char_id)] = out
+
+
+## 自建角色模板（v14 起）：读进内存并**立刻注入 db**，后面按 char_id 取模板的地方才查得到。
+func _read_custom_templates(data: Dictionary, db = null) -> void:
+	if not (data.get("custom_templates") is Dictionary):
+		return
+	for char_id: Variant in Dictionary(data["custom_templates"]):
+		var spec: Variant = Dictionary(data["custom_templates"])[char_id]
+		if spec is Dictionary:
+			custom_templates[str(char_id)] = Dictionary(spec).duplicate(true)
+	apply_custom_templates(db)
+
+
+## NPC 好感（v15 起）：只收表里还认得的 npc_id；值归一成 int。
+func _read_npc_favor(data: Dictionary) -> void:
+	if not (data.get("npc_favor") is Dictionary):
+		return
+	for npc_id: Variant in Dictionary(data["npc_favor"]):
+		npc_favor[str(npc_id)] = int(Dictionary(data["npc_favor"])[npc_id])
+
+
+## 把 `custom_templates` 里的每一份自建模板注入 `character_base`（幂等：同 id 覆盖）。
+##
+## 创建流程（建完那一刻）与读档（`_read_custom_templates`）都调它——
+## 注入是内存行为，CSV 与 `data/generated` 都不动。
+func apply_custom_templates(db) -> int:
+	if db == null or custom_templates.is_empty():
+		return 0
+	var factory = load("res://src/data/tables/character_base_row.gd")
+	var applied := 0
+	for char_id: Variant in custom_templates:
+		var spec: Dictionary = custom_templates[char_id]
+		var row = factory.new()
+		row.id = str(char_id)
+		row.char_id = str(char_id)
+		row.name_cn = str(spec.get("name_cn", char_id))
+		row.role_tag = str(spec.get("role_tag", "自建"))
+		row.weapon_type = str(spec.get("weapon_type", ""))
+		var attrs: Dictionary = spec.get("attrs", {})
+		row.initial_str = int(attrs.get("str", 0))
+		row.initial_con = int(attrs.get("con", 0))
+		row.initial_agi = int(attrs.get("agi", 0))
+		row.initial_int = int(attrs.get("int", 0))
+		row.initial_luk = int(attrs.get("luk", 0))
+		row.initial_wu = int(attrs.get("wu", 0))
+		row.initial_gen = int(attrs.get("gen", 0))
+		row.attr_total = row.attr_sum()
+		row.start_level = maxi(1, int(spec.get("start_level", 1)))
+		row.start_skill_ids = str(spec.get("start_skill_ids", ""))
+		row.start_equip_ids = str(spec.get("start_equip_ids", ""))
+		row.desc = str(spec.get("desc", "自建角色（不使用模板）"))
+		db.inject_row("character_base", row)
+		applied += 1
+	return applied
 
 
 ## 首杀记录（v10 起）。只有 true 有意义，读的时候把任何真值归一成 true。

@@ -6,6 +6,8 @@ extends "res://tests/test_case.gd"
 
 const GameStateScript := preload("res://src/core/game_state.gd")
 const WorldMapServiceScript := preload("res://src/core/world_map_service.gd")
+## 表库夹具用基类那份 `TableDbScript`（`test_case.gd` 已经有，子类再定义同名成员会解析失败）
+const TableValidatorScript := preload("res://src/core/table_validator.gd")
 
 const TILE := 32.0
 
@@ -21,23 +23,41 @@ func run() -> void:
 	_check_initial(db, state, service)
 	_check_proximity(db, state)
 	_check_discover_chain(db)
+	_check_region_rules(db)
 	_check_travel(db, state, service)
 	_check_difficulty(db, state, service)
 	_check_save(db, state)
 
 
-## `reveal_on_map=1` 的地标一开始就点亮（清风驿／驿站／落雁坡）
+## `reveal_on_map=1` 的地标一开始就点亮（设计 0.32.0：**只有城镇与驿站**）
+##
+## 落雁坡曾是第三个默认公开的地点（野外），0.32.0 按「除城镇外都要自己走出来」改成 `proximity_5`。
+## 所以这里连同 `_check_proximity` 一起走一遍真实顺序：开局两处 → 走到落雁坡才亮 → 黑风寨靠它链式揭开。
 func _check_initial(db, state, service) -> void:
 	var revealed: PackedStringArray = service.apply_initial_reveals()
-	check_eq(revealed.size(), 3, "初始点亮 3 个地标：%s" % str(revealed))
+	check_eq(revealed.size(), 2, "初始点亮 2 个地标（城镇＋驿站）：%s" % str(revealed))
 	check_true(service.is_revealed("n_qingfengyi"), "清风驿一开始就看得见")
 	check_true(service.is_revealed("n_post_station"), "驿站一开始就看得见")
+	check_false(service.is_revealed("n_luoyanpo"), "落雁坡是野外，开局不亮（0.32.0）")
 	check_false(service.is_revealed("n_heifengzhai"), "黑风寨要先探索")
-	check_eq(service.revealed_count(), 3, "已探索 3 个")
-	check_true(service.progress_text().contains("地图 3/7"), "HUD 文案：%s" % service.progress_text())
+	check_eq(service.revealed_count(), 2, "已探索 2 个")
+	# 分母是**表里的行数**（不是"有图标的行数"：0.32.0 起三个兴趣点不带图标，
+	# 拿图标数当分母会算成 5）
+	var total: int = db.rows("map_region").size()
+	check_true(service.progress_text().contains("地图 2/%d" % total),
+		"HUD 文案：%s" % service.progress_text())
+	check_true(service.progress_text().contains("落雁坡"), "未探索清单里有落雁坡")
 	check_true(service.progress_text().contains("黑风寨"), "未探索清单里有黑风寨")
 	# 重复调用不会再报新揭开
 	check_true(service.apply_initial_reveals().is_empty(), "初始揭开是幂等的")
+	# 持有类（`item_<id>`，设计 0.26 §六）：没拿到藏宝图，石隙迷窟不该出现
+	check_false(service.is_revealed("n_shixi"), "没有藏宝图时石隙迷窟不在地图上")
+	var added: Dictionary = state.inventory.add_item(db, "item_treasure_map", 1)
+	check_true(bool(added.get("ok", false)), "藏宝图能放进背包：%s" % str(added.get("error", "")))
+	check_true(state.inventory.has("item_treasure_map", 1), "背包里确实有藏宝图（下一句才验揭开）")
+	var held: PackedStringArray = service.apply_held_reveals()
+	check_true(held.has("n_shixi"), "拿到藏宝图后石隙迷窟当场揭开：%s" % str(held))
+	check_true(service.is_revealed("n_shixi"), "石隙迷窟出现在大地图上")
 
 
 ## proximity_N：走到 N 格内自动揭开（塌陷山洞 3 格、荒村 5 格）
@@ -71,6 +91,14 @@ func _check_proximity(db, state) -> void:
 	edge_five.apply_proximity_reveals(Vector2(2000 + 5 * TILE, 2000), markers)
 	check_true(edge_five.is_revealed("n_huangcun"), "正好 5 格也揭开（荒村门槛）")
 
+	# 主路第三站：**落雁坡也要自己走到跟前**（0.32.0 由默认公开改成 `proximity_5`）。
+	# 它一揭开，链式规则就把黑风寨带出来（`discover_luoyanpo`）——后面 `_check_travel`
+	# 正是按「黑风寨已揭开」验的，所以这一步同时是那一条的前提。
+	check_false(service.is_revealed("n_luoyanpo"), "在别处转了一圈，落雁坡还没亮（野外≠城镇）")
+	var road: PackedStringArray = service.apply_proximity_reveals(Vector2(2 * TILE, 0), markers)
+	check_true(road.has("n_luoyanpo"), "走到落雁坡 2 格内才揭开：%s" % str(road))
+	check_true(road.has("n_heifengzhai"), "落雁坡一揭开，黑风寨跟着链式揭开：%s" % str(road))
+
 
 ## discover_X：X 揭开之后，依赖它的地标跟着揭开（黑风寨要 discover_luoyanpo）
 ## 用全新存档跑，免得前面几步已经把黑风寨揭开、看不出「链式」这一步做了什么
@@ -78,11 +106,62 @@ func _check_discover_chain(db) -> void:
 	var fresh = solo_state(db)
 	var service = WorldMapServiceScript.new(db, fresh)
 	service.apply_initial_reveals()
-	check_true(service.is_revealed("n_luoyanpo"), "落雁坡一开始就点亮")
+	check_false(service.is_revealed("n_luoyanpo"), "链式揭开前落雁坡也还没亮（它是野外，要走近）")
 	check_false(service.is_revealed("n_heifengzhai"), "链式揭开前黑风寨还是暗的")
-	var revealed: PackedStringArray = service.apply_proximity_reveals(Vector2.ZERO, {})
+	# 没走到落雁坡跟前：黑风寨不许自己冒出来
+	service.apply_proximity_reveals(Vector2(10000, 10000), {})
+	check_false(service.is_revealed("n_heifengzhai"), "落雁坡没亮时黑风寨不会自己冒出来")
+	var revealed: PackedStringArray = service.apply_proximity_reveals(
+		Vector2(2 * TILE, 0), {"n_luoyanpo": Vector2.ZERO}
+	)
+	check_true(revealed.has("n_luoyanpo"), "走到跟前落雁坡揭开：%s" % str(revealed))
 	check_true(revealed.has("n_heifengzhai"), "落雁坡已揭开 → 黑风寨跟着揭开：%s" % str(revealed))
 	check_true(service.is_revealed("n_heifengzhai"), "黑风寨点亮")
+
+
+## 0.32.0 的两条表侧规则（构建期 `TableValidator._check_map_region_rules` 的同源验证）：
+## ① `reveal_on_map=1` 只许城镇／驿站；② 兴趣点不给图标（例外：持有类解锁的那一个）。
+##
+## 两半都要：**发行数据长这样**（逐行点名，不写"数量对就行"——数量对、换了行也能过）
+## ＋**改坏了构建期真的会红**（复制表库、只改内存副本）。
+func _check_region_rules(db) -> void:
+	var public_ids := PackedStringArray()
+	var poi_icons := PackedStringArray()
+	for row: Resource in db.rows("map_region"):
+		if bool(row.reveal_on_map):
+			public_ids.append(str(row.node_id))
+		if str(row.node_type) == "poi" and not str(row.icon).strip_edges().is_empty():
+			poi_icons.append("%s→%s" % [str(row.node_id), str(row.icon)])
+	check_eq("、".join(public_ids), "n_qingfengyi、n_post_station",
+		"开局公开的正好是清风驿与驿站（实际：%s）" % "、".join(public_ids))
+	check_eq("、".join(poi_icons), "n_shixi→icon_shixi",
+		"兴趣点里只有石隙迷窟带图标（藏宝图上有位置）；实际：%s" % "、".join(poi_icons))
+
+	var broken = TableDbScript.new()
+	broken.load_all()
+	var table: Resource = broken.tables["map_region"].duplicate(true)
+	for row: Resource in table.rows:
+		if str(row.node_id) == "n_luoyanpo":
+			row.reveal_on_map = true
+	broken.tables["map_region"] = table
+	var named := false
+	for message: String in TableValidatorScript.validate(broken):
+		if message.contains("n_luoyanpo") and message.contains("reveal_on_map"):
+			named = true
+	check_true(named, "把落雁坡改回「开局公开」→ 构建期点名 n_luoyanpo")
+
+	var broken_icon = TableDbScript.new()
+	broken_icon.load_all()
+	var icon_table: Resource = broken_icon.tables["map_region"].duplicate(true)
+	for row: Resource in icon_table.rows:
+		if str(row.node_id) == "n_cave_collapse":
+			row.icon = "icon_cave"
+	broken_icon.tables["map_region"] = icon_table
+	var icon_named := false
+	for message: String in TableValidatorScript.validate(broken_icon):
+		if message.contains("n_cave_collapse") and message.contains("icon"):
+			icon_named = true
+	check_true(icon_named, "给兴趣点配图标 → 构建期点名 n_cave_collapse")
 
 
 ## 驿站传送：只列已探索且有可进入小地图的节点；没探索的给明确理由

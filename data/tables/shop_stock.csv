@@ -16,3 +16,8 @@ shop_smith,5,eq_armor_01,100,25,0,白板身体
 shop_smith,6,eq_belt_01,60,15,0,白板腰带
 shop_smith,7,eq_shoulder_01,70,18,0,白板肩部
 shop_smith,8,eq_legs_01,70,18,0,白板下装
+shop_grocery,6,item_poison_wine,300,,1,限量 1 件；毒杀毒手的钥匙，太便宜就不算隐藏
+shop_caravan,1,item_med_02,120,40,3,行商货：药酒；比城镇贵，限量 3
+shop_caravan,2,item_potion_small,110,36,2,行商货：金创药；限量 2
+shop_caravan,3,item_potion_qi,120,38,2,行商货：回气散；限量 2
+shop_caravan,4,eq_ring_02,260,70,1,行商货：玉戒（良品）；限量 1，城镇买不到

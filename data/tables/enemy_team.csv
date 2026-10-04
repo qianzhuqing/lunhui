@@ -15,3 +15,5 @@ team_boss_guards,聚义厅头目,en_bd_patrol_leader:2,red,,
 team_heifeng_elite,寨中精锐,en_bd_elite_blade:2;en_bd_archer:1,red,,
 team_boss,大寨主,en_bd_boss:1,purple,,
 team_dummy_training,练功木桩,en_dummy_training:1,green,,不还手；用于练级与招式熟练度
+team_shixi_hound,石隙狼群,en_shixi_hound:2,red,,小迷宫里的主要敌人
+team_wanderer_disciple,别派弟子,en_wanderer_disciple:2,green,,大地图「门派弟子历练」的切磋对手

@@ -47,14 +47,21 @@ func _init(db: TableDbScript) -> void:
 ##   {"kind": "attr_point", "target": "str", "value": 2, "source": "eq_sword_02"}
 ##   {"kind": "stat_flat", "target": "atk_phys", "value": 6, "source": "eq_sword_02"}
 ##   {"kind": "stat_percent", "target": "atk_phys", "value": 0.1, "source": "buff_x"}
+##
+## include_level_base  **敌人不吃 `level_growth` 的基础列**（设计 10 §七，0.28.0 答 Q57）：
+## `base_hp`／`base_atk_phys`… 是**英雄基线**（「一个 N 级角色长什么样」），给敌人共用
+## 等于让每只 2 级野狼都变成「2 级英雄」，而杂兵本来就该低于同级英雄。所以敌人传 `false`：
+## 强度**全部由七维 ＋ 装备／内功固定值给**，`level` 对敌人只剩三件事——
+## 经验与掉落档次、招式槽与内功容量的门槛、难度标签（那三件都不在这条管线里）。
 func compute(
 	level: int,
 	base_attrs: Dictionary = {},
 	allocations: Dictionary = {},
-	contributions: Array = []
+	contributions: Array = [],
+	include_level_base: bool = true
 ) -> Dictionary:
 	var attr_totals := attr_totals_of(base_attrs, allocations, contributions)
-	var subtotal := level_base_stats(level)
+	var subtotal := level_base_stats(level) if include_level_base else {}
 
 	# 属性 → 派生数值
 	for row: Resource in _db.rows("attr_to_stat"):

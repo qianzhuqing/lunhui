@@ -16,6 +16,8 @@ extends RefCounted
 ## 回购列表上限（05 文档建议 20 条）
 const BUYBACK_LIMIT := 20
 const PartyBuilderScript := preload("res://src/core/party_builder.gd")
+## 天赋的 `rule:` 效果（买东西便宜几成）——谁消费谁读
+const TalentServiceScript := preload("res://src/core/talent_service.gd")
 
 var db
 var state
@@ -30,6 +32,22 @@ func _init(table_db, game_state) -> void:
 
 func building(building_id: String) -> Resource:
 	return db.get_row("building_def", building_id)
+
+
+## 货架组 id → 开店用的建筑 id。
+##
+## `world_event.we_caravan` 的 `effect_id` 填的是**货架组** `shop_caravan`，而界面与这套服务
+## 都按 `building_def.building_id`（`bld_caravan`）走——两张表各自记账，**只有这里知道它们是一回事**。
+## 认不出就返回空串（调用方如实报「没有对应的货架」，不自己去猜一个店名）。
+static func building_for_shop_group(db, shop_id: String) -> String:
+	if db == null or shop_id.is_empty():
+		return ""
+	if db.get_row("building_def", shop_id) != null:
+		return shop_id
+	for row: Resource in db.rows("building_def"):
+		if str(row.stock_group) == shop_id:
+			return str(row.building_id)
+	return ""
 
 
 func building_name(building_id: String) -> String:
@@ -55,9 +73,30 @@ func stock_row(building_id: String, item_id: String) -> Resource:
 
 
 ## 买入价 / 卖出价（0 表示不卖 / 不收）
+##
+## 买入价**可以被打折**：天赋「过日子」那条（`rule:shop_buy_price 0.10` = 便宜一成，
+## 设计 12 §五 的 `rule:` 一类）由 `_buy_discount()` 读出来。
+## 打折只压买入价、不动卖出价与回购价（那是「撤销卖出」，改它等于把玩家的钱变少）。
 func buy_price(building_id: String, item_id: String) -> int:
 	var row: Resource = stock_row(building_id, item_id)
-	return maxi(0, int(row.buy_price)) if row != null else 0
+	if row == null:
+		return 0
+	var base := maxi(0, int(row.buy_price))
+	if base <= 0:
+		return 0
+	var discount := _buy_discount()
+	if discount <= 0.0:
+		return base
+	# 便宜之后至少 1 文：0 会变成「白送」，那是另一套语义（设计没要）
+	return maxi(1, int(floor(float(base) * (1.0 - clampf(discount, 0.0, 0.9)))))
+
+
+## 队伍里最大的那一份「买东西便宜几成」。上限夹在 90%：再高就等于白送，
+## 而表里的值是设计配的（当前只有一条 10%）。
+func _buy_discount() -> float:
+	return clampf(TalentServiceScript.party_rule_value(
+		db, state, "shop_buy_price", 0.0
+	), 0.0, 0.9)
 
 
 func sell_price(building_id: String, item_id: String) -> int:

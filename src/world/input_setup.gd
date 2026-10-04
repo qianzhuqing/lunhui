@@ -13,6 +13,11 @@ const ACTIONS := {
 	"sneak": [KEY_SHIFT],
 	"interact": [KEY_E, KEY_SPACE],
 	"open_character": [KEY_TAB],
+	# 0.18.1 的全局快捷键：行囊是角色面板的第三个页签，单独一个键直达
+	"open_bag": [KEY_I],
+	# 0.28.0（Q62）：看 NPC 信息是**独立的一个键**——「我只是想看看这人是谁」
+	# 不该经过一次会改变世界状态的交互（E 才是交互菜单）
+	"npc_info": [KEY_Q],
 	"show_progress": [KEY_M],
 	"sweep": [KEY_J],
 	"show_clues": [KEY_K],

@@ -35,12 +35,13 @@ func run() -> void:
 	_check_marker_ownership(db)
 
 
-## 12 条判定的来源都要能解析，难度都要是正数
+## 14 条判定的来源都要能解析，难度都要是正数（0.28.0 加了 `ev_patrol_check`，
+## 0.29.0 又加了 `ev_shen_rescue`——地牢里救沈雁回，打通 Q61 的那枚旗标）
 func _check_table(db, service) -> void:
 	var rows: Array = []
 	for row: Resource in db.rows("event_check"):
 		rows.append(row)
-	check_eq(rows.size(), 12, "表里有 12 条事件判定")
+	check_eq(rows.size(), 14, "表里有 14 条事件判定（0.29.0 加了 `ev_shen_rescue`）")
 	for row: Resource in rows:
 		var check_id := str(row.check_id)
 		var source := str(row.check_source)
@@ -51,7 +52,7 @@ func _check_table(db, service) -> void:
 		check_gt(float(row.difficulty), 0.0, "%s 的难度是正数" % check_id)
 		var best: Dictionary = service.best_check_value(source)
 		check_gt(float(best["value"]), -900.0, "%s 的判定值算得出来（%s）" % [check_id, source])
-	check_eq(service.checks_for_scene("scene_heifengzhai").size(), 4, "黑风寨 4 条")
+	check_eq(service.checks_for_scene("scene_heifengzhai").size(), 5, "黑风寨 5 条（0.29.0 加了地牢救人）")
 	check_eq(service.checks_for_region("n_luoyanpo").size(), 3, "落雁坡 3 条")
 
 
@@ -188,11 +189,15 @@ func _check_soft_roll(db) -> void:
 			won = true
 			check_eq(probe_state.inventory.count("item_potion_small"), 1, "掷中：奖励进背包（种子 %d）" % candidate)
 			check_eq(str(probe_state.event_check_result("ev_cell_heal")), "done", "掷中记 done")
+			# 救出阿福 → `flag_qiutu_saved`（钱大夫的委托等的就是它）。
+			# 以前这枚旗标**全项目没有任何来源**，那条委托永远交不了（20 号 §九 #6）。
+			check_true(probe_state.has_flag("flag_qiutu_saved"), "掷中＝救出来了，记下 flag_qiutu_saved")
 		elif not bool(result["success"]) and not lost:
 			lost = true
 			check_eq(probe_state.inventory.count("item_potion_small"), 0, "掷不中：不发东西（失败不惩罚）")
 			check_eq(str(probe_state.event_check_result("ev_cell_heal")), "failed", "掷不中记 failed")
 			check_true(str(result["text"]).contains("拿不到额外药品"), "失败文案用 fail_note：%s" % result["text"])
+			check_false(probe_state.has_flag("flag_qiutu_saved"), "没救成就不记账")
 		if won and lost:
 			break
 	check_true(won, "软判定掷中过")

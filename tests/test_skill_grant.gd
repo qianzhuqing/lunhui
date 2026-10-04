@@ -33,10 +33,13 @@ func _check_source_lookup(db) -> void:
 	var scout: PackedStringArray = SkillGrantScript.skills_from_enemy(db, "en_bd_scout")
 	check_true(scout.has("sk_bandit_scout"), "巡山兵身上带黑风刀法·劈山")
 	check_true(SkillGrantScript.skills_from_enemy(db, "en_bd_missing").is_empty(), "不存在的敌人不掉武学")
-	# npc／story 这些来源还没接：即便 source_id 撞上了也不该被当成掉落
+	# npc 还没接（要对话表）：即便 source_id 撞上了也不该被当成掉落
 	check_true(SkillGrantScript.skills_from_enemy(db, "xuanwei").is_empty(), "未实现的来源不发放")
 	check_true(SkillGrantScript.skills_from_source(db, "npc", "xuanwei").is_empty(), "npc 来源未接入")
-	check_true(SkillGrantScript.skills_from_source(db, "story", "chapter1_end").is_empty(), "story 来源未接入")
+	# 0.22.0 起 story 接上了（设计 18 §3.1）：`source_id` 指向 story_node 的节点，
+	# 6 部原来悬空的武学由此有落地处（这条断言以前写的是"未接入"，随实现翻转）
+	check_eq(SkillGrantScript.skills_from_source(db, "story", "chapter1_end").size(), 3,
+		"story 来源已接入：chapter1_end 带 3 部武学")
 	check_eq(SkillGrantScript.skills_from_source(db, "hidden", "trig_wine").size(), 3, "醉刀客点位带 3 部武学")
 	check_eq(SkillGrantScript.skills_from_source(db, "item", "item_scroll_wudu").size(), 2, "五毒残页带招式与内功各一")
 

@@ -99,6 +99,16 @@ func rows_where(table_name: String, column: String, value: Variant) -> Array:
 	return resource.rows_where(column, value)
 
 
+## 往表里注入一行运行期的行（见 `TableResource.inject_row` 的说明）。
+## 只影响内存：CSV 与 `data/generated` 一个字都不动。
+func inject_row(table_name: String, row: Resource) -> void:
+	var resource: Resource = tables.get(table_name)
+	if resource == null:
+		push_error("[TableDb] 没有这张表，注入失败：%s" % table_name)
+		return
+	resource.inject_row(row)
+
+
 ## 某列出现过的全部取值（用于引用校验）。
 func column_values(table_name: String, column: String) -> Dictionary:
 	var out: Dictionary = {}

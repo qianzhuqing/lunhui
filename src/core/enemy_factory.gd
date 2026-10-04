@@ -109,8 +109,9 @@ func _stats_from_derived(row, difficulty) -> Dictionary:
 	return stats
 
 
-## 共用管线（设计 10 §二／§五）：**七维 + 等级 + 装备加成 + 内功加成** → `attr_to_stat`／`level_growth`
-## → 派生数值；难度倍率照旧在最后乘。与角色走的是同一个 `AttributeCalculator`。
+## 共用管线（设计 10 §二／§五／§七）：**七维 + 装备加成 + 内功加成** → `attr_to_stat`
+## → 派生数值；难度倍率照旧在最后乘。与角色走的是同一个 `AttributeCalculator`，
+## **只差最后那个 `include_level_base=false`**（0.28.0 答 Q57：敌人不吃 `level_growth` 的基础列）。
 func _stats_from_attrs(row, attrs: Dictionary, difficulty) -> Dictionary:
 	var contributions: Array = _enemy_contributions(str(row.enemy_id))
 	# 内伤抗性这一列**保留**（设计只取消了毒/火/流血三条特权列），走固定值层进管线
@@ -120,7 +121,7 @@ func _stats_from_attrs(row, attrs: Dictionary, difficulty) -> Dictionary:
 			"value": float(row.res_internal), "source": "enemy_base.res_internal",
 		})
 	var calculator = AttributeCalculatorScript.new(_db)
-	var derived: Dictionary = calculator.compute(int(row.level), attrs, {}, contributions)
+	var derived: Dictionary = calculator.compute(int(row.level), attrs, {}, contributions, false)
 	var stats := {
 		"hp_max": float(roundi(float(derived.get("hp_max", 0.0)) * float(difficulty.enemy_hp_mul))),
 		"qi_max": float(derived.get("qi_max", 0.0)),

@@ -115,16 +115,22 @@ func cultivate_cost(star: int, mastery_level: int) -> int:
 
 ## 图鉴奖励：每收集 step 部武学，七项属性各 +bonus，最多 cap 次。
 ## 返回 {times, bonus, attrs: {attr_id: 加成}}
-func codex_bonus(collected: int) -> Dictionary:
+## `bonus_multiplier`：天赋「藏书癖」（`rule:codex_bonus_multiplier 2`）把每一档的奖励翻倍。
+## 倍数**只放大每档给多少**，不动 `step`／`cap`（收集的节奏与上限是设计定的）。
+func codex_bonus(collected: int, bonus_multiplier: float = 1.0) -> Dictionary:
 	var step := maxi(1, constant_int("codex_step"))
 	var cap := maxi(0, constant_int("codex_cap"))
 	var bonus := constant_int("codex_bonus")
 	var times := clampi(int(floor(float(maxi(collected, 0)) / float(step))), 0, cap)
+	var per_tier := int(round(float(bonus) * maxf(1.0, bonus_multiplier)))
 	var attrs: Dictionary = {}
 	for attr_id: String in ALL_ATTRS:
-		attrs[attr_id] = times * bonus
+		attrs[attr_id] = times * per_tier
 	# step／cap 一起返回：界面要拿它显示「已收集 X／下一步还差几部」
-	return {"times": times, "bonus": times * bonus, "attrs": attrs, "step": step, "cap": cap}
+	return {
+		"times": times, "bonus": times * per_tier, "attrs": attrs,
+		"step": step, "cap": cap, "per_tier": per_tier,
+	}
 
 
 ## 图鉴奖励转成属性点层贡献（`AttributeCalculator` 的贡献格式）。
@@ -132,9 +138,9 @@ func codex_bonus(collected: int) -> Dictionary:
 ## **换算只写这一处**：面板（`CharacterSheet`）与门槛判定（`SkillLoadout.attrs()` 的兜底）
 ## 都调它，免得两边各算一套、迟早对不上——这一条踩过：门槛走的是裸 SkillLoadout，
 ## 图鉴奖励只加进了面板那份属性，于是「面板显示够门槛了、实际却学不会」。
-func codex_contributions(collected: int) -> Array:
+func codex_contributions(collected: int, bonus_multiplier: float = 1.0) -> Array:
 	var out: Array = []
-	var attrs: Dictionary = codex_bonus(collected)["attrs"]
+	var attrs: Dictionary = codex_bonus(collected, bonus_multiplier)["attrs"]
 	for attr_id: String in attrs:
 		var value := int(attrs[attr_id])
 		if value != 0:
@@ -143,9 +149,22 @@ func codex_contributions(collected: int) -> Array:
 
 
 ## 内功加成转成 AttributeCalculator 的贡献列表（装配系统接入后直接可用）。
-func passive_contributions(passive_ids: PackedStringArray) -> Array:
+##
+## **熟练度放大 `stat:` 类、不放大 `attr:` 类**（设计 0.15.0 口径确认第 3 条）：
+## 系数就是招式那套 `mastery_multiplier()`（`1 + 熟练度 × skill_star_def.mastery_gain`）。
+## 为什么不放大属性点：属性点是整数、还会再经 `attr_to_stat` 换算一次——
+## 放大它等于二次放大，而且面板会出现「+4.5 智」这种玩家看不懂的数。
+##
+## `mastery_levels` 是 `{skill_id: 熟练度}`；不传（敌人、构建期校验）＝ 全 0，即原值。
+func passive_contributions(passive_ids: PackedStringArray, mastery_levels: Dictionary = {}) -> Array:
 	var out: Array = []
 	for skill_id: String in passive_ids:
+		var star := 0
+		var base: Resource = _db.get_row("skill_base", skill_id)
+		if base != null:
+			star = int(base.star)
+		# star 取不到（数据缺行）时不放大：宁可给原值，也不要按 0 星算出个假系数
+		var scale := mastery_multiplier(star, int(mastery_levels.get(skill_id, 0))) if star > 0 else 1.0
 		for row: Resource in _db.rows_where("skill_passive_stat", "skill_id", skill_id):
 			var parsed: Dictionary = row.parsed_target()
 			var kind: String = parsed["kind"]
@@ -157,7 +176,7 @@ func passive_contributions(passive_ids: PackedStringArray) -> Array:
 			elif kind == "stat":
 				out.append({
 					"kind": AttributeCalculatorScript.CONTRIB_STAT_FLAT, "target": parsed["target_id"],
-					"value": float(row.value), "source": skill_id,
+					"value": float(row.value) * scale, "source": skill_id,
 				})
 	return out
 

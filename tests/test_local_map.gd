@@ -9,6 +9,18 @@ const ChestScript := preload("res://src/world/chest.gd")
 const SfxScript := preload("res://src/audio/sfx.gd")
 const TriggerPointScript := preload("res://src/world/trigger_point.gd")
 const PracticeServiceScript := preload("res://src/core/practice_service.gd")
+## NPC 位点的「位点名 → 人」判定只有一处（`npc_for_slot`），用例直接问它（决策 332）
+const NpcServiceScript := preload("res://src/core/npc_service.gd")
+## 观察点的可见标记（设计 15 §一「可交互物暖色提亮」，决策 337）
+const FlavorMarkerScript := preload("res://src/world/flavor_marker.gd")
+## 剧情节点的记账旗标名（`story_done_<node_id>`）只有一处出处
+const StoryServiceScript := preload("res://src/core/story_service.gd")
+## 引导口径（`flag_supplies_ready` 那类「写在表里、没人置」的旗标）只有一处出处
+const GuideServiceScript := preload("res://src/core/guide_service.gd")
+## 界面文案判据（表内 id 形态）与场景自检用的是同一处常量，别在用例里另写一份正则
+const CopyGuardScript := preload("res://src/ui/copy_guard.gd")
+## 遮挡层判据与那个透明度常量都在控制器里（唯一出处），用例直接引用它
+const LocalMapControllerScript := preload("res://src/world/local_map_controller.gd")
 
 ## 写不进去的存档设施（只实现 SaveService 用到的几个方法）：验「自动存档失败不静默」
 class _FailingStore extends RefCounted:
@@ -65,6 +77,7 @@ func run() -> void:
 	_check_sequence_puzzle(map, state)
 	_check_event_boss_reward(db, map, state, captures)
 	_check_kill_style_names(map, db)
+	_check_flavor_points(map, state)
 	_check_player_text(map, db, session_node)
 	_check_condition_triggers(map, state, session_node)
 	_check_progress_records(map, state)
@@ -75,7 +88,9 @@ func run() -> void:
 	_check_save_timing(map, state, session_node)
 	_check_exit(map, session_node, returns)
 	_check_town_shop(db, state, session_node)
+	_check_guide_after_shop_close(db, session_node)
 	_check_town_facilities(db, state, session_node)
+	_check_every_facility_is_interactable(db, session_node)
 	_check_town_recruit_at_inn(db, session_node)
 	_check_guarded_chest(db, session_node)
 	_check_dummy_practice_entry(db, session_node)
@@ -84,9 +99,179 @@ func run() -> void:
 	_check_spawn_and_exit_guard(db, state, session_node)
 	_check_cave_shortcut(db, state, session_node)
 	_check_battle_return_position(db, state, session_node)
+	_check_choice_dialogue_after_boss(db, map, state, session_node)
+	_check_event_dialogue(db, map, state)
+	_check_shixi_layers(db, state, session_node)
 	scene_tree.root.remove_child(map)
 	map.free()
 	session_node.pending_local_scene = ""
+
+
+## 0.32.0 的两条地表分层，在**真控制器**里各走一遍（石隙迷窟是唯一同时用到两层的图）：
+##   ① `Conditional` 层（那条 22 格碎石细径）跟着 `item_treasure_map` **整层**显隐；
+##   ② 玩家走到遮挡瓦片（岩檐）下面时 `Overlay` 整层半透明，走开恢复。
+##
+## 条件**不写死在代码里**：控制器问的是「这张图的母地标是不是持有类解锁」（`n_shixi` → 藏宝图）。
+## 地编还没交付 `Conditional` 层时，这里临时挂一个空层验接线（不然那几条断言一次都跑不到）。
+func _check_shixi_layers(db, _state, session_node) -> void:
+	session_node.pending_local_scene = "scene_shixi"
+	var shixi = load(LOCAL_RUN).instantiate()
+	# 用**独立的一份存档**：藏宝图是钥匙道具（`Inventory.remove_item` 拒删），
+	# 拿主存档验「没有图」那一侧会把前提带歪（参数里那份 `state` 这一段不用）。
+	var shixi_state = solo_state(db)
+	shixi.state_override = shixi_state
+	scene_tree.root.add_child(shixi)
+	shixi.setup()
+	check_eq(shixi.scene_id, "scene_shixi", "进入石隙迷窟")
+
+	# ① 条件地表的判据：按表问出来（`map_region.n_shixi.unlock_condition`）
+	var rule: Dictionary = shixi.conditional_layer_rule()
+	check_true(bool(rule["apply"]), "石隙的条件地表有条件可依：%s" % str(rule))
+	check_eq("、".join(rule["items"]), "item_treasure_map", "条件是藏宝图（写在 map_region 里，不在代码里）")
+	check_false(shixi.conditional_layer_visible(), "没图 → 细径不该显示")
+
+	var layer: TileMapLayer = shixi.world.get_node_or_null("Conditional") as TileMapLayer
+	if layer == null:
+		# 地编还没铺那 22 格：临时挂一个空层，验「代码真的会去显隐这一层」
+		layer = TileMapLayer.new()
+		layer.name = "Conditional"
+		shixi.world.add_child(layer)
+		shixi._conditional_layer = layer
+		print("  [小地图] 石隙还没有 Conditional 层（等地编铺 22 格细径），用临时空层验显隐接线")
+	shixi._apply_conditional_layer()
+	check_false(layer.visible, "没图 → 这一层被藏起来")
+	var added: Dictionary = shixi_state.inventory.add_item(db, "item_treasure_map", 1)
+	check_true(bool(added.get("ok", false)), "藏宝图能放进背包：%s" % str(added.get("error", "")))
+	check_true(shixi.conditional_layer_visible(), "拿到图 → 细径该显示")
+	shixi._apply_conditional_layer()   # 正常路径是 `_process` 里每帧刷（拿到图当场就出现）
+	check_true(layer.visible, "拿到图 → 这一层真的显示出来了")
+	# 再回到隐藏：藏宝图是**钥匙道具**，`Inventory.remove_item` 故意拒删（钥匙拒丢），
+	# 所以换一份干净存档问同一层——它和背包是「有图才显示」的两侧。
+	shixi.state_override = solo_state(db)
+	check_false(shixi.conditional_layer_visible(), "换一份没有图的存档 → 细径不该显示")
+	shixi._apply_conditional_layer()
+	check_false(layer.visible, "图没了 → 这一层又藏回去")
+
+	# ② 遮挡层半透明：按 TileSet 的 `covering` 找一格岩檐站上去
+	var overlay: TileMapLayer = shixi.world.get_node_or_null("Overlay") as TileMapLayer
+	check_not_null(overlay, "石隙有 Overlay 层")
+	if overlay != null:
+		var eave_cell := Vector2i(-1, -1)
+		var plain_cell := Vector2i(-1, -1)
+		for cell: Vector2i in overlay.get_used_cells():
+			var data: TileData = overlay.get_cell_tile_data(cell)
+			if data != null and bool(data.get_custom_data("covering")):
+				if eave_cell.x < 0:
+					eave_cell = cell
+			elif plain_cell.x < 0:
+				plain_cell = cell
+		check_true(eave_cell.x >= 0, "石隙的 Overlay 上有遮挡瓦片（岩檐压顶）")
+		if eave_cell.x >= 0:
+			shixi.player.global_position = overlay.to_global(overlay.map_to_local(eave_cell))
+			shixi._refresh_overlay_cover()
+			check_true(shixi._overlay_covering, "站在岩檐下面判为「被盖住」")
+			check_float(overlay.modulate.a, LocalMapControllerScript.OVERLAY_COVER_ALPHA,
+				"被盖住时整层压到 %.2f" % LocalMapControllerScript.OVERLAY_COVER_ALPHA)
+			shixi.player.global_position = overlay.to_global(overlay.map_to_local(plain_cell))
+			shixi._refresh_overlay_cover()
+			check_false(shixi._overlay_covering, "走开就不算被盖住")
+			check_float(overlay.modulate.a, 1.0, "走开后恢复不透明")
+
+	scene_tree.root.remove_child(shixi)
+	shixi.free()
+	session_node.pending_local_scene = ""
+
+
+## 判定过了接一段对话（设计 20 §四 幕四）：地牢那次判定（`ev_shen_rescue`）通过之后，
+## 铁栏后的人才回头说话——以前这里只置一个旗标，她一句台词都没有。
+## 走的是**真路径**（`resolve_event`，按 E 那一下调的就是它），不是直接调内部函数。
+func _check_event_dialogue(db, map, state) -> void:
+	var cell: Node2D = map.world.get_node_or_null("Markers/hf1_cell/Event_ev_shen_rescue")
+	check_not_null(cell, "地牢里有沈雁回的判定位点")
+	if cell == null:
+		return
+	map.close_npc()
+	map.player.global_position = cell.global_position
+	# 书生的文学判定值是 5 ≥ 门槛 2（soft 达标必过）→ 这一条是确定性的
+	var result: Dictionary = map.resolve_event("ev_shen_rescue")
+	check_true(bool(result.get("success", false)), "地牢那次判定过得去：%s" % str(result.get("text", "")))
+	check_true(state.has_flag("flag_shen_rescued"), "判定过了仍然置旗标（章节结束等它）")
+	var panel = map.npc_panel
+	check_not_null(panel, "判定过了接上她那段对话")
+	if panel != null:
+		check_eq(str(panel.npc_id), "npc_shen_yanhui", "说话人是沈雁回")
+		check_eq(str(panel.dialogue_node_id), "dl_shen_cell", "直接接上幕四那一句")
+		check_not_null(
+			panel._actions.find_child("TalkOptionopt_shen_take", true, false),
+			"「我带你走。」是一条真按钮",
+		)
+		map.close_npc()
+
+
+## 终局难题（设计 20 §七）：上一场打赢大寨主 → 回到图上就把那段对话摆出来。
+##
+## 三层一起验：`battle_screen` 把这一场的 `team_id` 写进 `last_battle`；小地图按队伍翻
+## `TEAM_WIN_DIALOGUES`；**能不能问、问过没有写在表的条件里**（三个 `!flag_ledger_*`）。
+## 这条链以前整条不存在——三个账册旗标全项目没有来源，`story_node` 那三行永久增益谁也拿不到。
+##
+## 用的是**已经在场的那张地图**（不另起一份场景）：只在它上面临时改会话状态，
+## 跑完把自己动过的旗标与 `last_battle` 还原，免得后面的用例看见一份被污染的状态。
+func _check_choice_dialogue_after_boss(db, map, state, session_node) -> void:
+	var had_confront: bool = state.has_flag("flag_heifeng_confront")
+	var had_last: Variant = session_node.last_battle
+	# ① 没打过对质 → 不摆
+	state.flags.erase("flag_heifeng_confront")
+	session_node.last_battle = {"winner": 0, "team_id": "team_boss"}
+	check_false(map._open_pending_choice_dialogue(), "没打赢大寨主时不摆终局难题")
+	check_false(
+		map.npc_panel != null and str(map.npc_panel.dialogue_node_id) == "dl_ledger_choice",
+		"而且没把终局难题那一句塞进面板",
+	)
+	# ①′ 认得出队伍、但那一队没配对话 → 也不摆（别把「上一场打的是别人」也算进来）
+	session_node.last_battle = {"winner": 0, "team_id": "team_butcher"}
+	check_false(map._open_pending_choice_dialogue(), "上一场打赢的是别的队伍 → 不摆终局难题")
+	# ② 打赢过 + 没选过 → 摆，而且就是表里那一条
+	state.set_flag("flag_heifeng_confront")
+	# 账册也是条件的一部分（表里写了 `item:item_bd_ledger`）：打赢这一场时它是随掉落发的
+	# （`battle_screen.TEAM_WIN_ITEMS`），这里补上，验「账册在手 → 摆出来」
+	state.inventory.add_item(db, "item_bd_ledger", 1)
+	session_node.last_battle = {"winner": 0, "team_id": "team_boss"}
+	check_true(map._open_pending_choice_dialogue(), "打赢大寨主之后回图 → 终局难题摆出来")
+	var panel = map.npc_panel
+	check_not_null(panel, "摆出来的是一块 NPC 面板（对话容器挂在它上面）")
+	if panel != null:
+		check_eq(str(panel.npc_id), "npc_shen_yanhui", "问话的是沈雁回")
+		check_eq(str(panel.dialogue_node_id), "dl_ledger_choice", "直接说的就是终局难题那一条")
+		check_not_null(
+			panel._actions.find_child("TalkOptionopt_ledger_public", true, false),
+			"三条路之一（呈官）是一条真按钮",
+		)
+	# ②′ 读档／重开一局时 `last_battle` 不在会话里：条件满足就必须还问得出来，
+	#     否则玩家一读档就再也回答不了那道题（那本账还在背包里，题却没了）
+	map.close_npc()
+	session_node.last_battle = {}
+	check_true(
+		map._open_pending_choice_dialogue(),
+		"读档进来（认不出上一场是哪支队）也照样摆——不然那道题永远答不了",
+	)
+	var reloaded = map.npc_panel
+	check_not_null(reloaded, "读档那一路同样摆出面板")
+	if reloaded != null:
+		# ③ 选一条 → 旗标落地；再回图就不摆了（条件里那三个 `!flag_ledger_*` 挡住）
+		var chosen: Dictionary = reloaded.choose_dialogue("opt_ledger_public")
+		check_true(bool(chosen.get("ok", false)), "按钮选得动：%s" % str(chosen.get("error", "")))
+		check_true(state.has_flag("flag_ledger_public"), "选完旗标进存档")
+		map.close_npc()
+		check_false(map._open_pending_choice_dialogue(), "选过之后回图不再摆（三选一不叠加）")
+	# 还原：后面的用例用同一份会话状态，不能留下这一场动过的旗标
+	state.flags.erase("flag_ledger_public")
+	# 钥匙道具不能「丢」，但这是测试夹具——直接清掉那份堆叠
+	state.inventory.stacks.erase("item_bd_ledger")
+	if had_confront:
+		state.set_flag("flag_heifeng_confront")
+	else:
+		state.flags.erase("flag_heifeng_confront")
+	session_node.last_battle = had_last
 
 
 ## 城镇店的入口：走到建筑 Marker 旁边按 E → 商店界面盖在当前场景上（不切场景）
@@ -265,7 +450,8 @@ func _check_dungeon_panel(map, state) -> void:
 
 ## 事件判定位点：站过去按 E，判定值与难度比大小；结果写存档
 func _check_events(map, state) -> void:
-	check_eq(map.events.size(), 4, "黑风寨有 4 个事件判定位点：%s" % str(map.events))
+	# 0.29.0 加了 `ev_shen_rescue`（地牢里救沈雁回），地编同步摆了 `Event_ev_shen_rescue`
+	check_eq(map.events.size(), 5, "黑风寨有 5 个事件判定位点：%s" % str(map.events))
 	# 识破柴房机关：奇门 3 ≥ 3，恰好过
 	var trap: Node2D = map.world.get_node_or_null("Markers/hf1_shed/Event_ev_shed_trap")
 	check_not_null(trap, "柴房有机关位点")
@@ -417,19 +603,59 @@ func _check_town_npcs(town) -> void:
 	if town.npcs.is_empty():
 		return
 	var first: Node2D = town.npcs[0]
-	check_true(String(first.name).begins_with("npc_slot_"), "占位位点的名字来自地编（%s）" % first.name)
+	# 名字来自地编：占位命名 `npc_slot_0N` 与按 id 绑的 `npc_<npc_id>` **两种都合法**（07 §九 第 12 条）
+	check_true(String(first.name).begins_with("npc_"), "位点的名字来自地编（%s）" % first.name)
 	check_null(town.npc_near_player(), "站在出生点时不误认身边的 NPC")
 	town.player.global_position = first.global_position
 	check_eq(town.npc_near_player(), first, "站到路人旁边认得出他")
 	var talked: Dictionary = town.interact()
 	check_true(bool(talked["ok"]), "按 E 有回应（不静默）")
 	check_eq(str(talked.get("npc", "")), String(first.name), "回应里带的是这个站位的名字")
-	check_true(
-		str(talked.get("text", "")).contains("对话内容还没到"),
-		"如实说明内容还没到：%s" % str(talked.get("text", "")),
+	# 设计 19（0.25.0）：城镇 NPC 从「按 E 一句占位台词」升级成**可以交往的人**——
+	# 现在按 E 打开的是 NPC 面板，台词取 `npc_def.greet_text_cn`（不再写死在代码里）。
+	check_false(str(talked.get("npc_id", "")).is_empty(),
+		"这个站位对得上 npc_def 里的人：%s" % str(talked.get("npc_id", "")))
+	var npc_row: Resource = get_db().get_row("npc_def", str(talked.get("npc_id", "")))
+	check_not_null(npc_row, "站位绑到的 npc_def 行存在")
+	if npc_row != null:
+		check_eq(str(talked.get("speaker", "")), str(npc_row.name_cn), "说话的人就是这个人")
+		check_eq(str(talked.get("text", "")), str(npc_row.greet_text_cn), "开场白取自表里的 greet_text_cn")
+		check_false(str(talked.get("text", "")).contains("npc_"), "玩家可见文案不漏表内 id")
+	check_not_null(town.npc_panel, "按 E 打开了 NPC 交往面板")
+	town.close_npc()
+	# **五个站位逐个人都过一遍「按 E 说话」**（决策 329）：第 5 个站位背后没有 `npc_def` 行，
+	# 那句兜底文案以前写的是「（这个人还没有配 npc_def 行）」——`npc_def` 正是 CopyGuard 盯的
+	# 表内 id 形态（AGENTS 硬规矩），而这条用例只按过第一个人，所以一直没人红。
+	# 这里走 `_talk_to_npc`（`interact()` 里那一条分支本身）而不是 `interact()`：后者会先撞上
+	# 店铺／设施分支（`facility_bounty_board` 还会动引导旗标），那是另一条用例的事。
+	for index in town.npcs.size():
+		var slot: Node2D = town.npcs[index]
+		var said: Dictionary = town._talk_to_npc(slot)
+		check_true(bool(said.get("ok", false)), "第 %d 个站位都能说话（不静默）" % (index + 1))
+		var hits: PackedStringArray = CopyGuardScript.id_tokens(town)
+		check_eq(hits.size(), 0, "第 %d 个站位说话后界面不漏表内 id：%s" % [index + 1, ", ".join(hits)])
+		town.close_npc()
+	# **按 id 绑**（07 §九 第 12 条）：位点改名成 `npc_<npc_id>` 之后，绑的人跟着名字走，不再靠
+	# `npc_def` 的行序——行序一变，占位命名就会**静默把旁边的人认成他**（决策 332）。
+	var renamed: Node2D = town.npcs[0]
+	var original_name := String(renamed.name)
+	renamed.name = "npc_qian_dafu"     # 钱大夫（按行序第 1 个是王铁，故意挑一个不一样的）
+	var by_id: Dictionary = town._talk_to_npc(renamed)
+	check_eq(str(by_id.get("npc_id", "")), "npc_qian_dafu", "按 id 绑的位点认到的是名字里那个人")
+	check_eq(str(by_id.get("speaker", "")), "钱大夫", "说话的人对得上（不靠行序）")
+	town.close_npc()
+	renamed.name = original_name
+	check_eq(
+		str(town._talk_to_npc(renamed).get("npc_id", "")), "npc_wang_tie",
+		"改回占位命名后仍按行序绑（老口径不退化）"
 	)
-	check_false(str(talked.get("text", "")).contains("dialogue_tree"), "玩家可见文案不漏表内 id")
-	check_true(str(town._status.text).contains("路人"), "状态栏写了说话的人是谁：%s" % town._status.text)
+	town.close_npc()
+	# 认不出来的 id **不许退回按顺序**——那会把旁边的人认成他，比认不出来更糟。
+	# 这里直接问判据本身（走 `_talk_to_npc` 会按设计打一条 push_error，日志里不必留这个噪声）。
+	check_eq(
+		NpcServiceScript.npc_for_slot(get_db(), "npc_bu_cun_zai", "scene_qingfengyi"), "",
+		"认不出的 id 不绑人（不退回按顺序）"
+	)
 	# 优先级：NPC 分支排在店铺之后——站在店门口的路人不能把「进店」抢掉
 	var smith: Node2D = town.world.get_node_or_null("Markers/Buildings/bld_smith")
 	check_not_null(smith, "（前提）铁匠铺位点在")
@@ -675,6 +901,53 @@ func _check_chest_overflow_copy(map) -> void:
 ## 击杀方式的中文名必须**查表**（`status_effect.name_cn`）——设计新加一条状态、再拿它当 `kill_with` 时，
 ## 抄一份常量名单的实现会把英文 id 直接甩给玩家（和当年「dot_poison 泄露」同一类）。
 ## 顺带核宝箱档位：从掉落组名解析，且**认不出来要出声**（新档位要先补颜色/贴图/名字，别静默按铜箱画）。
+## 观察点（设计 20 §3.2／0.29.1）：按 E 只出一句碎句——
+## **不发奖励、不进副本完成度**（它是"看一眼"，不是一个事件）。
+##
+## **0.32.0 改动**：读过的观察点要记一枚 `flag_obs_<point_id>`——幕二那条「免战」选项的前置
+## 就写 `flag_obs_ob_luoyanpo_cart_01`（「看过的观察点」由此能被别的判定引用）。
+## 所以这条断言从「不置任何旗标」改成「只多这一枚」（除了它，仍然什么都不动）。
+func _check_flavor_points(map, state) -> void:
+	var points: Array = map.flavor_points
+	check_gt(float(points.size()), 0.0, "黑风寨收了观察点位点（%d 个）" % points.size())
+	if points.is_empty():
+		return
+	var entry: Dictionary = points[0]
+	var point_id := str(entry["point_id"])
+	var row: Resource = map.db.get_row("flavor_point", point_id)
+	check_not_null(row, "位点认得出对应的表行（%s）" % point_id)
+	if row == null:
+		return
+	map.player.global_position = (entry["node"] as Node2D).global_position
+	check_eq(map.flavor_near_player(), point_id, "站到观察点旁边认得出它")
+	var flags_before: int = state.flags.size()
+	var record_before: String = str(state.dungeon_record("scene_heifengzhai"))
+	var obs_flag := "flag_obs_%s" % point_id
+	var had_obs: bool = state.has_flag(obs_flag)
+	var result: Dictionary = map.read_flavor_point(point_id)
+	check_true(bool(result.get("ok", false)), "看得到这一句")
+	check_eq(str(result.get("text", "")), str(row.text_cn), "文案来自表")
+	check_true(map._status.text.contains(str(row.text_cn)), "状态栏把碎句显示出来了")
+	check_true(state.has_flag(obs_flag), "读过就记下 %s（幕二免战选项的前置）" % obs_flag)
+	check_eq(
+		state.flags.size(), flags_before + (0 if had_obs else 1),
+		"除 flag_obs_<point_id> 之外不多置旗标",
+	)
+	check_eq(str(state.dungeon_record("scene_heifengzhai")), record_before, "也不进副本完成度")
+	# **看得见**（设计 15 §一：可交互物要在低饱和背景里暖色提亮）——观察点在地图上只是一根
+	# 光秃秃的 Marker2D，没有这枚标记玩家只会从旁边走过去，而它们正是 20 §3.2 要的「探索感」。
+	# 逐个位点都查（不是只查第一个）：漏挂一个就等于那一句碎句玩家永远看不见。
+	for point: Dictionary in points:
+		var node := point["node"] as Node2D
+		var mark = node.get_node_or_null(FlavorMarkerScript.NODE_NAME)
+		check_not_null(mark, "观察点 %s 挂着可见标记" % str(point["point_id"]))
+		if mark != null:
+			check_true(
+				FlavorMarkerScript.is_visible_highlight(mark),
+				"标记是暖色提亮且可见（%s）" % str(point["point_id"])
+			)
+
+
 func _check_kill_style_names(map, db) -> void:
 	var stub = load("res://src/core/table_db.gd").new()
 	stub.load_all()
@@ -1305,6 +1578,105 @@ func _check_town_facilities(db, state, session_node) -> void:
 		# 读告示板 = 点亮引导第一步的旗标（09 §3.1）：这一条把**旗标名字**钉住——
 		# 控制器里的常量与 `guide_step.csv` 的 condition 是两处，改错一边引导就永远停在第 1 步。
 		check_true(state.has_flag("flag_board_read"), "读悬赏板点亮 flag_board_read")
+		# 序幕·择念（20 §3.1／0.29.1 v2 第 4 条）：**与引子同框**——同一按把它摆出来，
+		# 而且是**旁白模式**（不含头像／好感条／交往段：那句话是主角替自己说的）。
+		check_eq(str(posted.get("story", "")), "dl_opening_choice", "同一按摆出序幕择念：%s" % str(posted))
+		var story_panel = town.npc_panel
+		check_not_null(story_panel, "择念用的是一块面板")
+		if story_panel != null:
+			check_eq(str(story_panel.mode), "story", "走的是旁白模式（不是交往菜单）")
+			check_eq(str(story_panel.dialogue_node_id), "dl_opening_choice", "说的就是那一问")
+			check_eq(str(story_panel._favor_label.text), "", "旁白模式不摆好感条")
+			# 交往段整个收起来：面板上不该出现「好感／赠送／切磋／偷窃」这些字样
+			var story_words := ""
+			for node: Node in story_panel._actions.get_children():
+				if node is Label:
+					story_words += str(node.text)
+				elif node is Button:
+					story_words += str(node.text)
+			var has_favor_ui := false
+			for word: String in ["好感", "赠送", "切磋", "偷窃"]:
+				if story_words.contains(word):
+					has_favor_ui = true
+			check_false(has_favor_ui, "旁白模式不出现交往字样：%s" % story_words)
+			check_not_null(
+				story_panel._actions.find_child("TalkOptionopt_open_yi", true, false),
+				"三选一之一是真按钮",
+			)
+			var picked: Dictionary = story_panel.choose_dialogue("opt_open_yi")
+			check_true(bool(picked.get("ok", false)), "选得动：%s" % str(picked.get("error", "")))
+			check_true(state.has_flag("heart_yi"), "选完心性进存档")
+			town.close_npc()
+			# 选过之后同一按不再弹（条件在表里）
+			var again: Dictionary = town.interact()
+			check_false(again.has("story"), "心性定过之后不再问（%s）" % str(again))
+		state.flags.erase("heart_yi")
+	scene_tree.root.remove_child(town)
+	town.free()
+	session_node.pending_local_scene = ""
+
+
+## 政策：**每个「有名字的设施」都必须真的能交互**。
+##
+## `FACILITY_LABELS` 是一处清单（界面上给设施起名靠它），`interact()` 里的分支是另一处——
+## 两边一错位，玩家在图上按 E 就会听到兜底那句「这里还没有可交互的内容（数据错，已记进日志）」，
+## 而日志里还会真的记一条**假的数据错**。
+##
+## 2026-10-04 真事：0.31.0 新加的**书铺**（21 §九 陆文昭本命机遇的地点）进了 `FACILITY_LABELS`
+## 与地图（地图验收也点了名），却没进 `interact()` 的分支——上面那条「认不出的设施」用例只造了一个
+## 假位点，验的是「兜底那句在不在」，验不了「真位点是不是都进了分支」。所以这里改成**逐个真位点按一遍 E**。
+##
+## 用**独立的存档与场景实例**：客栈那一次会收人（燕小七），别把共用 state 的队伍改了
+## （那会把 `_check_town_gamble` 的软判定顶成「达标必过」，本文件踩过）。
+func _check_every_facility_is_interactable(db, session_node) -> void:
+	var probe = solo_state(db)
+	session_node.pending_local_scene = "scene_qingfengyi"
+	var town = load(LOCAL_RUN).instantiate()
+	town.state_override = probe
+	# 事件判定／触发点会触发自动存档——headless 下写 user:// 会崩，必须给临时目录（踩过）
+	var store = SaveStoreScript.new(SAVE_TEST_DIR, 3)
+	store.ensure_dir()
+	town.save_store_override = store
+	scene_tree.root.add_child(town)
+	town.setup()
+	var checked := 0
+	for facility_id: String in town.FACILITY_LABELS.keys():
+		var label := str(town.FACILITY_LABELS[facility_id])
+		var marker: Node2D = town.world.get_node_or_null("Markers/Facilities/%s" % facility_id)
+		check_not_null(marker, "地图上有%s位点（%s）" % [label, facility_id])
+		if marker == null:
+			continue
+		town.player.global_position = marker.global_position + Vector2(0, 12)
+		check_eq(town.facility_near_player(), facility_id, "站到%s旁边能认出来" % label)
+		if facility_id == "facility_bookshop":
+			# 21 §九 给书生的本命机遇定的地点就是**清风驿·书铺**，条件是「看过悬赏板」——
+			# 那条旗标在**同一个城镇里**点亮；书铺这一按会顺手再判一次剧情节点（决策 345 的续），
+			# 不然玩家读完板走到书铺会扑空（得当众出镇再进来才发）。
+			probe.set_flag("flag_board_read")
+		var result: Dictionary = town.interact()
+		checked += 1
+		check_ne(
+			str(result.get("error", "")), "facility_unsupported",
+			"%s（%s）按 E 走的是自己的分支，不是兜底那句：%s" % [facility_id, label, str(result)]
+		)
+		check_true(
+			bool(result.get("ok", false)),
+			"%s（%s）按 E 有反应：%s" % [facility_id, label, str(result)]
+		)
+		if facility_id == "facility_bookshop":
+			check_true(
+				probe.has_flag(StoryServiceScript.done_flag("opp_scholar")),
+				"书生读过悬赏板之后，站到书铺按 E 就领到本命机遇"
+			)
+			check_true(
+				str(town._status.text).contains("知白"),
+				"状态栏把《玄微心法·知白》念出来：%s" % str(town._status.text)
+			)
+		# 可能开了面板（客栈→打坐／招募，悬赏板→择念）：关掉再测下一个
+		town.close_npc()
+		town.close_cultivate()
+		town.close_shop()
+	check_eq(checked, 4, "四个设施位点逐个按过 E（客栈／当铺／悬赏板／书铺）")
 	scene_tree.root.remove_child(town)
 	town.free()
 	session_node.pending_local_scene = ""
@@ -1334,6 +1706,9 @@ func _check_town_recruit_at_inn(db, session_node) -> void:
 		town.player.global_position = board.global_position + Vector2(0, 12)
 		town.interact()
 		check_eq(state.party_size(), before, "在悬赏板按 E 不收人（城镇只认客栈）")
+		# 悬赏板那一按现在还会摆出序幕择念（20 §3.1）：关掉它再走下一步，
+		# 免得把「客栈收人」这一步测在别的浮层开着的情况下
+		town.close_npc()
 	if inn != null:
 		town.player.global_position = inn.global_position + Vector2(0, 12)
 		var joined: Dictionary = town.interact()
@@ -1490,3 +1865,40 @@ func _check_exit(map, session_node, returns: Array) -> void:
 	# 不是地标坐标本身——不然回程会正好压在入口位点上，被自动进图条立刻送回图（死循环）。
 	check_eq(session_node.world_position, entry_spot, "回程落点是进图时记下的大地图原位置")
 	check_ne(session_node.world_position, Vector2(float(region.pos_x), float(region.pos_y)), "回程落点不该被改写成地标坐标")
+
+
+## 在店里把药买齐之后，HUD **当场**推进（决策 347）。
+##
+## 起因：`flag_supplies_ready` 的口径是「等级 ≥ 5 ＋ 背包里有消耗品」，而它原本只在**换图／换房间**时算。
+## 玩家正站在药铺里把药买齐，HUD 却还停在「把家伙和药备齐」（09 §3.2 的循环就是「铁匠铺与酒楼把家伙和药备齐」），
+## 要出镇再进来才推进——**同一张图里做完的事，判据却在场景边界上**（与决策 345／346 同一族）。
+func _check_guide_after_shop_close(db, session_node) -> void:
+	var state = solo_state(db)
+	session_node.pending_local_scene = "scene_qingfengyi"
+	var town = load(LOCAL_RUN).instantiate()
+	town.state_override = state
+	var store = SaveStoreScript.new(SAVE_TEST_DIR, 3)
+	store.ensure_dir()
+	town.save_store_override = store
+	scene_tree.root.add_child(town)
+	town.setup()
+	# 练到 5 级（打副本那种状态），但背包里还没有消耗品
+	state.char_levels[state.char_ids[0]] = 5
+	GuideServiceScript.refresh_derived_flags(db, state)
+	check_false(state.has_flag("flag_supplies_ready"), "等级够了但没药：还没备齐")
+	# 在药铺里买齐 → 关掉浮层
+	town.open_shop("bld_clinic")
+	var bought: Dictionary = state.inventory.add_item(db, "item_potion_small", 1)
+	check_true(bool(bought.get("ok", false)), "买到一份金创药：%s" % str(bought))
+	town.close_shop()
+	check_true(
+		state.has_flag("flag_supplies_ready"),
+		"关掉药铺浮层的那一下就把「备齐」算出来了（不用出镇再进来）"
+	)
+	check_true(
+		str(town._guide_label.text).contains("出城上山"),
+		"HUD 当场换成下一步：%s" % str(town._guide_label.text)
+	)
+	scene_tree.root.remove_child(town)
+	town.free()
+	session_node.pending_local_scene = ""

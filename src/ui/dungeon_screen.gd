@@ -132,7 +132,10 @@ func refresh() -> void:
 	if dungeon == null or _list == null:
 		return
 	var room: Resource = db.get_row("map_local", scene_id)
-	_title.text = "%s　完成度" % (str(room.name_cn) if room != null else scene_id)
+	if room == null:
+		# 数据错：scene id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见决策 329）
+		push_error("[dungeon] map_local 里没有这张图：%s" % scene_id)
+	_title.text = "%s　完成度" % (str(room.name_cn) if room != null else "数据错，已记进日志")
 	var snapshot: Dictionary = dungeon.progress(scene_id)
 	_summary.text = "总计 %d%%　（%d / %d 项）%s" % [
 		int(snapshot["percent"]), int(snapshot["done"]), int(snapshot["total"]),

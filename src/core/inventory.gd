@@ -59,7 +59,9 @@ func add_item(db, item_id: String, qty: int = 1) -> Dictionary:
 		return {"ok": false, "added": 0, "overflow": 0, "error": "%s 是装备，要用 add_equipment" % item_id}
 	var row: Resource = db.get_row("item_base", item_id)
 	if row == null:
-		return {"ok": false, "added": 0, "overflow": 0, "error": "item_base 里没有 %s" % item_id}
+		# 数据错：id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[Inventory] item_base 里没有 %s" % item_id)
+		return {"ok": false, "added": 0, "overflow": 0, "error": "这件东西不在配置里（数据错，已记进日志）"}
 	var current := count(item_id)
 	var added: int = mini(qty, room_for(db, item_id))
 	var overflow: int = qty - added
@@ -83,7 +85,9 @@ func remove_item(db, item_id: String, qty: int = 1) -> Dictionary:
 		return {"ok": false, "removed": 0, "error": "数量必须大于 0"}
 	var row: Resource = db.get_row("item_base", item_id)
 	if row == null:
-		return {"ok": false, "removed": 0, "error": "item_base 里没有 %s" % item_id}
+		# 数据错：id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[Inventory] item_base 里没有 %s（丢弃）" % item_id)
+		return {"ok": false, "removed": 0, "error": "这件东西不在配置里（数据错，已记进日志）"}
 	if bool(row.is_key_item):
 		return {"ok": false, "removed": 0, "error": "%s 是钥匙道具，不能丢弃" % row.name_cn}
 	var current := count(item_id)

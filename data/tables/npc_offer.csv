@@ -1,0 +1,10 @@
+﻿offer_id,npc_id,kind,item_id,favor_required,price,note
+of_wang_ring,npc_wang_tie,offer,eq_ring_04,60,400,好感度兑换；铁匠的传家印记
+of_zhang_potion,npc_zhang_gui,offer,item_potion_qi,30,60,好感度兑换；他藏的回气散
+of_qian_acc,npc_qian_dafu,offer,eq_acc_03,80,,好感度兑换；完成委托后才肯给
+of_caiyao_shoulder,npc_caiyao,offer,eq_shoulder_03,50,,好感度兑换；治好他的腿之后
+of_wang_steal,npc_wang_tie,steal,item_iron,0,,可偷；失败扣好感
+of_zhang_steal,npc_zhang_gui,steal,item_med_02,0,,可偷；失败扣好感
+of_qian_steal,npc_qian_dafu,steal,item_potion_small,0,,可偷；难度最高
+of_huangcun_steal,npc_huangcun,steal,item_herb,0,,可偷；她只剩这个了
+of_zhang_treasure,npc_zhang_gui,steal,item_treasure_map,0,,仅可偷；张贵自己也说不清这图是哪来的

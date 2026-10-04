@@ -89,7 +89,8 @@ const TRIGGERS := {
 ## 事件判定（event_check.csv 里 scene_id = scene_heifengzhai 的 4 条）。
 const EVENTS := {
 	"hf1_shed": ["Event_ev_shed_trap"],
-	"hf1_cell": ["Event_ev_cell_heal"],
+	# hf1_cell 里是**两个人两处**：救治被囚村民（ev_cell_heal）与被掳的沈雁回（ev_shen_rescue，0.29.0）。
+	"hf1_cell": ["Event_ev_cell_heal", "Event_ev_shen_rescue"],
 	"hf2_poison": ["Event_ev_poison_identify"],
 	"hf2_hall": ["Event_ev_hall_inscription"],
 }
@@ -107,8 +108,30 @@ const SPOTS := {
 	"Trigger_trig_stealth_clear": Vector2i(5, 2),
 	"Event_ev_shed_trap": Vector2i(2, 4),
 	"Event_ev_cell_heal": Vector2i(3, 3),
+	"Event_ev_shen_rescue": Vector2i(6, 3),
 	"Event_ev_poison_identify": Vector2i(6, 3),
 	"Event_ev_hall_inscription": Vector2i(9, 3),
+}
+
+## 剧情 NPC 站位（0.29.0 的 20_第一章剧情）：现在是 `npc_slot_0N` 占位，
+## 等 NPC／对话表落地再按 id 绑（07 §十一 待补第 4 条）。
+const NPC_SLOTS := [
+	Vector2i(5, 36),   # 苏九娘：毒堂里侧，与守着她的毒手（Team 位点）分开
+]
+
+## 观察点（0.29.1）：地牢三处、毒堂三处。
+## 地牢那三处与 `Event_ev_cell_heal`／`Event_ev_shen_rescue` 是**同一房间里的另外三处**，不合并。
+const OBSERVE_POINTS := {
+	"hf1_cell": {
+		"Observe_ob_heifengzhai_cell_01": Vector2i(18, 24),    # 墙上的刻痕
+		"Observe_ob_heifengzhai_cell_02": Vector2i(21, 24),    # 铁栏
+		"Observe_ob_heifengzhai_cell_03": Vector2i(23, 26),    # 她的手
+	},
+	"hf2_poison": {
+		"Observe_ob_heifengzhai_poison_01": Vector2i(6, 33),   # 药罐
+		"Observe_ob_heifengzhai_poison_02": Vector2i(9, 33),   # 见光就变的毒
+		"Observe_ob_heifengzhai_poison_03": Vector2i(10, 36),  # 毒手脚上的靴
+	},
 }
 
 ## 房间内的固定敌人：`Enemies/<room_id>/Team_<team_id>`（07 文档第二、五节，共 7 处，本场景 6 处）。
@@ -156,6 +179,8 @@ func _run() -> int:
 		MapKit.add_room(shell["rooms"], room_id, ROOMS[room_id])
 	_place_markers(shell)
 	_place_team_markers(shell, floor_cells)
+	_place_npc_slots(shell)
+	_place_observe_points(shell)
 	_hidden_layer_tone(shell)
 	MapKit.add_marker(shell["characters"], "player_spawn", Vector2i(6, 5)).set_meta("role", "player")
 	MapKit.fit_camera(shell["camera"], MAP_W, MAP_H)
@@ -236,6 +261,32 @@ func _place_team_markers(shell: Dictionary, floor_cells: Dictionary) -> void:
 		var holder := MapKit.folder(enemies, room_id)
 		var cell := MapKit.room_entrance_inside(decor, floor_cells, ROOMS[room_id])
 		MapKit.add_marker(holder, "Team_" + str(TEAMS[room_id]), cell)
+
+
+## NPC 站位：Marker2D + 占位贴图（与城镇同一套 `npc_slot_0N` 约定）。
+func _place_npc_slots(shell: Dictionary) -> void:
+	var characters: Node2D = shell["characters"]
+	for index in NPC_SLOTS.size():
+		var marker := MapKit.add_marker(characters, "npc_slot_%02d" % (index + 1), NPC_SLOTS[index])
+		MapKit.add_sprite(marker, "placeholder", MapKit.NPC_TEXTURE)
+
+
+## 观察点：Marker2D 挂在 `Markers/<room_id>/` 下（与宝箱／触发同一套）。
+## 毒堂里补一个木桶当「药罐」的实物，让位点看得见。
+func _place_observe_points(shell: Dictionary) -> void:
+	shell["decor"].set_cell(Vector2i(6, 32), MapKit.SOURCE_ID, MapKit.T_BARREL)
+	var markers: Node2D = shell["markers"]
+	for room_id: String in OBSERVE_POINTS:
+		for point_id: String in OBSERVE_POINTS[room_id]:
+			# 观察点的格子是逐个挑的绝对坐标，不走 `SPOTS` 那套「相对房间左上角」的偏移。
+			_room_item_at(markers, room_id, point_id, OBSERVE_POINTS[room_id][point_id])
+
+
+func _room_item_at(markers: Node2D, room_id: String, marker_name: String, cell: Vector2i) -> void:
+	var holder: Node2D = markers.get_node_or_null(room_id)
+	if holder == null:
+		holder = MapKit.folder(markers, room_id)
+	MapKit.add_marker(holder, marker_name, cell)
 
 
 func _room_item(markers: Node2D, room_id: String, marker_name: String) -> void:

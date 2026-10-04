@@ -1,4 +1,4 @@
-## 启动菜单：新建游戏 / 读取存档 / 退出游戏。
+﻿## 启动菜单：新建游戏 / 读取存档 / 退出游戏。
 ##
 ## 界面用代码搭（占位美术阶段的取舍），决策都在 MenuController 里，
 ## 所以菜单流程既被 tests/test_menu.gd 覆盖，也能用 `--menu-selftest`
@@ -14,6 +14,9 @@ const LayoutBudgetScript := preload("res://src/ui/layout_budget.gd")
 
 const PLACEHOLDER_SCENE := "res://scenes/placeholder_game.tscn"
 const OVERWORLD_SCENE := "res://scenes/world_run.tscn"
+## 创建角色（设计 13）：**新建游戏先过创建界面**——「创建没走完不写存档」，
+## 所以这一步只切场景，落盘由创建界面确认时调 `MenuController.new_game(spec)` 做。
+const CREATION_SCENE := "res://scenes/creation_screen.tscn"
 
 const BUTTON_NEW := "新建游戏"
 const BUTTON_LOAD := "读取存档"
@@ -59,11 +62,16 @@ func resolve_db():
 
 ## 新建游戏：造状态 → 落在存档槽里 → 进入游戏。
 func press_new_game() -> Dictionary:
-	var result: Dictionary = controller.new_game()
-	_handle(result)
-	# 新档立刻反映到列表与按钮上
-	_refresh()
-	return result
+	# 设计 13：新建游戏走创建角色流程（选出身／分七维 → 天赋 → 起名 → 确认）。
+	# 这一步**不建号、不落盘**——玩家中途退出就什么都不留。
+	if scene_switch_handler.is_valid():
+		scene_switch_handler.call(CREATION_SCENE)
+	else:
+		var tree := get_tree()
+		if tree != null:
+			tree.change_scene_to_file(CREATION_SCENE)
+	return {"ok": true, "action": MenuControllerScript.ACTION_NONE, "slot": 0,
+		"state": null, "message": "去创建角色"}
 
 
 ## 读取存档：展开存档列表；没有存档时给出提示。
@@ -145,7 +153,7 @@ func _build_ui() -> void:
 	var title := Label.new()
 	title.name = "Title"
 	title.text = "《轮回》"
-	title.add_theme_font_size_override("font_size", 40)
+	title.add_theme_font_size_override("font_size", 36)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(title)
 
@@ -203,8 +211,9 @@ func _refresh() -> void:
 
 func _refresh_slots() -> void:
 	for child in _slot_box.get_children():
-		child.queue_free()
+		# 先摘再 queue_free（同 creation_screen._rebuild_body 的注释）：名字要立刻可复用
 		_slot_box.remove_child(child)
+		child.queue_free()
 	var labels: PackedStringArray = controller.slot_labels()
 	for index in range(controller.slots.size()):
 		var entry: Dictionary = controller.slots[index]

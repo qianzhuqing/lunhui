@@ -1,0 +1,3 @@
+﻿chapter_id,name_cn,sort_order,entry_condition,complete_condition,complete_text_cn,next_chapter_id,note
+chapter_01,第一章·黑风寨,1,start,flag_chapter1_done,第一章告一段落,chapter_02,救出沈小姐并回清风驿复命即完成
+chapter_02,第二章（待定）,2,flag_chapter1_done,,,,入口在废弃渡口；本章不开放

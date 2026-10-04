@@ -1,0 +1,28 @@
+﻿option_id,node_id,sort_order,text_cn,condition,next_node_id,set_flag,favor_delta,grant_item_id,note
+opt_chen_crouch,dl_huangcun_chen,1,蹲下来，与她对视,,,heart_yi,0,,义 +1；她说出「灭口的人穿官靴」（20 号 §四 幕三）
+opt_chen_press,dl_huangcun_chen,2,「那晚你看见了什么？」（逼问）,,,heart_mou,-2,,谋 +1；她更怕你，好感 −2，但信息同样给
+opt_chen_silent,dl_huangcun_chen,3,什么都不问,,,,0,,心性不变；真相要等关渡那条线
+opt_ci_pay,dl_qingfengyi_ci,1,「房钱，我替你付。」,,,heart_yi,5,,义 +1；好感 +5；他把义兄的事讲透（20 号 §四 幕一）
+opt_ci_why,dl_qingfengyi_ci,2,「你怎么知道，要人不要钱？」,,,heart_mou,5,,谋 +1；他讲出「义兄上过黑风寨」
+opt_ci_money,dl_qingfengyi_ci,3,「三十两，够我半年。」,,,heart_li,-1,,利 +1；好感 −1，但他仍入队（他也要上山）
+opt_ci_leave,dl_qingfengyi_ci,4,（不接话，起身就走）,,,,0,,心性不变；后巷切磋照旧
+opt_ledger_public,dl_ledger_choice,1,「交给公门。死人的名字，不能再背着。」,,dl_ledger_reply_public,flag_ledger_public,0,,呈官（20 §七 7.1）；正式台词（文案批次 0.32.0）；永久增益「清名」走 story_node(ledger_public)
+opt_ledger_buried,dl_ledger_choice,2,「烧了它。名字沉了，人还在。」,,dl_ledger_reply_buried,flag_ledger_buried,0,,沉底（20 §七 7.1）；正式台词（文案批次 0.32.0）；永久增益「藏锋」走 story_node(ledger_buried)
+opt_ledger_scattered,dl_ledger_choice,3,「抄成散页，撒进江湖——一个人扛不住，就让整条江扛。」,,dl_ledger_reply_scattered,flag_ledger_scattered,0,,散页（20 §七 7.2 第三条路）；正式台词（文案批次 0.32.0）；永久增益「江湖」走 story_node(ledger_scattered)
+opt_shen_take,dl_shen_cell,1,「我带你走。」,,dl_shen_why,heart_yi,0,,20 §五 幕四（逐字）：义 +1；她跟你走＝快通关那条（flag_shen_rescued 由地牢那次判定发）；答完接「你为什么帮我」
+opt_shen_ledger,dl_shen_cell,2,「账册在哪？」,,dl_shen_why,heart_mou,0,,20 §五 幕四（逐字）：谋 +1；她第一次正眼看你；答完接「你为什么帮我」
+opt_shen_thirty,dl_shen_cell,3,「三十两是我的。」,,dl_shen_why,heart_li,-5,,20 §五 幕四（逐字）：利 +1、好感 −5；她认了你「实话，说得不难听」；答完接「你为什么帮我」
+opt_open_li,dl_opening_choice,1,「三十两。」,,dl_open_li,heart_li,0,,20 §3.1 择念之一（逐字）：利 +1
+opt_open_mou,dl_opening_choice,2,「告示上的字，是账房体。」,,dl_open_mou,heart_mou,0,,20 §3.1 择念之二（逐字）：谋 +1
+opt_open_yi,dl_opening_choice,3,「十年前也有一桩事，也在这条河上。」,,dl_open_yi,heart_yi,0,,20 §3.1 择念之三（逐字）：义 +1
+opt_shen_why_yi,dl_shen_why,1,「总得有人，替死去的人把话说完。」,,dl_shen_why_yi,heart_yi,0,,幕四·三答之一（文案 0.32.0）：义 +1（当场反应，不进终局旁白）
+opt_shen_why_mou,dl_shen_why,2,「你手上有半本。另外半本在哪，我要知道。」,,dl_shen_why_mou,heart_mou,0,,幕四·三答之二：谋 +1（当场反应）
+opt_shen_why_li,dl_shen_why,3,「三十两，我不想白拿。」,,dl_shen_why_li,heart_li,0,,幕四·三答之三：利 +1（当场反应）
+opt_pei_hold_scholar,dl_pei_relic_scholar_fallen,1,（不答，等他说下去）,,dl_pei_confront,,0,,继续项：接设计那句逐字的问（五个 relic 节点各一条，文本同、id 不同）
+opt_pei_hold_gang,dl_pei_relic_gang,1,（不答，等他说下去）,,dl_pei_confront,,0,,同上
+opt_pei_hold_du,dl_pei_relic_du,1,（不答，等他说下去）,,dl_pei_confront,,0,,同上
+opt_pei_hold_ci,dl_pei_relic_ci,1,（不答，等他说下去）,,dl_pei_confront,,0,,同上
+opt_pei_hold_qi,dl_pei_relic_qi,1,（不答，等他说下去）,,dl_pei_confront,,0,,同上
+opt_pei_why,dl_pei_confront,1,「你为什么不解释？」,,dl_pei_why,heart_mou,0,,20 §五 幕五（逐字）：谋 +1
+opt_pei_blood,dl_pei_confront,2,「你手上沾过多少血？」,,dl_pei_blood,heart_yi,0,,20 §五 幕五（逐字）：义 +1
+opt_pei_ledger,dl_pei_confront,3,「账册，我带走。」,,dl_pei_ledger,heart_li,0,,20 §五 幕五（逐字）：利 +1

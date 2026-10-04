@@ -23,6 +23,7 @@ func run() -> void:
 	_check_slot_table_change(db)
 	_check_per_character_isolation(db)
 	_check_round_trip(db, state)
+	_check_equip_invariants(db, state)
 
 
 func _check_starting_equipment(db, state, inventory) -> void:
@@ -289,6 +290,139 @@ func _check_round_trip(db, state) -> void:
 		str(state.inventory.equipment_slots(db, str(state.char_ids[0]))),
 		"穿戴映射读回一致"
 	)
+	# 读档后再捡一件装备**不能撞上已有的实例 id**：`next_uid` 忘了存，新装备会覆盖旧的那件
+	# （玩家看到"捡到了"，背包里却少了一件）——doc 注释一直写着「序号存在存档里，读档后不会重复」，
+	# 但在这一条之前**没有任何断言钉着它**。
+	var pending: PackedStringArray = state.inventory.equipment_ids()
+	var fresh_id: String = restored.add_equipment(db, "eq_sword_01")
+	check_false(fresh_id.is_empty(), "读档后还能造装备实例")
+	check_false(pending.has(fresh_id), "新实例 id 不与存档里已有的撞车：%s" % fresh_id)
+	check_eq(
+		restored.equipment_count(), state.inventory.equipment_count() + 1,
+		"新实例是**进背包**（+1），不是覆盖旧的那件",
+	)
+
+
+## 穿戴的不变量：确定性小模糊测试（**不用随机数**——步数取模就够了，
+## 免得踩「用例里的随机必须固定种子」那条门限，也省得失败信息不可复现）。
+##
+## 为什么值得单独有一条：**被拒绝的操作玩家看不见**。`equip()`／`unequip()` 拒绝时
+## （槽满／等级不够／武器类型不符／空格）如果已经写了一半——把旧的那件腾了、或把新实例塞进
+## `equipment` 却不进槽——玩家看到的是"没穿上"，而背包已经少了一件或挂着一个悬空 id。
+## 这类**静默丢装备**现有用例一条都不查（它们查的是"成功路径算得对不对"）。
+##
+## 每一步都查五件事：① 槽是**定长**的（长度 == `equip_slot_def.max_equip`）；
+## ② 没有**悬空 id**（槽里的实例必须还在背包里）；③ 同一个实例**不会同时穿在两处**；
+## ④ 每格用量不超过容量；⑤ `next_uid` 必须大于所有已存在的序号（否则下一件就会撞车）。
+## 另外：**被拒绝的那一次不许改动任何东西**（拿 `to_dict()` 前后对拍）。
+func _check_equip_invariants(db, state) -> void:
+	var char_id := str(state.char_ids[0])
+	var inventory = state.inventory
+	var capacities := {}
+	for row: Resource in db.rows("equip_slot_def"):
+		capacities[str(row.slot_id)] = int(row.max_equip)
+	check_gt(float(capacities.size()), 3.0, "读到足够多的槽位定义（%d 个）" % capacities.size())
+	var slot_ids := PackedStringArray()
+	for slot_id: String in capacities.keys():
+		slot_ids.append(slot_id)
+	var pool := PackedStringArray()
+	for row: Resource in db.rows("equip_base"):
+		pool.append(str(row.equip_id))
+	check_gt(float(pool.size()), 5.0, "读到足够多的装备模板（%d 件）" % pool.size())
+
+	var problems := PackedStringArray()
+	var added := 0
+	var equipped_ok := 0
+	var unequipped_ok := 0
+	var refused := 0
+	for step in range(1, 161):
+		match step % 4:
+			0:
+				var base_id: String = pool[(step * 7) % pool.size()]
+				if not inventory.add_equipment(db, base_id).is_empty():
+					added += 1
+			1:
+				var ids: PackedStringArray = inventory.equipment_ids()
+				if ids.is_empty():
+					continue
+				var wanted: String = ids[(step * 5) % ids.size()]
+				var before := str(inventory.to_dict())
+				var result: Dictionary = inventory.equip(db, char_id, 20, "sword", wanted)
+				if bool(result.get("ok", false)):
+					equipped_ok += 1
+				else:
+					refused += 1
+					if str(inventory.to_dict()) != before:
+						problems.append("第 %d 步：穿戴被拒（%s）却改动了背包" % [step, str(result.get("error", ""))])
+			2:
+				var slot_id: String = slot_ids[(step * 3) % slot_ids.size()]
+				var view: Dictionary = inventory.equipment_slots(db, char_id)
+				var entries: Array = view.get(slot_id, [])
+				var before_unequip := str(inventory.to_dict())
+				var result2: Dictionary = inventory.unequip(char_id, slot_id, (step * 11) % maxi(1, entries.size()))
+				if bool(result2.get("ok", false)):
+					unequipped_ok += 1
+				else:
+					refused += 1
+					if str(inventory.to_dict()) != before_unequip:
+						problems.append("第 %d 步：卸下被拒（%s）却改动了背包" % [step, str(result2.get("error", ""))])
+			_:
+				var ids2: PackedStringArray = inventory.equipment_ids()
+				if ids2.is_empty():
+					continue
+				# 穿在身上的会被拒（"先卸下装备再处理"）——这条拒绝也必须不改动任何东西
+				var victim: String = ids2[(step * 13) % ids2.size()]
+				var before_remove := str(inventory.to_dict())
+				var result3: Dictionary = inventory.remove_equipment(victim)
+				if not bool(result3.get("ok", false)):
+					refused += 1
+					if str(inventory.to_dict()) != before_remove:
+						problems.append("第 %d 步：丢弃被拒却改动了背包" % step)
+		problems.append_array(_equip_state_problems(db, inventory, char_id, capacities, step))
+
+	check_gt(float(added), 0.0, "模糊测试真的造过装备（%d 件）" % added)
+	check_gt(float(equipped_ok), 0.0, "真的穿上过（%d 次）" % equipped_ok)
+	check_gt(float(unequipped_ok), 0.0, "真的卸下过（%d 次）" % unequipped_ok)
+	check_gt(float(refused), 0.0, "也碰到过被拒绝的操作（%d 次）——那条不变量才算真验过" % refused)
+	check_eq(problems.size(), 0, "160 步里没有一步破坏穿戴的不变量：%s" % "；".join(problems))
+
+
+## 当前背包／穿戴的五条不变量，返回所有违规描述（空 = 全过）。
+func _equip_state_problems(db, inventory, char_id: String, capacities: Dictionary, step: int) -> PackedStringArray:
+	var problems := PackedStringArray()
+	var view: Dictionary = inventory.equipment_slots(db, char_id)
+	var seen := {}
+	for slot_id: String in view:
+		var entries: Array = view[slot_id]
+		var capacity := int(capacities.get(slot_id, 1))
+		if entries.size() != capacity:
+			problems.append("第 %d 步：%s 槽不是定长（%d ≠ %d）" % [step, slot_id, entries.size(), capacity])
+		var used := 0
+		for entry: Variant in entries:
+			var instance_id := str(entry)
+			if instance_id.is_empty():
+				continue
+			used += 1
+			if not inventory.has_equipment(instance_id):
+				problems.append("第 %d 步：%s 槽挂着不存在的实例 %s（悬空 id）" % [step, slot_id, instance_id])
+			if seen.has(instance_id):
+				problems.append("第 %d 步：实例 %s 同时穿在两处" % [step, instance_id])
+			seen[instance_id] = true
+		if used > capacity:
+			problems.append("第 %d 步：%s 槽超容量（%d > %d）" % [step, slot_id, used, capacity])
+	# `next_uid` 必须大于所有已存在的序号，否则下一件装备就会撞上旧的那件
+	var max_uid := 0
+	var prefix := "%s#" % ""
+	for instance_id: String in inventory.equipment_ids():
+		var cut := instance_id.rfind("#")
+		if cut < 0:
+			continue
+		max_uid = maxi(max_uid, int(instance_id.substr(cut + 1)))
+		prefix = instance_id.substr(0, cut + 1)
+	if max_uid >= int(inventory.next_uid):
+		problems.append("第 %d 步：next_uid=%d 不大于已有的最大序号 %d（下一件会撞车，%s）"
+			% [step, int(inventory.next_uid), max_uid, prefix])
+	return problems
 
 
 func _atk_of(db, state) -> float:

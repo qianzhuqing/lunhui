@@ -164,7 +164,7 @@ func _check_spot_values(db) -> void:
 		check_eq(weapon_slot.allowed_weapon_types().size(), 4, "武器槽允许四种武器类型")
 	check_true(db.get_row("weapon_type_def", "staff") == null, "棍已从武器类型里移除")
 	check_true(db.get_row("equip_base", "eq_head_01").slot == "shoulder", "前代寨主遗物改挂肩部")
-	check_eq(db.rows("shop_stock").size(), 17, "货架 17 行")
+	check_eq(db.rows("shop_stock").size(), 22, "货架 22 行（0.23.0 毒酒 +1；0.28.0 行商货架 +4）")
 	var grocery = db.get_row("building_def", "bld_grocery")
 	check_not_null(grocery, "杂货铺存在")
 	if grocery != null:

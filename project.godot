@@ -37,3 +37,7 @@ enabled=PackedStringArray("res://addons/godot-mcp/plugin.cfg")
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="mobile"
+
+[gui]
+
+theme/custom="res://assets/ui/theme_lunhui.tres"

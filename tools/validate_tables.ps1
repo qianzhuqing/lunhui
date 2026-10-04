@@ -168,6 +168,13 @@ $primaryKeys = @{
     'recruit_def.csv'     = 'char_id'
     'npc_guard.csv'       = 'guard_id'
     'ui_text.csv'         = 'text_id'
+    'talent_def.csv'      = 'talent_id'
+    'chapter_def.csv'     = 'chapter_id'
+    'story_node.csv'      = 'node_id'
+    'npc_def.csv'         = 'npc_id'
+    'npc_offer.csv'       = 'offer_id'
+    'npc_quest.csv'       = 'quest_id'
+    'world_event.csv'     = 'event_id'
 }
 
 foreach ($name in $primaryKeys.Keys) {
@@ -228,7 +235,28 @@ $simpleRefs = @(
     @{ From = 'enemy_skill.csv';    Field = 'skill_id';   To = 'skill_base.csv';      Target = 'skill_id' }
     @{ From = 'enemy_equip.csv';    Field = 'enemy_id';   To = 'enemy_base.csv';      Target = 'enemy_id' }
     @{ From = 'enemy_equip.csv';    Field = 'equip_id';   To = 'equip_base.csv';      Target = 'equip_id' }
+    @{ From = 'npc_def.csv';        Field = 'spar_team_id'; To = 'enemy_team.csv';   Target = 'team_id' }
+# npc_def.place_id 可以是小地图场景或大地图区域，单独在 5.21 里查
+    # `npc_favor`／`npc_quest` 的 npc_id 可以是 NPC 或同伴，单独在 5.21e 里查
+    @{ From = 'npc_offer.csv';      Field = 'npc_id';    To = 'npc_def.csv';         Target = 'npc_id' }
     @{ From = 'enemy_equip.csv';    Field = 'slot_id';    To = 'equip_slot_def.csv';  Target = 'slot_id' }
+    @{ From = 'talent_effect.csv';  Field = 'talent_id';  To = 'talent_def.csv';      Target = 'talent_id' }
+    @{ From = 'story_node.csv';      Field = 'chapter_id'; To = 'chapter_def.csv';    Target = 'chapter_id' }
+    # story_node.place_id 与 npc_def.place_id 同一套：**小地图或大地图节点**都算数
+    # （落雁坡没有自己的小地图，本命机遇要在那儿触发），所以单独在 5.21 里查
+    # 抉择增益的四列（0.29.1）：属性点层引 attribute_def、固定值层引 stat_def
+    @{ From = 'story_node.csv';      Field = 'bonus_attr_id'; To = 'attribute_def.csv'; Target = 'attr_id' }
+    @{ From = 'story_node.csv';      Field = 'bonus_stat_id'; To = 'stat_def.csv';      Target = 'stat_id' }
+    # 观察点（0.29.1）：三列各自指向真东西
+    @{ From = 'flavor_point.csv';    Field = 'scene_id';   To = 'map_local.csv';      Target = 'scene_id' }
+    @{ From = 'flavor_point.csv';    Field = 'room_id';    To = 'dungeon_room.csv';   Target = 'room_id' }
+    @{ From = 'flavor_point.csv';    Field = 'region_id';  To = 'map_region.csv';     Target = 'node_id' }
+    # 对话容器（0.31.0）：跳转目标只能是对话节点（说话人／给的东西是"两处任一命中"，单独查）
+    @{ From = 'dialogue_node.csv';   Field = 'next_node_id'; To = 'dialogue_node.csv'; Target = 'node_id' }
+    @{ From = 'dialogue_option.csv'; Field = 'node_id';      To = 'dialogue_node.csv'; Target = 'node_id' }
+    @{ From = 'dialogue_option.csv'; Field = 'next_node_id'; To = 'dialogue_node.csv'; Target = 'node_id' }
+    @{ From = 'guide_step.csv';      Field = 'chapter_id'; To = 'chapter_def.csv';    Target = 'chapter_id' }
+    @{ From = 'chapter_def.csv';     Field = 'next_chapter_id'; To = 'chapter_def.csv'; Target = 'chapter_id' }
     @{ From = 'equip_base.csv';     Field = 'slot';        To = 'equip_slot_def.csv';  Target = 'slot_id' }
     @{ From = 'shop_stock.csv';     Field = 'shop_id';     To = 'building_def.csv';    Target = 'stock_group' }
     @{ From = 'skill_active.csv';      Field = 'skill_id'; To = 'skill_base.csv';     Target = 'skill_id' }
@@ -652,10 +680,33 @@ foreach ($row in $skillRows) {
                 Add-Error "[引用] skill_base.csv $sid.source_id='$($row.source_id)' 既不是 hidden_trigger 也不是 event_check"
             }
         }
-        { $_ -in @('start', 'npc', 'story', 'item') } { }
+        'story'  {
+            if ((Get-Col $Tables['story_node.csv'] 'node_id') -notcontains $row.source_id) {
+                Add-Error "[引用] skill_base.csv $sid.source_id='$($row.source_id)' 不是 story_node 里的节点"
+            }
+        }
+        # 出身本命机遇（设计 21 §九，0.31.0）：与 story 同一条发放通道，也要指到真实节点
+        'origin' {
+            if ((Get-Col $Tables['story_node.csv'] 'node_id') -notcontains $row.source_id) {
+                Add-Error "[引用] skill_base.csv $sid.source_type=origin 的 source_id='$($row.source_id)' 不是 story_node 里的节点"
+            }
+        }
+        { $_ -in @('start', 'npc', 'item') } { }
         default { Add-Error "[枚举] skill_base.csv $sid.source_type='$($row.source_type)' 不合法" }
     }
 }
+
+# story_node：kind 枚举 ＋ 「choice 必须带增益」（设计 20 §八，与构建期校验器同一套口径）
+$storyKindEnum = @('chapter_end', 'faction', 'choice', 'origin_gift')
+foreach ($row in $Tables['story_node.csv']) {
+    if ($storyKindEnum -notcontains [string]$row.kind) {
+        Add-Error "[枚举] story_node.csv $($row.node_id).kind='$($row.kind)' 不是 $($storyKindEnum -join '／')"
+    }
+    if ([string]$row.kind -eq 'choice' -and [string]$row.bonus_attr_id -eq '' -and [string]$row.bonus_stat_id -eq '') {
+        Add-Error "[完整] story_node.csv $($row.node_id) 是 kind=choice，但四列增益全空——玩家选完什么也得不到"
+    }
+}
+Write-Output ("  story_node : {0} 行逐行查了 kind 枚举与「choice 必须带增益」" -f @($Tables['story_node.csv']).Count)
 
 # 内功占格：1~3，且与星级对应（★1-2→1 / ★3-4→2 / ★5→3）
 $starOfSkill = @{}
@@ -806,7 +857,9 @@ Write-Output ("  设计纪律 : attr_to_stat {0} 行无减伤类映射；穿透/
 # `is_key_item=1` 只保证「不能丢」（05 文档：钥匙道具是隐藏内容的载体）。可要是没有任何地方认它，
 # 玩家就只能拿着两件废物——而且因为不能丢，它们还永久占着背包。
 # 逐个反查使用点：`hidden_trigger.required_item`／`required_condition` 文本／`hidden_trigger.reward_id`／
-# `event_check.reward_id`／`skill_base(source_type=item)`（秘籍研读即消耗）。
+# `event_check.reward_id`／`skill_base(source_type=item)`（秘籍研读即消耗）／
+# **对话条件里的 `item:<id>`**（2026-10-04 加：账册那件钥匙道具就是靠终局难题的
+# 「必须拿着账册才问」当使用点——两个通道都是「判定认它」，不是「发得出来就算」）。
 # **第一次跑就抓到 3 件**：黑风寨号衣／黑风寨腰牌（03 的第三条上山路线「伪装混入」没实现）
 # 与醉里乾坤残卷（没有任何 skill_base 行指向它，研读学不到东西）——都记进当前状态等策划。
 $usedKeyItems = @{}
@@ -824,6 +877,15 @@ foreach ($row in $Tables['hidden_trigger.csv']) {
 foreach ($row in $Tables['event_check.csv']) {
     $reward = [string]$row.reward_id
     if ($reward -ne '') { $usedKeyItems[$reward] = $true }
+}
+# 对话条件：`item:<id>` / `item:<id>:<数量>`（条件语言里由 GuideService 解析）
+foreach ($table in @('dialogue_node.csv', 'dialogue_option.csv')) {
+    foreach ($row in $Tables[$table]) {
+        $condition = [string]$row.condition
+        foreach ($id in $itemIdSet) {
+            if ($condition.Contains("item:$id")) { $usedKeyItems[$id] = $true }
+        }
+    }
 }
 $readableSkillbooks = @{}
 foreach ($row in $Tables['skill_base.csv']) {
@@ -851,32 +913,63 @@ Write-Output ("  钥匙道具 : {0} 件逐件反查了使用点" -f $keyItemCoun
 # 这条是把当初手做的 B0 审计（靠它找出「毒酒没有来源」「6 件良品装没有来源」「22 部武学来源没实现」）
 # 变成每次验收都会跑的机器。来源只认**代码真的发得出来**的那几处：
 #   掉落表 / 货架 / 角色模板的起始装备 / 事件判定奖励 / 隐藏触发奖励 / 武学已实现的三类来源。
-# **第一次跑抓到的正好是三组已知缺口**（下面注释里写了预期），设计师补了来源它就会自己消失。
+# **第一次跑抓到的正好是三组已知缺口**；前两组（毒酒、6 件良品装）**2026-10-04 复核时已经消失**——
+# 毒酒在货架上、那 6 件走的是「敌人穿什么就掉什么」。**教训**：这份清单只认它知道的通道，
+# 通道变了（装备来源从 `drop_table` 挪到 `enemy_equip`）而扫描没跟上，它就会把**能拿到的东西**
+# 报成"永远拿不到"——假红跟漏报一样有害（策划会照着它去改本来没问题的数据）。
 $obtainable = @{}
 foreach ($row in $Tables['drop_table.csv'])  { if ([string]$row.item_id -ne '')     { $obtainable[[string]$row.item_id] = $true } }
 foreach ($row in $Tables['shop_stock.csv'])  { if ([string]$row.item_id -ne '')     { $obtainable[[string]$row.item_id] = $true } }
 foreach ($row in $Tables['event_check.csv']) { if ([string]$row.reward_id -ne '')   { $obtainable[[string]$row.reward_id] = $true } }
 foreach ($row in $Tables['hidden_trigger.csv']) { if ([string]$row.reward_id -ne '') { $obtainable[[string]$row.reward_id] = $true } }
+# 大地图随机事件的赠礼（0.28.0 Q64 填齐了 effect_id）：`we_hermit` 的良品剑「锈月」
+# 原先**只有这一条来源**，漏了它这条扫描就会一直报「玩家永远拿不到」。
+# 只收 `effect_kind=gift`——`trade` 的 effect_id 是货架组、`spar` 是队伍，都不是物品。
+foreach ($row in $Tables['world_event.csv']) {
+    if ([string]$row.effect_kind -eq 'gift' -and [string]$row.effect_id -ne '') { $obtainable[[string]$row.effect_id] = $true }
+}
 foreach ($row in $Tables['character_base.csv']) {
     foreach ($equip_id in ([string]$row.start_equip_ids -split '\|')) {
         if ($equip_id -ne '') { $obtainable[$equip_id] = $true }
     }
 }
+# 5.19 补两路**已经落地的**来源（2026-10-04）——不补它们，这条审计就会把能拿到的东西
+# 报成「玩家永远拿不到」，而这份清单是给策划看的（假红会让人去改本来没问题的数据）：
+#   ① `enemy_equip`：**敌人穿什么就掉什么**（0.14.0 起装备来源从 `drop_table` 挪到了这里；
+#      黑风刀、乌木拳套、皮甲、牛皮腰带、皮护肩、皮护腿、淬毒指环都是这么来的）
+#   ② `npc_offer`：NPC 的**兑换与偷窃**（铁匠印记、药王符、猎户披肩、藏宝图）
+#   ③ 代码里点名的 id（`src` 扫一遍）：剧情物是代码发的——账册由 `battle_screen.TEAM_WIN_ITEMS`
+#      在打赢大寨主那一下发。口径与 `test_handshake` 的「旗标有没有人提」一致。
+$srcText = ''
+$srcDirForAudit = Join-Path $root 'src'
+if (Test-Path -LiteralPath $srcDirForAudit) {
+    foreach ($f in (Get-ChildItem -LiteralPath $srcDirForAudit -Recurse -File -Filter *.gd)) {
+        $srcText += [IO.File]::ReadAllText($f.FullName) + "`n"
+    }
+}
+foreach ($row in $Tables['enemy_equip.csv']) { if ([string]$row.equip_id -ne '') { $obtainable[[string]$row.equip_id] = $true } }
+foreach ($row in $Tables['npc_offer.csv'])  { if ([string]$row.item_id  -ne '') { $obtainable[[string]$row.item_id]  = $true } }
 $unreachableEquip = 0
 foreach ($row in $Tables['equip_base.csv']) {
-    if ($obtainable.ContainsKey($row.equip_id)) { continue }
+    if ($obtainable.ContainsKey($row.equip_id) -or $srcText.Contains($row.equip_id)) { continue }
     $unreachableEquip++
     Add-Warning "[可达] 装备 $($row.equip_id)（$($row.name_cn)）没有任何获取来源：不在掉落表／货架／起始装备／事件与隐藏奖励里，玩家永远拿不到"
 }
 $unreachableItem = 0
 foreach ($row in $Tables['item_base.csv']) {
     if ($row.item_type -eq 'currency') { continue }     # 铜钱是货币，不走「发一件物品」那套
-    if ($obtainable.ContainsKey($row.item_id)) { continue }
+    if ($obtainable.ContainsKey($row.item_id) -or $srcText.Contains($row.item_id)) { continue }
     $unreachableItem++
-    Add-Warning "[可达] 道具 $($row.item_id)（$($row.name_cn)）没有任何获取来源：不在掉落表／货架／事件与隐藏奖励里，玩家永远拿不到"
+    Add-Warning "[可达] 道具 $($row.item_id)（$($row.name_cn)）没有任何获取来源：不在掉落表／货架／事件与隐藏奖励／NPC 兑换偷窃／代码发放里，玩家永远拿不到"
 }
-# 武学来源：已实现的是 drop／hidden／item（研读）／start（模板起始）；npc／shop／story 还没实现，
-# 按来源类型汇总成一条（22 条逐条刷屏没意义，缺的是那三套机制本身）。
+# 武学来源：已实现的是 drop／hidden／item（研读）／start（模板起始）／**story（剧情节点）**；
+# 只剩 npc（门派对话）与 shop（买武学）没实现。按来源类型汇总成一条（逐条刷屏没意义，缺的是那两套机制本身）。
+#
+# 为什么把 story 从"没实现"里拿掉（2026-10-04）：0.22.0 起 `StoryService.claim_for()` 就按
+# `skill_base.source_type=story` ＋ `source_id=剧情节点` 发武学，`chapter1_end`／`xuanwei`／
+# `yaowang` 三个节点的条件（`flag_shen_rescued`／`flag_board_read`／`flag_poison_hall`）也都有人点亮
+# ——那 6 部**拿得到**。以前这条警告把它们算成"玩家拿不到"，是扫描没跟上版本；
+# 构建期另有一条「story 的 source_id 必须指向真实剧情节点」替这里兜着。
 $skillSourceCount = @{}
 foreach ($row in $Tables['skill_base.csv']) {
     $kind = [string]$row.source_type
@@ -884,13 +977,13 @@ foreach ($row in $Tables['skill_base.csv']) {
     $skillSourceCount[$kind] = $skillSourceCount[$kind] + 1
 }
 $pendingSkillSources = @()
-foreach ($kind in @('npc', 'shop', 'story')) {
+foreach ($kind in @('npc', 'shop')) {
     if ($skillSourceCount.ContainsKey($kind)) {
         $pendingSkillSources += ("{0} {1}" -f $kind, $skillSourceCount[$kind])
     }
 }
 if ($pendingSkillSources.Count -gt 0) {
-    Add-Warning "[可达] 武学来源还没实现的类别：$($pendingSkillSources -join '／')——分别等对话表／买武学价格／剧情节点，这几类的武学玩家现在拿不到"
+    Add-Warning "[可达] 武学来源还没实现的类别：$($pendingSkillSources -join '／')——分别等门派对话（`source_id` 指的是门派／地点）与「买武学」的价格列，这几类的武学玩家现在拿不到"
 }
 # source_type=start 的武学必须真的挂在某个角色模板的 start_skill_ids 上，否则也是拿不到
 $startSkills = @{}
@@ -911,6 +1004,88 @@ if ($orphanStartSkills.Count -gt 0) {
 Write-Output ("  可达性 : 装备 {0} / 道具 {1} / 武学 {2} 部逐条反查了获取来源（拿不到：装备 {3} / 道具 {4} / 起始武学 {5}）" -f `
     @($Tables['equip_base.csv']).Count, @($Tables['item_base.csv']).Count, @($Tables['skill_base.csv']).Count, `
     $unreachableEquip, $unreachableItem, $orphanStartSkills.Count)
+
+# 5.19b 套装的**每一档**要真的凑得出来（只报警告）
+#
+# 由来（2026-10-04）：5.19 只查「单件／单部有没有来源」，查不出**组合**——
+#   · `set_xuanwei_sword` 的「三招／五招」要 3／5 部玄微剑法，而其中 02／03／04 都是
+#     `source_type=npc`（门派对话没实现），**拿得到的只有起手（开局）与点星（巡逻头目掉落）＝ 2 部**；
+#   · `set_xuanwei_qi` 的「七格」要 7 点占格，**拿得到的只有引气（1）＋周天（2）＋太清（3）＝ 6 格**
+#     （另两部也是 npc）。
+# 也就是说：表里配了、`buff_def` 也配了、代码也认，**玩家把能拿的全拿了也亮不起来**——
+# 这类「这一档是死内容」以前没有任何地方会报（单件审计看不出来）。
+#
+# 口径（只算**已经发得出来**的成员）：
+#   equip         来源同 5.19（掉落／货架／起始／事件与隐藏奖励／敌人身上／NPC 兑换／代码点名），
+#                 并**按槽位**算上限——同槽位最多 `equip_slot_def.max_equip` 件（戒指是 2）
+#   skill_active   招式数 = 来源已实现的成员数（`SkillGrant.IMPLEMENTED_SOURCES` 那几类）
+#   skill_passive  格数 = 来源已实现的成员 `slot_cost` 之和
+#
+# **口径的边界（2026-10-04 补）**：这里只算**数据侧**「有没有来源」——**地图侧缺位点它看不见**。
+# 真事：`eq_head_01`（前代寨主遗物，黑风套四件档的一员）的唯一来源是三火盆密室 `trig_brazier`，
+# 而那三个编号位点还没摆（`tools\check_maps.bat` 的「待补」块每次点名）——按地图算，黑风套的
+# 四件档**同样拿不到**，可这里仍然报「凑得齐」。**两边都要看**：本脚本管来源，`check_maps` 管位点。
+$skillReachable = @{}
+foreach ($row in $Tables['skill_base.csv']) {
+    $sid = [string]$row.skill_id
+    $kindOfSource = [string]$row.source_type
+    if ($kindOfSource -in @('drop', 'hidden', 'item', 'story', 'origin', 'start')) { $skillReachable[$sid] = $true }
+    else { $skillReachable[$sid] = $false }     # npc（门派传授）与 shop（买武学）还没实现
+}
+$passiveCost = @{}
+foreach ($row in $Tables['skill_passive.csv']) { $passiveCost[[string]$row.skill_id] = [int]$row.slot_cost }
+$slotCap = @{}
+foreach ($row in $Tables['equip_slot_def.csv']) { $slotCap[[string]$row.slot_id] = [int]$row.max_equip }
+$equipSlot = @{}
+foreach ($row in $Tables['equip_base.csv']) { $equipSlot[[string]$row.equip_id] = [string]$row.slot }
+$deadSetTiers = 0
+$setTierCount = 0
+foreach ($def in $Tables['set_def.csv']) {
+    $setId = [string]$def.set_id
+    $setKind = [string]$def.set_kind
+    $setMembers = @()
+    foreach ($m in $Tables['set_member.csv']) { if ([string]$m.set_id -eq $setId) { $setMembers += [string]$m.member_id } }
+    if ($setMembers.Count -eq 0) { continue }
+    $reachCap = 0
+    if ($setKind -eq 'equip') {
+        $perSlot = @{}
+        foreach ($mid in $setMembers) {
+            if (-not $obtainable.ContainsKey($mid) -and -not $srcText.Contains($mid)) { continue }
+            $slot = ''
+            if ($equipSlot.ContainsKey($mid)) { $slot = $equipSlot[$mid] }
+            if (-not $perSlot.ContainsKey($slot)) { $perSlot[$slot] = 0 }
+            $perSlot[$slot] = $perSlot[$slot] + 1
+        }
+        foreach ($slot in $perSlot.Keys) {
+            $cap = 1
+            if ($slot -ne '' -and $slotCap.ContainsKey($slot)) { $cap = $slotCap[$slot] }
+            $reachCap += [Math]::Min($perSlot[$slot], $cap)
+        }
+    }
+    elseif ($setKind -eq 'skill_active') {
+        foreach ($mid in $setMembers) { if ($skillReachable.ContainsKey($mid) -and $skillReachable[$mid]) { $reachCap++ } }
+    }
+    elseif ($setKind -eq 'skill_passive') {
+        foreach ($mid in $setMembers) {
+            if ($skillReachable.ContainsKey($mid) -and $skillReachable[$mid] -and $passiveCost.ContainsKey($mid)) {
+                $reachCap += $passiveCost[$mid]
+            }
+        }
+    }
+    foreach ($tier in $Tables['set_bonus.csv']) {
+        if ([string]$tier.set_id -ne $setId) { continue }
+        $setTierCount++
+        $need = [int]$tier.required_count
+        if ($reachCap -ge $need) { continue }
+        $deadSetTiers++
+        $unit = '件'
+        if ($setKind -eq 'skill_active') { $unit = '招' }
+        elseif ($setKind -eq 'skill_passive') { $unit = '格' }
+        Add-Warning "[套装] $setId（$($def.name_cn)）的「$need $unit」档位**现在凑不出来**：已实现的来源加起来最多 $reachCap——玩家把能拿的全拿了也亮不起来（等设计补来源，见 `待策划确认.md` Q3）"
+    }
+}
+Write-Output ("  套装档位 : {0} 个套装的 {1} 档逐档按「已实现的来源」算可达上限（凑不出来：{2} 档）" -f `
+    @($Tables['set_def.csv']).Count, $setTierCount, $deadSetTiers)
 
 # 5.20 隐藏内容的线索来源条数（只报警告）
 #
@@ -1210,11 +1385,14 @@ if (Test-Path -LiteralPath $doc02) {
 #      03 把它写在「隐藏内容」那一节而不是逐层流程里——这条例外写在代码里并注明出处）；
 #   ② 类型词 → `room_type`（入口/战斗/宝箱/陷阱/隐藏/剧情/精英/Boss）；
 #   ③ 出口：按**房间名**匹配（03 用的「后寨」是层名，靠「数据房名以它开头」认到 后寨门／后寨大堂）；
-#      火盆密室多一个通往暗格的出口属于 ① 那条例外；
+#      火盆密室多一个通往暗格的出口属于 ① 那条例外。
+#      **反向边不算「03 没写」**：07 §九 第 3 条要求出口对称，表里必然比 03 的「前进方向」多出反向边
+#      （例 前院→寨门，出自 03 的「寨门」那行）——只要对向那一行在 03 里写了回来就放过；
 #   ④ 内容里**只写了一种敌人**且带 ×N 时，N 应等于该房间队伍的总人数（写了两种就跳过，不做模糊匹配）；
 #   ⑤ 出口**单向声明**汇总：`dungeon_room.exit_rooms` 里 a→b 有、b→a 没有的条数（地图上物理是双向的，
 #      表侧要补成对称；verify_maps 也从地图那头报同一件事，这里让它在验收输出里也看得见）。
-# 报**警告**：改文档还是改表由设计定（当前缺口 #11 两处人数 + 16 条单向声明）。
+# 报**警告**：改文档还是改表由设计定。**2026-10-04 已把 `exit_rooms` 补成对称（单向 0 条，决策 326）**，
+# 只剩 #11 那两处人数（前院 3→表里 2、毒堂 1→表里 3）等设计定夺。
 $roomNameToId = @{}
 $roomById = @{}
 foreach ($r in $Tables['dungeon_room.csv']) {
@@ -1229,6 +1407,20 @@ $roomTypeWord = @{
 $roomDoc = Join-Path $Root 'docs/design/03_副本_黑风寨.md'
 $roomMismatch = 0
 $docRooms = @{}
+# ③ 的「反向边」判定要用**对向那一行**在 03 里写了什么出口；而单向扫描读到「前院」时，
+# 很可能还没读到「寨门」那一行（顺序不保证），所以要先把 03 每行的出口列预扫成
+# roomId → 出口文字，主循环再按顺序无关地取用（决策 326）。
+$docExitText = @{}
+if (Test-Path -LiteralPath $roomDoc) {
+    foreach ($preLine in (Get-Content -LiteralPath $roomDoc -Encoding UTF8)) {
+        if (-not $preLine.StartsWith('|')) { continue }
+        $preCells = @($preLine.Split('|') | ForEach-Object { $_.Trim() })
+        if ($preCells.Count -lt 6) { continue }
+        if (-not $roomTypeWord.ContainsKey([string]$preCells[2])) { continue }
+        if (-not $roomNameToId.ContainsKey([string]$preCells[1])) { continue }
+        $docExitText[$roomNameToId[[string]$preCells[1]]] = [string]$preCells[4]
+    }
+}
 if (Test-Path -LiteralPath $roomDoc) {
     foreach ($line in (Get-Content -LiteralPath $roomDoc -Encoding UTF8)) {
         if (-not $line.StartsWith('|')) { continue }
@@ -1271,10 +1463,28 @@ if (Test-Path -LiteralPath $roomDoc) {
         foreach ($candidates in $wantGroups) { foreach ($candidate in $candidates) { $wantExits[$candidate] = $true } }
         foreach ($exit in $actualExits) {
             if ($exit -eq 'hf1_secret') { continue }     # ① 的例外：暗格
-            if (-not $wantExits.ContainsKey($exit)) {
-                $roomMismatch++
-                Add-Warning "[副本] 表里 $($roomRow.room_id) 能通往 $exit，但 03 的出口列没写（03 写的是「$exitText」）"
+            if ($wantExits.ContainsKey($exit)) { continue }
+            # **反向出口不算「03 没写」**：07 §九 第 3 条要求「出口对称：A 能到 B，B 也能回 A」，
+            # 所以表里必然比 03 的「前进方向」多出反向边（例：前院 → 寨门，出自 03 的「寨门」那行）。
+            # 只要**对向那一行**在自己那格里写了回来，这条就是那条反向边，跳过。
+            # （2026-10-04：把表补成对称之后，这一条第一次跑就冒出 15 条假警告——补对称本身是对的，
+            #   错的是这里按「03 没写就不许有」在比。判定改用预扫好的 $docExitText，与读取顺序无关。）
+            $backText = ''
+            if ($docExitText.ContainsKey($exit)) { $backText = [string]$docExitText[$exit] }
+            $wantedBack = $false
+            foreach ($name in ($backText -split '、')) {
+                $cleanBack = $name.Trim()
+                if ($cleanBack -eq '' -or $cleanBack -eq '—' -or $cleanBack -eq '结束') { continue }
+                foreach ($backName in $roomNameToId.Keys) {
+                    if (($backName -eq $cleanBack -or $backName.StartsWith($cleanBack)) `
+                            -and $roomNameToId[$backName] -eq $roomRow.room_id) {
+                        $wantedBack = $true
+                    }
+                }
             }
+            if ($wantedBack) { continue }
+            $roomMismatch++
+            Add-Warning "[副本] 表里 $($roomRow.room_id) 能通往 $exit，但 03 的出口列没写（03 写的是「$exitText」）"
         }
         foreach ($candidates in $wantGroups) {
             $hit = $false
@@ -1622,13 +1832,179 @@ if ($allocatableCount -eq 0) {
     Add-Error "[完整] attribute_def.csv 一个可加点的属性都没有，升级点数无处可加"
 }
 
+# 5.20 敌人装备的武器必须能匹配它的招式（否则招式被 _weapon_allows 静默挡掉）
+$weaponByEnemy = @{}
+foreach ($row in $Tables['enemy_equip.csv']) {
+    if ($row.slot_id -eq 'weapon') { $weaponByEnemy[$row.enemy_id] = $row.equip_id }
+}
+$equipWeaponType = @{}
+foreach ($row in $Tables['equip_base.csv']) { $equipWeaponType[$row.equip_id] = $row.weapon_type }
+$skillWeaponType = @{}
+foreach ($row in $Tables['skill_base.csv']) { $skillWeaponType[$row.skill_id] = $row.weapon_type }
+foreach ($row in $Tables['enemy_skill.csv']) {
+    if (-not $weaponByEnemy.ContainsKey($row.enemy_id)) { continue }
+    $equipId = $weaponByEnemy[$row.enemy_id]
+    if (-not $equipWeaponType.ContainsKey($equipId)) { continue }
+    $have = $equipWeaponType[$equipId]
+    $need = $skillWeaponType[$row.skill_id]
+    if ($need -eq 'any' -or $need -eq '') { continue }
+    if ($have -ne $need) {
+        Add-Error "[完整] $($row.enemy_id) 装备武器 '$have'，但招式 $($row.skill_id) 要求 '$need'——这招会被静默挡掉"
+    }
+}
+
+# 5.21 NPC 位置：可以是小地图场景，也可以是大地图区域
+foreach ($row in $Tables['npc_def.csv']) {
+    $inLocal  = (Get-Col $Tables['map_local.csv']  'scene_id') -contains $row.place_id
+    $inRegion = (Get-Col $Tables['map_region.csv'] 'node_id')  -contains $row.place_id
+    if (-not $inLocal -and -not $inRegion) {
+        Add-Error "[引用] npc_def.csv $($row.npc_id).place_id='$($row.place_id)' 既不是小地图也不是大地图节点"
+    }
+}
+
+# 5.21b 剧情节点的触发地点：与 NPC 同一套（小地图或大地图节点；留空 = 不限地点）。
+# 本命机遇里「落雁坡旧镖车」只有大地图节点，所以这里必须两种都认——
+# 以前它挂在通用的单值引用表里只查 map_local，落雁坡那条会被当场判红。
+foreach ($row in $Tables['story_node.csv']) {
+    $place = [string]$row.place_id
+    if ($place -eq '') { continue }
+    $inLocal  = (Get-Col $Tables['map_local.csv']  'scene_id') -contains $place
+    $inRegion = (Get-Col $Tables['map_region.csv'] 'node_id')  -contains $place
+    if (-not $inLocal -and -not $inRegion) {
+        Add-Error "[引用] story_node.csv $($row.node_id).place_id='$place' 既不是小地图也不是大地图节点"
+    }
+}
+
+# 5.21c 对话容器（设计 20 §十一，0.31.0）：说话人与「给的东西」都是**两处任一命中**
+foreach ($row in $Tables['dialogue_node.csv']) {
+    $speaker = [string]$row.speaker_id
+    if ($speaker -eq '') {
+        Add-Error "[完整] dialogue_node.csv $($row.node_id) 没有 speaker_id：这句话没人说"
+        continue
+    }
+    $inNpc  = (Get-Col $Tables['npc_def.csv'] 'npc_id') -contains $speaker
+    $inChar = (Get-Col $Tables['character_base.csv'] 'char_id') -contains $speaker
+    # `player` = **主角自己**（设计 20 §3.1 序幕择念那种「主角替自己开口」）。
+    # 主角是哪一号人物要等玩家选完出身才知道，所以表里写这个记号、运行期解析（决策 307）。
+    $isPlayer = ($speaker -eq 'player')
+    if (-not $inNpc -and -not $inChar -and -not $isPlayer) {
+        Add-Error "[引用] dialogue_node.csv $($row.node_id).speaker_id='$speaker' 既不是 npc_def 里的人也不是 character_base 里的同伴"
+    }
+}
+foreach ($row in $Tables['dialogue_option.csv']) {
+    $flag = [string]$row.set_flag
+    if ($flag -ne '' -and -not $flag.StartsWith('flag_') -and -not $flag.StartsWith('heart_')) {
+        Add-Error "[枚举] dialogue_option.csv $($row.option_id).set_flag='$flag' 既不是 flag_* 也不是心性（heart_*）"
+    }
+    $item = [string]$row.grant_item_id
+    if ($item -eq '') { continue }
+    $inItem  = (Get-Col $Tables['item_base.csv']  'item_id')  -contains $item
+    $inEquip = (Get-Col $Tables['equip_base.csv'] 'equip_id') -contains $item
+    if (-not $inItem -and -not $inEquip) {
+        Add-Error "[引用] dialogue_option.csv $($row.option_id).grant_item_id='$item' 既不是道具也不是装备"
+    }
+}
+Write-Output ("  对话容器 : {0} 个节点 / {1} 条选项逐条查了说话人、跳转与效果落点" -f `
+    @($Tables['dialogue_node.csv']).Count, @($Tables['dialogue_option.csv']).Count)
+
+# 5.21d 观察点（设计 20 §3.2，0.29.1）：**小地图与大地图二选一**，而且必须有一句话。
+# 这条规则构建期也有——两道网各查一遍是这套的规矩（变异探针当场点过名：只有一边查时，
+# 「改坏之后 PS1 抓不到」）。
+foreach ($row in $Tables['flavor_point.csv']) {
+    $scene  = [string]$row.scene_id
+    $region = [string]$row.region_id
+    if ($scene -eq '' -and $region -eq '') {
+        Add-Error "[完整] flavor_point.csv $($row.point_id) 既没有 scene_id 也没有 region_id——这一句碎句玩家永远看不到"
+    }
+    elseif ($scene -ne '' -and $region -ne '') {
+        Add-Error "[完整] flavor_point.csv $($row.point_id) 同时填了 scene_id 与 region_id——两边都会收它，位点只该有一个"
+    }
+    if ([string]$row.text_cn -eq '') {
+        Add-Error "[完整] flavor_point.csv $($row.point_id) 没有 text_cn：观察点就是那一句话"
+    }
+}
+Write-Output ("  观察点 : {0} 行逐条查了地点（小地图／大地图二选一）与文案" -f @($Tables['flavor_point.csv']).Count)
+
+# 5.21e 好感与委托挂在谁身上：**NPC 或同伴**（设计 20 §十「同伴与城镇 NPC 共用一套好感规则」）。
+# 兑换货架（`npc_offer`）仍只认 NPC——设计写明同伴「好感解锁的是同伴内容，不是兑换货架」。
+foreach ($name in @('npc_favor.csv', 'npc_quest.csv')) {
+    foreach ($row in $Tables[$name]) {
+        $person = [string]$row.npc_id
+        if ($person -eq '') {
+            Add-Error "[完整] $name 有一行没有 npc_id"
+            continue
+        }
+        $inNpc  = (Get-Col $Tables['npc_def.csv'] 'npc_id') -contains $person
+        $inChar = (Get-Col $Tables['character_base.csv'] 'char_id') -contains $person
+        if (-not $inNpc -and -not $inChar) {
+            Add-Error "[引用] $name $person 既不是 npc_def 里的人也不是 character_base 里的同伴"
+        }
+    }
+}
+Write-Output ("  人 : 好感 {0} 行 / 委托 {1} 行逐条查了 npc_id（可以是同伴）" -f `
+    @($Tables['npc_favor.csv']).Count, @($Tables['npc_quest.csv']).Count)
+
+# 5.21f NPC 给的**东西**也要真的存在（写错一个字母＝玩家交完委托什么也拿不到、还没有提示）。
+# 兑换货架（`npc_offer.item_id`）与委托奖励（`npc_quest.reward_item_ids`，分号分隔）都查。
+foreach ($row in $Tables['npc_offer.csv']) {
+    $item = [string]$row.item_id
+    if ($item -eq '') {
+        Add-Error "[完整] npc_offer.csv $($row.offer_id) 没有 item_id"
+        continue
+    }
+    $inItem  = (Get-Col $Tables['item_base.csv']  'item_id')  -contains $item
+    $inEquip = (Get-Col $Tables['equip_base.csv'] 'equip_id') -contains $item
+    if (-not $inItem -and -not $inEquip) {
+        Add-Error "[引用] npc_offer.csv $($row.offer_id) 给的 '$item' 既不是道具也不是装备"
+    }
+}
+foreach ($row in $Tables['npc_quest.csv']) {
+    foreach ($item in ([string]$row.reward_item_ids -split ';')) {
+        if ($item -eq '') { continue }
+        $inItem  = (Get-Col $Tables['item_base.csv']  'item_id')  -contains $item
+        $inEquip = (Get-Col $Tables['equip_base.csv'] 'equip_id') -contains $item
+        if (-not $inItem -and -not $inEquip) {
+            Add-Error "[引用] npc_quest.csv $($row.quest_id) 奖励的 '$item' 既不是道具也不是装备"
+        }
+    }
+}
+Write-Output ("  NPC 给的东西 : 货架 {0} 行 + 委托 {1} 行的奖励逐条查了存在性" -f `
+    @($Tables['npc_offer.csv']).Count, @($Tables['npc_quest.csv']).Count)
+
+# 5.21g 地标图标：`map_region.icon` 指向 `assets/sprites/icons/<icon>.png`。
+# 缺文件时**大地图上那个地标什么都不画**（`refresh_node_icons()` 里两条都找不到就隐藏），
+# 玩家只会觉得"这里没有图标"，不会觉得是数据错——所以这条要在验收期就红。
+$missingIcons = 0
+foreach ($row in $Tables['map_region.csv']) {
+    $icon = [string]$row.icon
+    if ($icon -eq '') { continue }
+    $iconPath = Join-Path $root ("assets\sprites\icons\" + $icon + ".png")
+    if (-not (Test-Path -LiteralPath $iconPath)) {
+        Add-Error "[资源] map_region.csv $($row.node_id).icon='$icon' 没有对应贴图：assets/sprites/icons/$icon.png"
+        $missingIcons++
+    }
+}
+Write-Output ("  地标图标 : {0} 行逐条查了贴图存在（缺 {1}）" -f @($Tables['map_region.csv']).Count, $missingIcons)
+
 # ---------------------------------------------------------------- 6. 孤立数据
 
 $usedTeams = @{}
 foreach ($v in (Get-Col $Tables['roaming_spawn.csv'] 'team_id')) { $usedTeams[$v] = $true }
 foreach ($v in (Get-Col $Tables['dungeon_room.csv'] 'enemy_team')) { $usedTeams[$v] = $true }
+# 大地图随机事件的切磋队伍（0.28.0 Q64：`we_disciple` 指向 `team_wanderer_disciple`）——
+# 它没有刷新点、也不属于任何房间，队伍由事件当场拉起来。
+foreach ($row in $Tables['world_event.csv']) {
+    if ([string]$row.effect_kind -eq 'spar' -and [string]$row.effect_id -ne '') { $usedTeams[[string]$row.effect_id] = $true }
+}
+# 代码里点名的队伍也算「有人用」：练习战那支（`PracticeService.TEAM_ID = team_dummy_training`）
+# 既没有刷新点、也不属于任何房间——它是 `building_def.service_id=dummy_training` 的建筑当场拉起来的。
+# 口径与 `test_handshake` 那边的「旗标有没有人提」一致：**按 id 在 src 里出现过算数**；
+# 代价是只写在注释里也算（那种漏网由各自的用例管——练习战有 `test_practice`）。
+# `$srcText` 在 5.19 那一段已经扫好了（那里也要用），这里直接用，别再扫一遍。
 foreach ($v in (Get-Col $Tables['enemy_team.csv'] 'team_id')) {
-    if (-not $usedTeams.ContainsKey($v)) { Add-Warning "[孤立] enemy_team.csv 的 $v 没有被任何刷新点或房间使用" }
+    if (-not $usedTeams.ContainsKey($v) -and -not $srcText.Contains($v)) {
+        Add-Warning "[孤立] enemy_team.csv 的 $v 没有被任何刷新点、房间或代码用到"
+    }
 }
 
 $usedDropGroups = @{}
@@ -1888,6 +2264,52 @@ else {
 }
 
 # ---------------------------------------------------------------- 输出
+
+# 补齐「枚举三处」里漏在 PS1 的那 7 列（2026-10-04）。
+#
+# 由来：`data/AGENTS.md` 写着「改枚举要三处一起改：06 数据字典／`table_validator.ENUMS`／本脚本」，
+# 而这一轮逐个对了一遍——`ENUMS` 里 41 个枚举列里，有 **7 列的列名在本脚本里一次都没出现过**
+# （也就是**这边根本没查**）：`building_def.building_type`／`drop_table.roll_type`／
+# `item_base.use_context`／`map_local.scene_type`／`map_region.node_type`／`talent_def.category`／
+# `weapon_type_def.default_element`。取值一律镜像 `table_validator.ENUMS`（那边是唯一出处，
+# 与 `docs/design/06_配置表说明.md` 由 `test_handshake._check_doc_enums_match_code` 对账）。
+$enumColumns = @(
+    @{ Table = 'building_def.csv';    Id = 'building_id'; Column = 'building_type';   Values = @('shop', 'service') },
+    @{ Table = 'drop_table.csv';      Id = 'drop_row_id'; Column = 'roll_type';      Values = @('independent', 'exclusive') },
+    @{ Table = 'item_base.csv';       Id = 'item_id';     Column = 'use_context';   Values = @('', 'field', 'battle') },
+    @{ Table = 'map_local.csv';       Id = 'scene_id';    Column = 'scene_type';    Values = @('town', 'dungeon', 'poi') },
+    @{ Table = 'map_region.csv';      Id = 'node_id';     Column = 'node_type';     Values = @('town', 'fast_travel', 'wild', 'dungeon', 'poi') },
+    @{ Table = 'talent_def.csv';      Id = 'talent_id';   Column = 'category';      Values = @('combat', 'body', 'agile', 'mind', 'social', 'fortune') },
+    @{ Table = 'weapon_type_def.csv'; Id = 'weapon_type'; Column = 'default_element'; Values = @('external', 'internal', 'odd') },
+    @{ Table = 'skill_active.csv';    Id = 'skill_id';    Column = 'target_type';   Values = @('single', 'self', 'all_enemy') },
+    @{ Table = 'dungeon_room.csv';    Id = 'room_id';     Column = 'branch_group';  Values = @('main', 'side', 'hidden') },
+    @{ Table = 'hidden_trigger.csv';  Id = 'trigger_id';  Column = 'trigger_type';  Values = @('item', 'space', 'kill_style', 'completion', 'sequence', 'behavior', 'carry') }
+)
+foreach ($spec in $enumColumns) {
+    foreach ($row in $Tables[$spec.Table]) {
+        $value = $row.($spec.Column)
+        if ($spec.Values -notcontains $value) {
+            Add-Error "[枚举] $($spec.Table) $($row.($spec.Id)).$($spec.Column)='$value' 不是 $(($spec.Values | Where-Object { $_ -ne '' }) -join '／')"
+        }
+    }
+    Write-Output ("  {0} : {1} 行逐列查了 {2} 枚举" -f $spec.Table, @($Tables[$spec.Table]).Count, $spec.Column)
+}
+
+# 图标列必须等于**这一行自己的 id**（`equip_base.icon`／`item_base.icon`，15 §六＋A14，0.31.1）。
+# 界面取图是「优先 icon、空则退回行 id」——写错不会报错，只会**画出别人家的图标**；
+# 空着合法（等于退回 id）。构建期那条规则在 `table_validator._check_icon_self_reference`，这里是同一套。
+foreach ($spec in @(
+    @{ Table = 'equip_base.csv'; Id = 'equip_id' },
+    @{ Table = 'item_base.csv';  Id = 'item_id' }
+)) {
+    foreach ($row in $Tables[$spec.Table]) {
+        $icon = "$($row.icon)".Trim()
+        if ($icon -eq '') { continue }
+        if ($icon -ne $row.($spec.Id)) {
+            Add-Error "[图标] $($spec.Table) $($row.($spec.Id)).icon='$icon' 必须等于它自己的 $($spec.Id)"
+        }
+    }
+}
 
 Write-Output ""
 Write-Output "配置表校验"

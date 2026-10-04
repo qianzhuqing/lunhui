@@ -6,7 +6,11 @@ extends "res://tests/test_case.gd"
 
 const GameStateScript := preload("res://src/core/game_state.gd")
 const RecruitServiceScript := preload("res://src/core/recruit_service.gd")
+## 入队奖励里那条「好感 ＋20」加在同伴头上，断言要读好感
+const NpcServiceScript := preload("res://src/core/npc_service.gd")
 const OverworldScript := preload("res://src/world/overworld_controller.gd")
+## 「打赢某支队伍 → 置旗标」那张表在战斗界面里（招募链的条件来源之一）
+const BattleScreenScript := preload("res://src/ui/battle_screen.gd")
 
 
 func suite_name() -> String:
@@ -19,11 +23,80 @@ func run() -> void:
 	# 但仍然是设计写死的值——变异探针第三块点名过它（MAX_PARTY 4→5 没人钉）。
 	check_eq(GameStateScript.MAX_PARTY, 4, "队伍上限 4")
 	_check_initial_members(db)
+	_check_initial_member_can_join_when_not_protagonist(db)
 	_check_condition_gate(db)
 	_check_join_seeds_character(db)
 	_check_region_rows(db)
 	_check_region_radius()
 	_check_no_double_join(db)
+	_check_join_conditions_are_reachable(db)
+	_check_join_rewards(db)
+
+
+## 入队奖励（设计 20 号 §九 那张表：四条招募支线各写「入队 ＋ 某物」＋ 好感 ＋20）。
+##
+## 表里两条**不用**额外发：林铁山的柴刀就是他的起始武器（`start_equip_ids`）、
+## 苏九娘的五毒散手就是她的起始武学（`start_skill_ids`）——那两样 `add_character` 已经发了。
+## 所以这里只钉「起始装备／武学之外」的两件（回气散／药酒）＋ 四条的好感。
+func _check_join_rewards(db) -> void:
+	# 燕小七：回气散 ＋ 好感 20
+	var state = solo_state(db)
+	state.set_flag("flag_board_read")
+	var qi_before: int = state.inventory.count("item_potion_qi")
+	var joined: Array = RecruitServiceScript.join_all_for_scene(db, state, "scene_qingfengyi")
+	var ci: Dictionary = {}
+	for entry: Dictionary in joined:
+		if str(entry.get("char_id", "")) == "ch_ci":
+			ci = entry
+	check_false(ci.is_empty(), "燕小七真的入队了")
+	check_eq(
+		state.inventory.count("item_potion_qi"), qi_before + 1,
+		"入队给了回气散（§九：「入队 ＋ 回气散」）",
+	)
+	check_eq(NpcServiceScript.favor_of(db, state, "ch_ci"), 20, "入队好感 ＋20")
+	check_true(
+		Array(ci.get("rewards", [])).has("回气散 ×1"), "结果里带上了给人看的奖励短句：%s" % str(ci.get("rewards", [])),
+	)
+	# 林铁山：柴刀来自起始装备（不是这里发的），好感同样 ＋20
+	var gang = solo_state(db)
+	gang.set_flag("flag_luoyanpo_met")
+	RecruitServiceScript.join_all_for_region(db, gang, "n_luoyanpo")
+	check_eq(NpcServiceScript.favor_of(db, gang, "ch_gang"), 20, "林铁山入队也给 ＋20 好感")
+	check_true(
+		gang.inventory.equipment_ids().size() > 0, "他的柴刀来自起始装备（入队就有装备在身）",
+	)
+
+
+## 四条招募链的条件**必须有人能点亮**（设计 20 §十一 那张表）。
+##
+## 这一条是「断链」的门限：`flag_luoyanpo_met`／`flag_poison_hall`／`flag_huangcun_done`
+## 原来**一个来源都没有**（Q51），于是除了燕小七之外的三个同伴永远入不了队。
+## 现在前两个的后两个由**战斗收尾**点亮（打赢屠夫／毒手，见 `battle_screen.TEAM_WIN_FLAGS`），
+## 落雁坡那条还等着地编的旧镖车位点——所以这里只钉「条件与设计表一致」，
+## 不钉「必须有来源」（那一条等位点到位再收口）。
+func _check_join_conditions_are_reachable(db) -> void:
+	var expected := {
+		"scholar_fallen": "flag_board_read",
+		"ch_ci": "flag_board_read",
+		"ch_gang": "flag_luoyanpo_met",
+		"ch_du": "flag_poison_hall",
+		"ch_qi": "flag_huangcun_done",
+	}
+	for char_id: String in expected:
+		var row: Resource = db.get_row("recruit_def", char_id)
+		check_not_null(row, "%s 在 recruit_def 里" % char_id)
+		if row == null:
+			continue
+		check_eq(str(row.join_condition), str(expected[char_id]), "%s 的加入条件" % char_id)
+	# 打赢队伍置的那两枚旗标，与这里的条件**是同一串字符串**（改一处会红）
+	check_true(
+		BattleScreenScript.TEAM_WIN_FLAGS.values().has("flag_huangcun_done"),
+		"荒村的旗标由战斗收尾点亮（battle_screen.TEAM_WIN_FLAGS）",
+	)
+	check_true(
+		BattleScreenScript.TEAM_WIN_FLAGS.values().has("flag_poison_hall"),
+		"毒堂的旗标也由战斗收尾点亮",
+	)
 
 
 ## 开局队伍 = `recruit_def.is_initial=1` 的成员；他们不该出现在「待加入」里
@@ -38,6 +111,36 @@ func _check_initial_members(db) -> void:
 	for char_id: String in initial:
 		state.set_flag("flag_board_read")
 		check_false(_pending_ids(db, state, "scene_qingfengyi").has(char_id), "初始成员 %s 不算「待加入」" % char_id)
+
+
+## 主角选**别人**时，初始行照样能按剧情入队（设计 0.30.0）
+##
+## 由来：`_ready_rows()` 以前无条件跳过 `is_initial=1` 的行，而 `scholar_fallen` 是**唯一**
+## 一行初始成员——主角的 `char_id` 又来自玩家选的 `origin_id`，于是"选谁就是谁"，
+## 结果**主角选别人时书生永远无法入队**。判重本来就有 `state.char_ids.has()` 兜着，
+## 那句跳过是多余且致病的。
+func _check_initial_member_can_join_when_not_protagonist(db) -> void:
+	var initial := _first_row(db, func(r: Resource) -> bool: return int(r.is_initial) == 1)
+	var other := _first_row(db, func(r: Resource) -> bool: return int(r.is_initial) == 0)
+	check_not_null(initial, "recruit_def 里有初始成员")
+	check_not_null(other, "recruit_def 里有非初始成员")
+	if initial == null or other == null:
+		return
+	var initial_id := str(initial.char_id)
+	var condition := str(initial.join_condition)
+	var scene_id := _scene_for_row(db, initial)
+	check_false(condition.is_empty(), "%s 表里有加入条件（0.30.0 补的）" % initial_id)
+	check_false(scene_id.is_empty(), "%s 表里有加入场景（0.30.0 补的）" % initial_id)
+	if condition.is_empty() or scene_id.is_empty():
+		return
+	var state = GameStateScript.new_game(db, "normal", PackedStringArray([str(other.char_id)]))
+	check_false(state.char_ids.has(initial_id), "主角换成 %s 时 %s 不在开局队伍里" % [str(other.char_id), initial_id])
+	check_false(_pending_ids(db, state, scene_id).has(initial_id), "条件没点亮时他还是不入队")
+	state.set_flag(condition)
+	check_true(
+		_pending_ids(db, state, scene_id).has(initial_id),
+		"点亮 %s 后他能按剧情入队（%s）" % [condition, scene_id],
+	)
 
 
 ## 条件没点亮就不入队；点亮了才进待加入名单

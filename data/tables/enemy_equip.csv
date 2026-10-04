@@ -15,7 +15,7 @@ en_bd_elite_blade,shoulder,eq_shoulder_02,
 en_bd_poison_hand,weapon,eq_fist_01,
 en_bd_poison_hand,body,eq_armor_02,
 en_bd_poison_hand,ring,eq_ring_03,
-en_bd_butcher,weapon,eq_blade_01,
+en_bd_butcher,weapon,eq_fist_02,拳法招式必须配拳，同时给良品拳套一个来源
 en_bd_butcher,body,eq_armor_03,
 en_bd_butcher,legs,eq_legs_02,
 en_bd_boss,weapon,eq_sword_03,

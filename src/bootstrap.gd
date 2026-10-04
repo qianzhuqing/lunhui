@@ -32,8 +32,15 @@ func _ready() -> void:
 
 
 ## 优先复用 GameData 单例，避免重复加载；拿不到就自己加载一份。
+##
+## **不要写 `get_node("/root/GameData")`**（`AGENTS.md` 的硬规矩）：`--script` 模式下 autoload
+## 还没进活动场景树，绝对路径取不到。**2026-10-04 实测这里就是全项目唯一漏网的一处**——
+## 它没被发现，是因为本文件的自检是在**真场景**里跑的（那时绝对路径能用），
+## 而工具链（`run_tests`／变异探针／平衡分析）全是 `--script` 起的。现在按 `main_menu.gd` 的写法取：
+## `Engine.get_main_loop() as SceneTree` 再相对查找。
 func _resolve_db():
-	var game_data := get_node_or_null("/root/GameData")
+	var tree := Engine.get_main_loop() as SceneTree
+	var game_data: Node = tree.root.get_node_or_null("GameData") if tree != null else null
 	if game_data != null and game_data.db != null and not game_data.db.tables.is_empty():
 		return game_data.db
 	var db = TableDbScript.new()

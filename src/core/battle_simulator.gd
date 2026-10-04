@@ -155,6 +155,8 @@ func begin_round() -> void:
 	_order = turn_order(_allies, _enemies)
 	if _rounds == 1 and _encounter != null and int(_encounter.first_side) >= 0:
 		_order = _prioritize(_order, int(_encounter.first_side))
+	# 天赋「先发制人」（设计 12 §六：首回合必定先手）：第 1 回合把带着这条规则的人提到最前
+	_order = _apply_talent_first_strike(_order, _rounds)
 	# 主动防御的「下回合先手」：把上回合用过防御姿态的人提到本回合最前
 	_order = _apply_first_strike(_order)
 	_order_index = 0
@@ -173,6 +175,26 @@ func _apply_first_strike(order: Array) -> Array:
 		else:
 			rest.append(actor)
 	_pending_first_next_round.clear()
+	return head + rest
+
+
+## 天赋「先发制人」（设计 12 §六：**首回合必定先手**）：
+## 只在第 1 回合生效，把带着 `rule:first_round_priority` 的单位提到出手序最前
+## （互相之间仍是原来的身法顺序）。与上面那条分开：那条是「主动防御的下回合先手」，
+## 跨回合、且要清标记；这条是**开局一次**的规则，读战斗单位上的天赋快照。
+func _apply_talent_first_strike(order: Array, round_no: int) -> Array:
+	if round_no != 1:
+		return order
+	var head: Array = []
+	var rest: Array = []
+	for actor in order:
+		var rules: Dictionary = actor.talent_rules if actor.talent_rules != null else {}
+		if float(rules.get("first_round_priority", 0.0)) > 0.0:
+			head.append(actor)
+		else:
+			rest.append(actor)
+	if head.is_empty():
+		return order
 	return head + rest
 
 
@@ -573,6 +595,7 @@ func step_round() -> Array:
 	var order := turn_order(_allies, _enemies)
 	if _rounds == 1 and _encounter != null and int(_encounter.first_side) >= 0:
 		order = _prioritize(order, int(_encounter.first_side))
+	order = _apply_talent_first_strike(order, _rounds)
 	for actor in order:
 		if not actor.is_alive():
 			continue
@@ -1123,7 +1146,9 @@ func defend_block_reason(actor) -> String:
 		return "这个单位不能行动"
 	var service = actor.buff_service()
 	if service == null or not service.exists(DEFEND_BUFF_ID):
-		return "buff_def 里没有防御姿态（%s）" % DEFEND_BUFF_ID
+		# 数据错：id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[BattleSimulator] buff_def 里没有防御姿态（%s）" % DEFEND_BUFF_ID)
+		return "防御姿态的配置对不上（数据错，已记进日志）"
 	if _escaped or finished():
 		return "战斗已经结束了"
 	if actor.has_buff(DEFEND_BUFF_ID):
@@ -1245,7 +1270,8 @@ func battle_item_options(inventory) -> Array:
 			"qty": int(inventory.count(str(row.item_id))) if inventory != null else 0,
 			"desc": str(row.desc),
 			"usable": false,
-			"reason": "效果数值未配（item_base 只有 desc 文字，没有效果列）",
+			# 玩家可见：**不许出现表名／列名**（AGENTS 硬规矩）。设计还没给效果数值列，如实说一句人话。
+			"reason": "效果数值还没配（等设计补）",
 		})
 	return out
 
@@ -1379,7 +1405,9 @@ static func is_supported_damage_type(db, type_id: String) -> bool:
 func _unsupported_damage_reason(type_id: String) -> String:
 	var row: Resource = _db.get_row("damage_type", type_id)
 	if row == null:
-		return "伤害类型「%s」不在 damage_type 表里" % type_id
+		# 数据错：id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[BattleSimulator] damage_type 缺少 %s" % type_id)
+		return "这一招的伤害类型没配（数据错，已记进日志）"
 	var name_cn := str(row.name_cn)
 	return "%s 还没接结算" % name_cn
 

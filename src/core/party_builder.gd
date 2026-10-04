@@ -9,6 +9,8 @@ const BattleActorScript := preload("res://src/core/battle_actor.gd")
 const CharacterSheetScript := preload("res://src/core/character_sheet.gd")
 const AttributeCalculatorScript := preload("res://src/core/attribute_calculator.gd")
 const BuffServiceScript := preload("res://src/core/buff_service.gd")
+## 天赋的 `rule:` 效果要进战斗（首回合先手、招式伤害那两条由模拟器／伤害管线读）
+const TalentServiceScript := preload("res://src/core/talent_service.gd")
 
 
 static func build_actor(db, state, char_id: String, field_buffs: Array = []):
@@ -33,6 +35,8 @@ static func build_actor(db, state, char_id: String, field_buffs: Array = []):
 	if state != null:
 		for skill_id: String in state.masteries_of(char_id):
 			actor.skill_mastery[skill_id] = state.mastery_of(char_id, skill_id)
+		# 天赋的规则性效果（设计 12 §五 的 `rule:`）：整份交给战斗单位，谁消费谁读
+		actor.talent_rules = TalentServiceScript.rules(db, state, char_id)
 	# 战斗外气血（v11）：带着上一场的伤进这一场；没有记录就是满血
 	var saved_hp: int = state.current_hp_of(char_id)
 	if saved_hp >= 0:

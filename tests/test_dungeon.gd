@@ -27,6 +27,7 @@ func run() -> void:
 	_check_sweep(db, state, service)
 	_check_save(db, state)
 	_check_overflow(db)
+	_check_exit_symmetry(db)
 
 
 ## 完成度的分母来自表：宝箱 4、隐藏房间 5、隐藏 Boss 1（醉刀客）、事件 2
@@ -163,3 +164,23 @@ func _check_save(db, state) -> void:
 	check_true(Array(back.dungeon_record(SCENE)["rooms"]).has("hf2_poison"), "打过的房间往返一致")
 	check_eq(int(Dictionary(back.pity.get("counters", {})).get("drop_bd_elite|slot_1", 0)), 3, "保底计数往返一致")
 	check_eq(back.pity_tracker().attempts("drop_bd_elite|slot_1"), 3, "保底计数器读得到")
+
+
+## 07 §九 第 3 条：地图上走廊是双向的，所以 `dungeon_room.exit_rooms` 必须成对声明——
+## a→b 写了、b→a 没写就是漏了一格。以前只由 validate_tables 5.28 与 verify_maps 各报一次
+## 建议级提示，漏一条谁也不会红；2026-10-04 把表补成对称后升成断言，防止再漂回去（决策 326）。
+func _check_exit_symmetry(db) -> void:
+	var one_way: Array[String] = []
+	for row: Resource in db.rows("dungeon_room"):
+		var room_id := str(row.room_id)
+		for exit_id in str(row.exit_rooms).split("|", false):
+			var target := exit_id.strip_edges()
+			if target == "":
+				continue
+			var back: Resource = db.get_row("dungeon_room", target)
+			if back == null:
+				continue     # 指向不存在的房间由构建期引用校验报，这里不重复
+			if not str(back.exit_rooms).split("|", false).has(room_id):
+				one_way.append("%s→%s" % [room_id, target])
+	var detail := "无" if one_way.is_empty() else ", ".join(PackedStringArray(one_way))
+	check_eq(one_way.size(), 0, "出口成对声明（单向的：%s）" % detail)

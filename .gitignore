@@ -14,6 +14,11 @@ data/tables/*.import
 # headless 自检日志
 .logs/
 
+# 本地安装的 Codex 技能（`.agents/skills/`）：第三方 MIT 技能库，只供本机使用，
+# 不进仓库——入库靠 `sync_to_git.bat` 的 `git add .`，不忽略就会被整包提交进去。
+# 想让团队共享这些技能时，删掉这一行即可。
+.agents/
+
 # OS generated files
 .DS_Store
 Thumbs.db

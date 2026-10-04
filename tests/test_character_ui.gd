@@ -3,6 +3,7 @@ extends "res://tests/test_case.gd"
 
 const GameStateScript := preload("res://src/core/game_state.gd")
 const LayoutBudgetScript := preload("res://src/ui/layout_budget.gd")
+const IconPathsScript := preload("res://src/ui/icon_paths.gd")
 
 const UI_SCENE := "res://scenes/character_screen.tscn"
 const CHAR_ID := "scholar_fallen"
@@ -30,6 +31,7 @@ func run() -> void:
 	_check_skill_loadout(screen, state)
 	_check_equipment_tab(db, screen, state)
 	_check_bag_tab(db, screen, state)
+	_check_icons(db, screen, state)
 	_check_skillbook(db, screen, state)
 	_check_back(screen, back_calls)
 
@@ -39,6 +41,85 @@ func run() -> void:
 	_check_party_stress(db)
 	_check_big_bag(db)
 	_check_no_points_ui(db)
+
+
+## 五维点加完之后：加号按钮要**置灰**（不是「能点、点了才报错」），标题写明剩 0。
+## 图标（15 §六 `icons/<类>/<id>.png`）：**有图才摆**，没图的行走文字——
+## 这一条把「按 id 找图」这件事钉在真界面上（美术那 19 张道具图标只到了 3 张）。
+func _check_icons(db, screen, state) -> void:
+	# 路径拼接只有一处（`IconPaths`），先钉它
+	check_eq(
+		IconPathsScript.item("item_bd_ledger"), "res://assets/icons/item/item_bd_ledger.png",
+		"道具图标路径按 id 拼（15 §六）",
+	)
+	check_eq(
+		IconPathsScript.skill("pf_xuanwei_05"), "res://assets/icons/skill/pf_xuanwei_05.png",
+		"武学图标路径按 id 拼",
+	)
+	# 装备图标（设计 15 §六＋A14，0.31.1）：路径**优先 `equip_base.icon`、空则退回 `equip_id`**。
+	# 拿真表的值算期望，不写死 id——美术/设计改名也不会假红；`eq_sword_01` 的 icon 列就是它的 id。
+	var sword: Resource = db.get_row("equip_base", "eq_sword_01")
+	check_not_null(sword, "表里有 eq_sword_01")
+	if sword != null:
+		var sword_icon := str(sword.icon).strip_edges()
+		if sword_icon.is_empty():
+			sword_icon = "eq_sword_01"
+		check_eq(
+			screen.equip_icon_path("eq_sword_01"),
+			IconPathsScript.equip(sword_icon),
+			"装备图标按 `equip_base.icon` 拼路径（%s）" % sword_icon,
+		)
+	check_eq(
+		screen.equip_icon_path("eq_bogus_000"),
+		"res://assets/icons/equip/eq_bogus_000.png",
+		"查不到那件装备时也照 id 拼路径（不留空位、更不编名字）",
+	)
+	# 单开一份状态与面板：往背包里放「有图的那件（账册）」与「没图的那件（铁矿石）」，
+	# 免得受前面那些用例动过的背包影响（行是按存档现建的）
+	var bag_state = solo_state(db)
+	bag_state.inventory.add_item(db, "item_bd_ledger", 1)
+	bag_state.inventory.add_item(db, "item_iron", 5)
+	var bag = load(UI_SCENE).instantiate()
+	bag.state_override = bag_state
+	scene_tree.root.add_child(bag)
+	bag.setup()
+	bag.select_tab(2)
+	var row: Node = bag.find_child("ItemRowitem_bd_ledger", true, false)
+	check_not_null(row, "背包里有账册那一行")
+	if row != null:
+		check_not_null(
+			row.find_child("ItemIconitem_bd_ledger", true, false),
+			"有图的道具行前面挂着图标（账册）",
+		)
+	# 「没图的行不摆图标」这条要写成**有图 ⟺ 有图标节点**，别写死"某张现在还没出图"——
+	# 美术一交付它就假红（同一次审计里 `pf_xuanwei_05` 就是这么炸的）。这里拿 item_iron 的
+	# 实际文件在不在当期望值：没图 → 不许留空位、更不许刷引擎错误；有图 → 必须挂上。
+	var plain_row: Node = bag.find_child("ItemRowitem_iron", true, false)
+	check_not_null(plain_row, "背包里有铁矿石那一行")
+	if plain_row != null:
+		var iron_icon := plain_row.find_child("ItemIconitem_iron", true, false)
+		var iron_has_file := ResourceLoader.exists(IconPathsScript.item("item_iron"))
+		check_eq(
+			iron_icon != null, iron_has_file,
+			"道具行的图标跟文件同步（%s 在吗：%s）" % [IconPathsScript.item("item_iron"), str(iron_has_file)],
+		)
+	scene_tree.root.remove_child(bag)
+	bag.free()
+	# 「取不到图」必须是**正常状态**（美术只交付一部分，`make_icon` 返回 null、调用方不留空位）。
+	# **不要拿"某个真实 id 现在还没出图"当例子**——那张图一交付，这条断言自己就红。
+	# 2026-10-04 实测踩到：这里原本写死 `pf_xuanwei_05` 当"没图的例子"，美术把它交付之后
+	# 两条断言当场红（而产品没有任何问题）。现在改用一个**永远不该存在**的 id，
+	# 并把"它确实不存在"这条前提也钉住——万一有人真建了它，报的是前提破了，不是产品坏了。
+	var missing_path := IconPathsScript.skill("sk_zzz_not_delivered_000")
+	check_false(ResourceLoader.exists(missing_path), "这条用例的前提：%s 确实不存在" % missing_path)
+	check_eq(
+		IconPathsScript.load_icon(missing_path), null,
+		"没有这张图时 load_icon 返回 null（不刷错误）",
+	)
+	check_null(
+		IconPathsScript.make_icon(missing_path),
+		"没图时 make_icon 返回 null（调用方据此不留位置）",
+	)
 
 
 ## 五维点加完之后：加号按钮要**置灰**（不是「能点、点了才报错」），标题写明剩 0。
@@ -67,8 +148,8 @@ func _check_no_points_ui(db) -> void:
 	screen.free()
 
 
-## 大背包：15 种道具各堆满 + 30 件装备实例时，背包页还列得出来、版式还塞得进、存档还往返得回来。
-## 发行数据里 `item_base` 只有 16 行，这种局面靠正常游玩很难自然到——列表是按存档动态生成的，
+## 大背包：18 种道具各堆满 + 30 件装备实例时，背包页还列得出来、版式还塞得进、存档还往返得回来。
+## 发行数据里 `item_base` 有 19 行，这种局面靠正常游玩很难自然到——列表是按存档动态生成的，
 ## 东西一多就可能出岔子（重名节点、排序、版式）。
 func _check_big_bag(db) -> void:
 	var state = solo_state(db)
@@ -81,7 +162,7 @@ func _check_big_bag(db) -> void:
 			continue
 		if bool(inventory.add_item(db, str(row.item_id), maxi(1, int(row.stack_max)))["ok"]):
 			filled += 1
-	check_eq(filled, 15, "16 行道具里除「铜钱」外都放进背包（各堆满）")
+	check_eq(filled, 18, "19 行道具里除「铜钱」外都放进背包（各堆满；0.26.0 加藏宝图与遗篇残卷，0.31.0 加账册）")
 	var instances: Array = []
 	for base_id: String in ["eq_sword_01", "eq_fist_01", "eq_ring_01", "eq_head_01", "eq_armor_01"]:
 		for _n in range(6):
@@ -112,7 +193,7 @@ func _check_big_bag(db) -> void:
 	var item_rows := 0
 	for node: Node in screen.find_children("ItemRow*", "HBoxContainer", true, false):
 		item_rows += 1
-	check_eq(item_rows, 15, "背包页列出 15 种道具")
+	check_eq(item_rows, 18, "背包页列出 18 种道具")
 	var equip_rows := 0
 	for node: Node in screen.find_children("EquipRow*", "HBoxContainer", true, false):
 		equip_rows += 1

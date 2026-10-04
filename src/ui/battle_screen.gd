@@ -1,4 +1,4 @@
-## 战斗界面。
+﻿## 战斗界面。
 ##
 ## 逐回合播放 `BattleSimulator`：可以「下一回合」手动推进，也可以自动战斗（1x/2x/4x 调速）。
 ## 打完之后结算掉落与经验（`BattleReward`），把明雷标成已清，再回大地图。
@@ -18,12 +18,36 @@ const PityTrackerScript := preload("res://src/core/pity_tracker.gd")
 const EncounterScript := preload("res://src/core/encounter.gd")
 const GameStateScript := preload("res://src/core/game_state.gd")
 const SkillGrantScript := preload("res://src/core/skill_grant.gd")
+const SettingsStoreScript := preload("res://src/core/settings_store.gd")
+const NpcServiceScript := preload("res://src/core/npc_service.gd")
 const AffixRollerScript := preload("res://src/core/affix_roller.gd")
 const MasteryServiceScript := preload("res://src/core/mastery_service.gd")
 const PracticeServiceScript := preload("res://src/core/practice_service.gd")
+## 「打赢某支队伍 → 置哪枚旗标」：设计 20 §十一 里靠战斗收尾的那两个旗标来源。
+## 表里还没有对应列（只给了口径），已记 `待策划确认.md` Q69；给列就挪进表、这里改成查表。
+const TEAM_WIN_FLAGS := {
+	"team_butcher": "flag_huangcun_done",
+	"team_poison_hand": "flag_poison_hall",
+	## 幕五「聚义厅对质」的进入条件（20 号 §十一：`flag_heifeng_confront` = 战大寨主后）
+	"team_boss": "flag_heifeng_confront",
+}
+## 打赢某支队伍时随掉落一起到手、且**只领一次**的剧情物（20 号 §七：账册在幕五「对质」之后到手）。
+##
+## 为什么挂在掉落清单里：`BattleReward` 那条唯一入账口径会把 `drops` 里的条目写进「掉落：…」那一行，
+## 玩家看得见「账册」是怎么来的，而**结算卡片的行数是钉住的**（多一行就顶出设计分辨率），
+## 所以不另起一行战报。为什么按「背包里有没有」判唯一：账册是钥匙道具——不能丢（`is_key_item=1`）、
+## 也不在任何货架上（卖不掉），所以「已持有」＝「领过了」，不必再记一份首杀簿。
+const TEAM_WIN_ITEMS := {"team_boss": "item_bd_ledger"}
 const SaveServiceScript := preload("res://src/core/save_service.gd")
 const LayoutBudgetScript := preload("res://src/ui/layout_budget.gd")
+## 敌人剪影的路径与「有图才摆」（15 §六）——路径只在那一个文件里拼
+const IconPathsScript := preload("res://src/ui/icon_paths.gd")
 const CopyGuardScript := preload("res://src/ui/copy_guard.gd")
+const OverlayStackScript := preload("res://src/ui/overlay_stack.gd")
+## 浮层（设计 14 §二：**战斗中按 Tab 开角色面板属于「浮层盖场景层」**）
+const CHARACTER_SCENE := "res://scenes/character_screen.tscn"
+const CLUE_SCENE := "res://scenes/clue_screen.tscn"
+const DUNGEON_SCENE := "res://scenes/dungeon_screen.tscn"
 const SfxScript := preload("res://src/audio/sfx.gd")
 
 const WORLD_SCENE := "res://scenes/world_run.tscn"
@@ -50,6 +74,8 @@ var encounter_override = null
 var modifiers_override: Dictionary = {}
 ## 存档设施（用例可注入临时目录）
 var save_store_override = null
+## 设置存储（自动战斗开关）；自检注入临时目录
+var settings_override = null
 var return_handler := Callable()
 ## 随机种子：-1 = 随机（正常游玩）；自检与用例传固定值，让命中／掉落可复现
 var rng_seed: int = -1
@@ -94,6 +120,8 @@ var _flee_button: Button
 var _return_button: Button
 ## 场景里的节点只绑定一次（setup() 可能被外部再调一次）
 var _ui_bound := false
+## 浮层栈（设计 18.1／14 §二）：战斗界面是**场景层**，角色面板／线索本／完成度压在上面
+var _overlays = null
 ## 伤害跳字的浮层（不受卡片容器排版影响）
 var _float_layer_node: Control = null
 
@@ -105,6 +133,93 @@ func _ready() -> void:
 	setup()
 	if _has_user_arg("--battle-selftest"):
 		call_deferred("_run_battle_selftest")
+
+
+# ------------------------------------------------------------------ 浮层（全局快捷键）
+
+func overlays():
+	if _overlays == null:
+		_overlays = OverlayStackScript.new()
+	return _overlays
+
+
+## 全局快捷键（设计 14 §八）：**战斗中也能开角色／行囊／线索本／完成度**——
+## 它们是「浮层盖场景层」，与地图上的行为一致；`Esc` 弹一层（战斗指令不受影响）。
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		close_top_overlay()
+		return
+	if event.is_action_pressed("open_character"):
+		open_overlay(CHARACTER_SCENE, "CharacterPanel", 0)
+		return
+	if event.is_action_pressed("open_bag"):
+		open_overlay(CHARACTER_SCENE, "CharacterPanel", 2)
+		return
+	if event.is_action_pressed("show_clues"):
+		open_overlay(CLUE_SCENE, "CluePanel", 0)
+		return
+	if event.is_action_pressed("show_progress"):
+		open_overlay(DUNGEON_SCENE, "DungeonPanel", 0)
+
+
+## 开一个浮层（同一个场景重复按 → 弹回它并刷新，不叠第二份）。
+func open_overlay(scene_path: String, node_name: String, tab_index: int = 0) -> Dictionary:
+	var existing := find_child(node_name, true, false)
+	if existing != null:
+		for closed_id: String in overlays().push(node_name):
+			_free_overlay(closed_id)
+		existing.state_override = state
+		existing.refresh()
+		if existing.has_method("select_tab"):
+			existing.select_tab(tab_index)
+		return {"ok": true, "reopened": true}
+	var panel = load(scene_path).instantiate()
+	if panel == null:
+		return {"ok": false, "error": "浮层加载失败：%s" % scene_path}
+	panel.name = node_name
+	panel.state_override = state
+	if panel.has_method("setup"):
+		pass
+	if node_name == "CluePanel":
+		panel.scope = "region"
+		panel.scene_id = str(encounter.source_scene)
+	elif node_name == "DungeonPanel":
+		panel.scene_id = str(encounter.source_scene)
+	# 角色界面用的是 `back_handler`，其余三个面板用 `return_handler`（各自既有的口径）
+	if node_name == "CharacterPanel":
+		panel.back_handler = func() -> void: _close_overlay(node_name)
+	else:
+		panel.return_handler = func() -> void: _close_overlay(node_name)
+	add_child(panel)
+	panel.setup()
+	if panel.has_method("select_tab"):
+		panel.select_tab(tab_index)
+	overlays().push(node_name)
+	return {"ok": true, "reopened": false}
+
+
+func close_top_overlay() -> bool:
+	var top_id: String = overlays().pop()
+	if top_id.is_empty():
+		return false
+	_free_overlay(top_id)
+	return true
+
+
+func _close_overlay(id: String) -> void:
+	for extra: String in overlays().remove(id):
+		_free_overlay(extra)
+	_free_overlay(id)
+
+
+func _free_overlay(id: String) -> void:
+	var panel := find_child(id, true, false)
+	if panel != null:
+		panel.queue_free()
+
+
+func open_overlay_count() -> int:
+	return overlays().depth()
 
 
 func setup() -> void:
@@ -130,7 +245,24 @@ func setup() -> void:
 	sim = BattleSimulatorScript.new(db, RngServiceScript.new(rng_seed))
 	sim.setup(allies, enemies, {"encounter": encounter, "modifiers": modifiers_override.duplicate()})
 	_bind_ui()
+	# 自动战斗持久开关（设计 11 §四）：设置里开着，**进战斗就自动打**。
+	# 玩家点任意指令立刻接管（`take_over()`）；这里只负责"进来就按设置走"。
+	if bool(settings().load_auto_battle().get("enabled", false)):
+		auto_enabled = true
+		_auto_advance()
 	_refresh()
+
+
+## 设置存储：自检注入 `settings_override`（临时目录），正常运行落默认存档目录旁。
+var _settings_store = null
+
+
+func settings():
+	if settings_override != null:
+		return settings_override
+	if _settings_store == null:
+		_settings_store = SettingsStoreScript.new()
+	return _settings_store
 
 
 func current_state():
@@ -176,6 +308,18 @@ func result_label_text() -> String:
 
 # ------------------------------------------------------------------ 操作
 
+## 「玩家点任意指令立刻接管」（设计 11 §四的准话）。
+##
+## 自动战斗是省事不是夺权：只要玩家动一下任何指令，本场就退出自动，
+## 让他把接下来的回合握在自己手里。所有手选指令与目标切换都要先过这里。
+func take_over() -> bool:
+	if not auto_enabled:
+		return false
+	auto_enabled = false
+	_refresh_buttons()
+	return true
+
+
 func press_next_round() -> Array:
 	if sim == null or sim.finished():
 		return []
@@ -212,6 +356,7 @@ func press_next_round() -> Array:
 func press_skill(skill_id: String) -> Dictionary:
 	if sim == null or sim.finished():
 		return {"ok": false, "error": "战斗已结束"}
+	take_over()
 	var lines: Array = []
 	if not sim.in_round():
 		sim.begin_round()
@@ -250,6 +395,7 @@ func press_skill(skill_id: String) -> Dictionary:
 func press_parry(enemy_id: String) -> Dictionary:
 	if sim == null or sim.finished():
 		return {"ok": false, "error": "战斗已结束"}
+	take_over()
 	var lines: Array = []
 	if not sim.in_round():
 		sim.begin_round()
@@ -289,6 +435,25 @@ func _intent_lines() -> Array:
 	return out
 
 
+## 敌方预兆**横带**（设计 14 §四 要点一：「预兆必须显眼——藏在角落等于这套机制没做，
+## 它要占一整条横带」）。
+##
+## 这一条以前只贴在敌人卡片里、再往日志里写一行，玩家得在两处找；现在 `Action` 这个
+## 整宽标签就是预兆带：一条一句，把这一回合**所有活着的敌人**要出的招并排写出来。
+## 日志仍照常记（回看用），但**不再用它顶这一行**——两处显示同一件事没有必要。
+func _refresh_intent_band() -> void:
+	if _action_label == null:
+		return
+	if sim == null or sim.finished():
+		_action_label.text = ""
+		return
+	var lines: PackedStringArray = sim.intent_lines()
+	if lines.is_empty():
+		_action_label.text = "敌方预兆：这一回合没有敌人要出招"
+		return
+	_action_label.text = "敌方预兆：%s" % "　｜　".join(lines)
+
+
 ## 六指令里那几条「花一次行动」的按钮共用这个开场：必要时开新回合、推进到轮到我方。
 ## 不是我方行动就把日志补上并返回 null（调用方只管报错，不再各写一遍开场）。
 func _begin_round_for_command():
@@ -321,6 +486,7 @@ func _begin_round_for_command():
 
 ## 普通攻击（六指令之一）：不耗内力、不看武器与招式装配，打当前目标
 func press_basic_attack() -> Dictionary:
+	take_over()
 	var actor = _begin_round_for_command()
 	if actor == null:
 		return {"ok": false, "error": "现在不是我方行动"}
@@ -342,6 +508,7 @@ func press_basic_attack() -> Dictionary:
 
 ## 主动防御（六指令之一）：花一次行动换一个防御姿态 buff（减伤、架势、下回合先手）
 func press_defend() -> Dictionary:
+	take_over()
 	var actor = _begin_round_for_command()
 	if actor == null:
 		return {"ok": false, "error": "现在不是我方行动"}
@@ -363,6 +530,7 @@ func press_defend() -> Dictionary:
 
 ## 内功指令：把招式行切成「已装内功」列表（再点一次切回招式）
 func press_inner_list() -> Dictionary:
+	take_over()
 	_panel_mode = "skills" if _panel_mode == "inner" else "inner"
 	_refresh_skills()
 	return {"ok": true, "mode": _panel_mode}
@@ -370,6 +538,7 @@ func press_inner_list() -> Dictionary:
 
 ## 道具指令：把招式行切成「战斗中可用的道具」列表（效果列未配，条目会写明原因）
 func press_item_list() -> Dictionary:
+	take_over()
 	_panel_mode = "skills" if _panel_mode == "items" else "items"
 	_refresh_skills()
 	return {"ok": true, "mode": _panel_mode}
@@ -377,6 +546,7 @@ func press_item_list() -> Dictionary:
 
 ## 催动某部内功：花一次行动换它的运功 buff（buff_grant trigger=on_cast）
 func press_cast_passive(skill_id: String) -> Dictionary:
+	take_over()
 	var actor = _begin_round_for_command()
 	if actor == null:
 		return {"ok": false, "error": "现在不是我方行动"}
@@ -439,6 +609,7 @@ func _lowest_hp_enemy():
 
 ## 点敌人卡片上的按钮选目标
 func select_target(actor_id: String) -> void:
+	take_over()
 	selected_target_id = actor_id if selected_target_id != actor_id else ""
 	var target = _current_target()
 	_set_status("目标：%s" % (target.display_name if target != null else "无"))
@@ -469,7 +640,7 @@ func _spawn_floats(events: Array) -> void:
 		var hit_index := int(event.get("hit_index", 0))
 		label.name = "Float_%s" % str(event["target"]) if hit_index == 0 else "Float_%s_%d" % [str(event["target"]), hit_index]
 		label.text = "-%d" % damage
-		label.add_theme_font_size_override("font_size", 20)
+		label.add_theme_font_size_override("font_size", 16)
 		var color := Color("ffd24a") if bool(event.get("is_crit", false)) else Color(1, 1, 1, 0.95)
 		if bool(event.get("was_broken", false)):
 			color = Color("eb5757")
@@ -593,6 +764,7 @@ func strategy_text() -> String:
 
 
 func press_flee() -> Dictionary:
+	take_over()
 	if sim == null or sim.finished():
 		return {"ok": false, "error": "战斗已结束"}
 	var lines: Array = []
@@ -723,6 +895,10 @@ func _settle() -> void:
 			if enemy_id.is_empty():
 				enemy_id = str(enemy.actor_id).split("#")[0]
 			drops.append_array(resolver.roll_enemy_equipment(enemy_id, first_kill))
+		# 剧情物（20 号 §七 的账册）：**第一次**打赢这支队伍才进掉落清单，之后不再重复发。
+		var story_item := _team_win_item_id()
+		if not story_item.is_empty() and not _owns_item(story_item):
+			drops.append({"item_id": story_item, "qty": 1})
 		var result: Dictionary = sim.result()
 		if bool(encounter.practice):
 			# 经验封顶（`growth_const.dummy_xp_cap_level`）＋没有铜钱：改在结算前就地削，
@@ -747,6 +923,12 @@ func _settle() -> void:
 			lines.append("掉落明细：%s" % drops_detail)
 		if not str(applied.get("level_up_text", "")).is_empty():
 			lines.append("升级：%s" % str(applied["level_up_text"]))
+		# 切磋（设计 19 §2.2）：赢了给这位 NPC 加好感。
+		# 只在这一条路上加——切磋是「主动选的战斗」，输了不扣好感（19 §2.2 只写了赢的收益）。
+		if not str(encounter.spar_npc).is_empty():
+			var spar: Dictionary = NpcServiceScript.win_spar(db, state, str(encounter.spar_npc))
+			if bool(spar.get("ok", false)):
+				lines.append(str(spar.get("text", "")))
 		# 击败领悟：skill_base 里 source_type=drop 且 source_id 指向本场敌人的武学
 		var defeated_ids := PackedStringArray()
 		for enemy in enemies:
@@ -783,6 +965,7 @@ func _settle() -> void:
 		# 练习战不写「清怪／房间」记录：它不是副本进度，也不进完成度
 		if not bool(encounter.practice):
 			_mark_spawn_cleared(session_node)
+			_apply_team_win_flags()
 	elif sim.winner() == BattleSimulatorScript.WINNER_FLEE:
 		# 主动撤退：不算败北，也不结算经验／铜钱／掉落；明雷留在原地（设计 02：明雷看得见、可以绕开）
 		lines.append("撤退：脱离了战斗（没有经验与掉落）")
@@ -805,6 +988,9 @@ func _settle() -> void:
 			"winner": sim.winner(),
 			"rounds": sim.rounds_played(),
 			"team": encounter.team_name,
+			# 队伍 **id**（`team` 是中文名）：小地图靠它认「上一场打完的是哪支队伍」，
+			# 再决定回图之后要不要摆出那一段对话（20 号 §七 的终局难题）。
+			"team_id": str(encounter.team_id),
 			"contact": encounter.contact_label(),
 			"summary": "　".join(lines),
 			# 击杀方式（毒杀判定用）：隐藏内容里的 trig_poison_kill 靠它判「是不是毒杀的」
@@ -894,6 +1080,34 @@ func _mark_spawn_cleared(session_node) -> void:
 				state.record_dungeon(scene_id, "bosses", str(enemy.source_id))
 
 
+## 打赢某支队伍 → 置旗标（设计 20 §十一 那三个「没有来源」的旗标里，靠战斗收尾的两个）。
+##
+## 荒村废屋的屠夫 → `flag_huangcun_done`（白清和招募的条件）；毒堂的毒手 → `flag_poison_hall`
+## （苏九娘招募的条件）。**暂时写在这个常量里**：表里还没有「打赢某队置旗标」这一列
+## （设计 20 §十一 只给了口径），已记 `待策划确认.md` Q69——设计给了列（例如
+## `enemy_team.win_flag`）就挪进表，这一处跟着改成查表。
+##
+## 不往战报里加文案：旗标的可见反馈是**回到那张图时同伴入队**（`RecruitService`），
+## 在这儿再编一句叙事反而会和设计后面的台词打架。
+func _apply_team_win_flags() -> void:
+	var team_id := str(encounter.team_id)
+	if state == null or not TEAM_WIN_FLAGS.has(team_id):
+		return
+	state.set_flag(str(TEAM_WIN_FLAGS[team_id]))
+
+
+## 这一场打赢之后该发的剧情物 id（没配就是空）
+func _team_win_item_id() -> String:
+	if encounter == null:
+		return ""
+	return str(TEAM_WIN_ITEMS.get(str(encounter.team_id), ""))
+
+
+## 玩家手里有没有这件东西——`TEAM_WIN_ITEMS` 用它判「领过了没有」
+func _owns_item(item_id: String) -> bool:
+	return state != null and state.inventory != null and state.inventory.has(item_id)
+
+
 # ------------------------------------------------------------------ 界面
 
 ## 界面骨架在 scenes/battle_screen.tscn 里（真实节点树，编辑器/MCP 可直接调版式与皮肤），
@@ -978,6 +1192,7 @@ func _refresh() -> void:
 	_refresh_buttons()
 	_refresh_skills()
 	_refresh_buffs()
+	_refresh_intent_band()
 
 
 ## 这一行按当前模式显示：招式（默认）／已装内功／战斗道具
@@ -1111,6 +1326,21 @@ func _make_effect_chip(row: Dictionary) -> Button:
 	var remaining := int(row.get("remaining", 0))
 	var time_text := "∞" if (bool(row.get("permanent", false)) or remaining < 0) else str(remaining)
 	var stacks := int(row.get("stacks", 1))
+	# 图标（15 §4.3 的「增益减益 19／异常状态 4」）：**优先表里的 `icon`，空则退回行 id**
+	# ——与 `item_base.icon` 同一套优先级，所以美术按哪个名字交都能对上。
+	# **有图才摆**：一张都还没交付时 `icon` 留 null，卡片尺寸与以前一模一样（不占空位）。
+	var icon_id := str(row.get("icon", "")).strip_edges()
+	if icon_id.is_empty():
+		icon_id = str(row.get("entry_id", row.get("buff_id", "")))
+	var icon_path := (
+		IconPathsScript.status(icon_id)
+		if str(row.get("kind", "")) == "status"
+		else IconPathsScript.buff(icon_id)
+	)
+	chip.set_meta("icon_path", icon_path)
+	var icon_texture := IconPathsScript.load_icon(icon_path)
+	if icon_texture != null:
+		chip.icon = icon_texture
 	# 极性用「形状 + 字」两重编码（08 要求色盲可辨：光靠红蓝不够）
 	# 名字要带上是谁的（合并列表里不写归属，玩家不知道这条 buff 挂在谁身上）
 	chip.text = "%s %s%s·%s %s%s" % [
@@ -1136,6 +1366,16 @@ func _make_actor_row(actor) -> Control:
 	head.name = "Head_%s" % actor.actor_id
 	head.add_theme_constant_override("separation", 6)
 	row.add_child(head)
+	# 敌人剪影（15 六：`assets/sprites/<faction>/<enemy_id>.png`）——**有图才摆**。
+	# 美术先出了两条做对照（山寨喽啰／别派弟子），其余还没出；我方那一侧不放
+	# （角色的形象在角色面板的立绘里，战斗卡片只列数值，免得卡片变高）。
+	if actor.side == BattleActorScript.SIDE_ENEMY:
+		var sprite_path := IconPathsScript.actor(
+			str(actor.tags.get("faction", "")), str(actor.source_id)
+		)
+		var sprite := IconPathsScript.make_icon(sprite_path, "Sprite_%s" % actor.actor_id)
+		if sprite != null:
+			head.add_child(sprite)
 	var label := Label.new()
 	label.name = "Name_%s" % actor.actor_id
 	var is_target: bool = actor.side == BattleActorScript.SIDE_ENEMY and str(actor.actor_id) == selected_target_id
@@ -1197,7 +1437,7 @@ func _make_actor_row(actor) -> Control:
 			else:
 				intent.text = "预兆：%s" % sim.skill_display_name(intent_id)
 				intent.add_theme_color_override("font_color", Color("c9a0ff"))
-			intent.add_theme_font_size_override("font_size", 11)
+			intent.add_theme_font_size_override("font_size", 12)
 			row.add_child(intent)
 	var bar := ProgressBar.new()
 	bar.name = "HpBar_%s" % actor.actor_id
@@ -1212,16 +1452,27 @@ func _make_actor_row(actor) -> Control:
 	bars.add_theme_constant_override("separation", 6)
 	row.add_child(bars)
 	bars.add_child(_make_bar("QiBar_%s" % actor.actor_id, float(actor.qi), float(maxi(1, actor.max_qi())), Color("5aa9e6"), 150))
-	bars.add_child(_make_bar(
+	var poise_bar := _make_bar(
 		"PoiseBar_%s" % actor.actor_id, float(actor.poise), float(maxi(1, actor.max_poise())),
 		Color("e0a13c") if not actor.is_broken() else Color("eb5757"), 160
-	))
+	)
+	bars.add_child(poise_bar)
+	_decorate_poise_bar(poise_bar, actor)
 	if actor.is_broken():
 		var mark := Label.new()
 		mark.name = "BrokenMark_%s" % actor.actor_id
 		mark.text = "破绽！"
 		mark.add_theme_color_override("font_color", Color("eb5757"))
 		bars.add_child(mark)
+	# 我方单位详情（设计 14 §四：左侧那一栏 = 气血／内力／架势 ＋ **武器与已装内功**）。
+	# 前三条已经在上面（名字里的气血／内力 ＋ 两根条 ＋ 架势条），缺的是这一行。
+	if actor.side == BattleActorScript.SIDE_ALLY:
+		var gear := Label.new()
+		gear.name = "Gear_%s" % actor.actor_id
+		gear.text = _gear_text(actor)
+		gear.add_theme_font_size_override("font_size", 12)
+		gear.add_theme_color_override("font_color", Color(0.78, 0.83, 0.9))
+		row.add_child(gear)
 	# 异常状态：中毒/灼伤/流血/内伤，颜色取 damage_type.display_color
 	var status_text := _status_text(actor)
 	if not status_text.is_empty():
@@ -1231,6 +1482,20 @@ func _make_actor_row(actor) -> Control:
 		status_label.add_theme_color_override("font_color", _status_color(actor))
 		bars.add_child(status_label)
 	return row
+
+
+## 「武器与已装内功」那一行。两样都从**存档 + 表**里查（战斗单位身上只带武器类型与系别，
+## 不带物品 id）；查不到就如实写「空手」／「未装内功」，不留空白。
+func _gear_text(actor) -> String:
+	var char_id := str(actor.actor_id)
+	var weapon = PartyBuilderScript.equipped_weapon(db, state, char_id)
+	var weapon_name := str(weapon.name_cn) if weapon != null else "空手"
+	var names := PackedStringArray()
+	for skill_id: String in actor.passives:
+		var row: Resource = db.get_row("skill_base", skill_id)
+		names.append(str(row.name_cn) if row != null else skill_id)
+	var inner := "未装内功" if names.is_empty() else "、".join(names)
+	return "武器：%s　内功：%s" % [weapon_name, inner]
 
 
 ## 一行状态摘要：「中毒×3（2回合）、灼伤×1」；没有状态返回空串
@@ -1264,6 +1529,41 @@ func _make_bar(node_name: String, value: float, maximum: float, color: Color, wi
 	return bar
 
 
+## 架势条的「即将破防」（设计 15 §4.5：这是核心循环的爽点，不能只是一条会变短的色块）。
+##
+## 分工（美术在 `tools/artgen/ui.js` 里写死的那句话）：**条的颜色仍由这里按色值表刷**，
+## 两张贴图只管「加什么」——架势低于临界线叠 `poise_critical.png`（裂纹），打空那一刻
+## 换成 `poise_break.png`（横条压亮 ＋ 四道炸开的短光）。
+##
+## 贴图原生 32×12（15 §4.4 的状态条高度），比这根 8px 的条高 2px，所以上下各溢 2px；
+## **不影响版式**：子 Control 不计入父级最小尺寸，`满招式`那档 636/648 的预算照旧。
+## 临界线是开发侧定的**表现**阈值（设计只写了"要有临界表现"、没给数值），
+## 与判定无关，因此不进变异探针的手感常量清单。
+const POISE_CRITICAL_TEXTURE := "res://assets/ui/battle/poise_critical.png"
+const POISE_BREAK_TEXTURE := "res://assets/ui/battle/poise_break.png"
+const POISE_CRITICAL_RATIO := 0.3
+
+
+func _decorate_poise_bar(bar: ProgressBar, actor) -> void:
+	var file := ""
+	if actor.is_broken():
+		file = POISE_BREAK_TEXTURE
+	elif float(actor.poise) / maxf(1.0, float(actor.max_poise())) <= POISE_CRITICAL_RATIO:
+		file = POISE_CRITICAL_TEXTURE
+	if file.is_empty() or not ResourceLoader.exists(file):
+		return     # 美术还没交图时不摆这一层（有图才加，与敌人剪影同一口径）
+	var overlay := TextureRect.new()
+	overlay.name = "PoiseFx_%s" % str(actor.actor_id)
+	overlay.texture = load(file)
+	overlay.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	overlay.stretch_mode = TextureRect.STRETCH_SCALE
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.offset_top = -2.0
+	overlay.offset_bottom = 2.0
+	bar.add_child(overlay)
+
+
 func _clear(box: Node) -> void:
 	for child in box.get_children():
 		box.remove_child(child)
@@ -1274,8 +1574,7 @@ func _append_log(lines: Array) -> void:
 	for line: String in lines:
 		var text := str(line)
 		_log.append_text("%s\n" % _colored_line(text))
-		if not text.begins_with("——"):
-			_action_label.text = text
+		# 预兆带由 `_refresh_intent_band()` 单独维护——日志不再往那儿写字
 
 
 ## 日志配色：回合头蓝色、暴击金色、未命中灰色、其余常规
@@ -1414,6 +1713,23 @@ func _run_battle_selftest() -> void:
 	strategy_ok = strategy_ok and strategy_text().contains("均衡")
 	ok = ok and strategy_ok
 	lines.append("策略按钮 ok=%s（当前 %s）" % [strategy_ok, strategy_text()])
+
+	# 敌方预兆横带（设计 14 §四要点一：预兆必须显眼、占一整条横带）：
+	# 预兆是**开回合时**掷的，所以这里先确保有一个进行中的回合，再看这一行写的是什么
+	# （这一行以前显示「最后一条日志」，与下面的日志区重复）。
+	if not sim.in_round() and not sim.finished():
+		sim.begin_round()
+		_refresh()
+	var band_ok: bool = _action_label != null and _action_label.text.begins_with("敌方预兆：")
+	band_ok = band_ok and _action_label.text.contains("将用")
+	ok = ok and band_ok
+	lines.append("敌方预兆横带=%s（%s）" % [band_ok, _action_label.text if _action_label != null else "-"])
+	# 我方单位详情那一行（设计 14 §四：左侧 = 气血／内力／架势 ＋ 武器与已装内功）——
+	# 前三条在名字与两根条上，这一行补武器与内功。
+	var gear: Label = find_child("Gear_%s" % allies[0].actor_id, true, false)
+	var gear_ok: bool = gear != null and gear.text.contains("武器：") and gear.text.contains("内功：")
+	ok = ok and gear_ok
+	lines.append("我方详情（武器／已装内功）=%s（%s）" % [gear_ok, gear.text if gear != null else "-"])
 
 	# 战斗里能用哪些招，必须来自「装配」而不是模板（装配改动要真的进战斗）
 	var char_id := str(allies[0].actor_id)
@@ -1556,6 +1872,21 @@ func _run_battle_selftest() -> void:
 	_result_label.text = saved_result
 	ok = ok and LayoutBudgetScript.content_fits(self)
 	lines.append(LayoutBudgetScript.ascii_content_line(self))
+	# 玩家可见文案守卫：整页控件文字里不许出现表内 id 形态（决策 244）
+	# 浮层与全局快捷键（设计 14 §二／§八）：**战斗中 Tab 开角色面板属于「浮层盖场景层」**，
+	# 再按一次是「弹回它」而不是叠第二份；Esc 一次弹一层。
+	var overlay_ok := true
+	overlay_ok = overlay_ok and bool(open_overlay(CHARACTER_SCENE, "CharacterPanel", 0).get("ok", false))
+	overlay_ok = overlay_ok and open_overlay_count() == 1
+	var char_panel := find_child("CharacterPanel", true, false)
+	overlay_ok = overlay_ok and char_panel != null and char_panel.current_tab() == 0
+	overlay_ok = overlay_ok and bool(open_overlay(CHARACTER_SCENE, "CharacterPanel", 2).get("reopened", false))
+	overlay_ok = overlay_ok and open_overlay_count() == 1
+	overlay_ok = overlay_ok and char_panel != null and char_panel.current_tab() == 2
+	overlay_ok = overlay_ok and close_top_overlay() and open_overlay_count() == 0
+	ok = ok and overlay_ok
+	lines.append("浮层（战斗中开角色面板／再按弹回并切行囊页／Esc 弹回）=%s" % overlay_ok)
+
 	# 玩家可见文案守卫：整页控件文字里不许出现表内 id 形态（决策 244）
 	var copy_hits: PackedStringArray = CopyGuardScript.id_tokens(self)
 	ok = ok and copy_hits.is_empty()

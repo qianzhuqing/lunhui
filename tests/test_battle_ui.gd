@@ -10,6 +10,9 @@ const BattleScreenScript := preload("res://src/ui/battle_screen.gd")
 const WorldMapServiceScript := preload("res://src/core/world_map_service.gd")
 const SfxScript := preload("res://src/audio/sfx.gd")
 const PracticeServiceScript := preload("res://src/core/practice_service.gd")
+const SettingsStoreScript := preload("res://src/core/settings_store.gd")
+## 敌人剪影的路径与「有图才摆」（15 §六）
+const IconPathsScript := preload("res://src/ui/icon_paths.gd")
 
 ## 测试用的「写不进去」的存档设施：只实现 SaveService 会用到的那几个方法。
 ## 用途：验「自动存档失败**不静默**」——玩家得在战报里看到一句，而不是以为进度存住了。
@@ -51,12 +54,24 @@ func run() -> void:
 	var returns: Array = []
 	battle.return_handler = func() -> void: returns.append(true)
 	var settle_reason := ""
+	# 这一场要**两个以上敌人**（下面 `_check_rounds` 会点 `enemies[1]` 选目标），
+	# 又要 1 级单人打得过。默认回退遭遇是**野狼群**（3 只）：0.28.0 把敌人命中基准
+	# 统一成 1.0 之后（设计 10 §七），1 级单人对它的余量只剩 33%，而这条用例是
+	# **脚本化的手打**（选目标、切自动战斗、只按第一个招式），比模拟器的自动策略笨，
+	# 于是翻成败北。它不是难度断言、是界面走查，所以打**两只**野狼（决策 287）。
+	var two_wolves = EncounterScript.new()
+	two_wolves.team_name = "野狼"
+	two_wolves.members = "en_wolf:2"
+	two_wolves.source_scene = "overworld"
+	two_wolves.source_key = "test_two_wolves"
+	battle.encounter_override = two_wolves
 	scene_tree.root.add_child(battle)
 	battle.setup()
 
 	_check_layout(battle)
 	_check_rounds(battle)
 	_check_status_ui(battle)
+	_check_effect_icons(db, battle)
 	_check_resource_bars(battle)
 	_check_finish(battle, returns)
 	# 结算时自动存档的原因要在 free 之前取出来（对象释放后就问不到了）
@@ -66,7 +81,9 @@ func run() -> void:
 	battle.free()
 	_check_first_kill_once(db)
 	_check_boss_kills_unlock_nightmare(db, store)
+	_check_team_win_flags(db, store)
 	_check_auto_battle(db)
+	_check_auto_battle_setting(db)
 	_check_parry_ui(db)
 	_check_flee_ui(db)
 	_check_defeat_settle(db)
@@ -79,6 +96,48 @@ func run() -> void:
 	_check_autosave_failure(db)
 	check_true(store.slot_exists(1), "战斗结算后自动落盘")
 	check_eq(settle_reason, "战斗结算", "记下存档原因（设计 02：副本内自动存）")
+
+	_check_enemy_sprites(db)
+
+
+## 敌人剪影（15 §六：`assets/sprites/<faction>/<enemy_id>.png`）：**有图才摆**。
+##
+## 美术先出了两条做对照（山寨喽啰／别派弟子），其余 13 个敌人还没出——
+## 所以这里同时钉两件事：**有图的那一行挂着图**、**没图的那一行不留空位**。
+## 以前这两张图躺在库里没人读（"先出图、后接线"），这一条就是那条接线的证据。
+func _check_enemy_sprites(db) -> void:
+	check_eq(
+		IconPathsScript.actor("bandit", "en_bd_thug"),
+		"res://assets/sprites/bandit/en_bd_thug.png",
+		"剪影路径按 `<faction>/<enemy_id>` 拼（15 §六）",
+	)
+	var encounter = EncounterScript.new()
+	encounter.team_name = "混合队"
+	encounter.members = "en_bd_thug:1;en_wolf:1"
+	encounter.source_scene = "overworld"
+	encounter.source_key = "test_enemy_sprites"
+	var battle = load(BATTLE_SCENE).instantiate()
+	battle.state_override = solo_state(db)
+	battle.encounter_override = encounter
+	battle.rng_seed = 20261003
+	scene_tree.root.add_child(battle)
+	battle.setup()
+	var thug_rows: Array = battle.find_children("Actor_en_bd_thug*", "VBoxContainer", true, false)
+	check_eq(thug_rows.size(), 1, "山寨喽啰那一行在（美术已交付剪影）")
+	if thug_rows.size() == 1:
+		check_eq(
+			thug_rows[0].find_children("Sprite_*", "TextureRect", true, false).size(), 1,
+			"有剪影的敌人行前面挂着图",
+		)
+	var wolf_rows: Array = battle.find_children("Actor_en_wolf*", "VBoxContainer", true, false)
+	check_eq(wolf_rows.size(), 1, "野狼那一行在（美术还没出它的剪影）")
+	if wolf_rows.size() == 1:
+		check_eq(
+			wolf_rows[0].find_children("Sprite_*", "TextureRect", true, false).size(), 0,
+			"没图的敌人行不留空位",
+		)
+	scene_tree.root.remove_child(battle)
+	battle.free()
 
 
 ## 自动存档失败**不静默**（2026-10-03 补）：失败不打断结算（AGENTS：不许挡住开局/结算），
@@ -890,6 +949,32 @@ func _check_resource_bars(battle) -> void:
 	check_not_null(hp_after, "刷新后气血条还在")
 	check_eq(int(hp_after.value), int(ally.hp), "掉血后气血条跟着变（%d）" % ally.hp)
 	check_eq(int(hp_after.max_value), maxi(1, ally.max_hp()), "气血条上限 = 气血上限")
+	# 架势条的「即将破防」（15 §4.5）：条本身的颜色归代码，美术那两张贴图只管「加什么」——
+	# 低于临界线叠 `poise_critical`（裂纹），打空那一帧换成 `poise_break`（横条压亮＋炸光）。
+	# 贴图原生 32×12，比 8px 的条上下各溢 2px，是**表现**、不进版式预算。
+	check_null(
+		battle.find_child("PoiseFx_%s" % ally_id, true, false),
+		"架势还满着时不摆临界表现（只在低架势／破防时才加）",
+	)
+	ally.poise = 2
+	battle._refresh()
+	var critical = battle.find_child("PoiseFx_%s" % ally_id, true, false)
+	check_not_null(critical, "架势压到临界线以下 → 叠上临界贴图")
+	if critical != null:
+		check_true(
+			str(critical.texture.resource_path).contains("poise_critical"),
+			"用的是 poise_critical：%s" % str(critical.texture.resource_path),
+		)
+	ally.take_poise_damage(999)
+	check_true(ally.is_broken(), "架势打空 → 进入破绽")
+	battle._refresh()
+	var broken = battle.find_child("PoiseFx_%s" % ally_id, true, false)
+	check_not_null(broken, "破防那一帧叠的是爆发贴图")
+	if broken != null:
+		check_true(
+			str(broken.texture.resource_path).contains("poise_break"),
+			"用的是 poise_break：%s" % str(broken.texture.resource_path),
+		)
 
 
 ## 自动战斗：按下去要能**自己打到底**。
@@ -929,6 +1014,45 @@ func _check_auto_battle(db) -> void:
 	check_true(SfxScript.has_played("victory"), "胜利结算会请求「胜利」音效（07 §8.4）")
 	scene_tree.root.remove_child(battle)
 	battle.free()
+
+
+## 自动战斗的**持久开关**（设计 11 §四）：设置里开着 → 进战斗就自动；
+## 玩家点任意指令 → **立刻接管**（自动是省事不是夺权）。
+func _check_auto_battle_setting(db) -> void:
+	var dir := "res://.logs/test_settings/battle_auto"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var store = SettingsStoreScript.new(dir)
+	DirAccess.remove_absolute(store.file_path())
+
+	# ① 设置里关着（默认）：进战斗不自动
+	var off = load(BATTLE_SCENE).instantiate()
+	off.state_override = solo_state(db)
+	off.settings_override = store
+	off.rng_seed = 20261003
+	scene_tree.root.add_child(off)
+	off.setup()
+	check_false(off.auto_running(), "设置关着时进战斗不自动（默认关）")
+	scene_tree.root.remove_child(off)
+	off.free()
+
+	# ② 设置里开着：进战斗即自动
+	store.save_auto_battle(true)
+	var on = load(BATTLE_SCENE).instantiate()
+	on.state_override = solo_state(db)
+	on.settings_override = store
+	on.rng_seed = 20261003
+	scene_tree.root.add_child(on)
+	on.setup()
+	check_true(on.auto_running(), "设置开着时进战斗就自动")
+	# ③ 玩家点一条指令 → 立刻接管
+	on.sim.begin_round()
+	var took: bool = on.take_over()
+	check_true(took, "点指令时确实收回了自动（take_over 返回 true）")
+	check_false(on.auto_running(), "点任意指令后不再是自动（不用先关自动）")
+	# 再点一次没有副作用（已经手动）
+	check_false(on.take_over(), "已经手动时再调用不重复动作")
+	scene_tree.root.remove_child(on)
+	on.free()
 
 
 ## 以前首杀记录放在 GameSession 会话里，退出重进（= 读档）就能重复领；
@@ -1015,13 +1139,56 @@ func _check_boss_kills_unlock_nightmare(db, store) -> void:
 
 
 ## 建一场「小地图里打完的」战斗、把敌人打死、走真结算。成员串与 `enemy_team` 同格式。
-func _settle_named_encounter(db, state, store, team_name: String, members: String, source_key: String) -> void:
+## 「打赢某支队伍 → 置旗标」（设计 20 §十一 那条链）：
+## 荒村废屋的屠夫 → `flag_huangcun_done`（白清和的招募条件）；
+## 毒堂的毒手 → `flag_poison_hall`（苏九娘的招募条件）。这两个旗标以前**一个来源都没有**，
+## 于是那两条招募链整条断着（Q51）。
+func _check_team_win_flags(db, store) -> void:
+	var state = solo_state(db)
+	state.slot = 2
+	check_false(state.has_flag("flag_huangcun_done"), "开局没处理过荒村的事")
+	check_false(state.has_flag("flag_poison_hall"), "开局也没处理过毒堂")
+	_settle_named_encounter(
+		db, state, store, "荒村屠夫", "en_bd_butcher:1", "hc_02", "scene_huangcun", "team_butcher"
+	)
+	check_true(state.has_flag("flag_huangcun_done"), "打赢屠夫 → 荒村的事算是了结了")
+	check_false(state.has_flag("flag_poison_hall"), "另一支队伍的旗标不受影响")
+	_settle_named_encounter(
+		db, state, store, "毒堂守卫", "en_bd_poison_hand:1", "hf2_poison",
+		"scene_heifengzhai", "team_poison_hand"
+	)
+	check_true(state.has_flag("flag_poison_hall"), "打赢毒手 → 毒堂的事算是了结了")
+	# 幕五「聚义厅对质」的进入条件（20 号 §十一：战大寨主后）
+	_settle_named_encounter(
+		db, state, store, "大寨主", "en_bd_boss:1", "hf3_boss", "scene_heifengzhai", "team_boss"
+	)
+	check_true(state.has_flag("flag_heifeng_confront"), "打赢大寨主 → 置 flag_heifeng_confront")
+	# 账册（设计 20 §七）：**打赢大寨主那一下**才到手——前面两场打完时不该有，
+	# 重复刷也不该再给一本（钥匙道具不能丢、也不在货架上，所以「已持有」＝「领过了」）。
+	check_eq(
+		state.inventory.count("item_bd_ledger"), 1,
+		"第一次打赢大寨主 → 账册进背包（设计 20 §七 的终局难题靠它）",
+	)
+	_settle_named_encounter(
+		db, state, store, "大寨主", "en_bd_boss:1", "hf3_boss", "scene_heifengzhai", "team_boss"
+	)
+	check_eq(state.inventory.count("item_bd_ledger"), 1, "重复刷大寨主不会再发第二本账册")
+
+
+## 建一场「小地图里打完的」战斗、把敌人打死、走真结算。成员串与 `enemy_team` 同格式。
+## `scene_id`／`team_id` 可省（默认按黑风寨、不带队伍 id）——带 `team_id` 时才走
+## 「打赢某支队伍 → 置旗标」那条（设计 20 §十一）。
+func _settle_named_encounter(
+	db, state, store, team_name: String, members: String, source_key: String,
+	scene_id: String = "scene_heifengzhai", team_id: String = ""
+) -> void:
 	var encounter = EncounterScript.new()
 	encounter.team_name = team_name
 	encounter.members = members
 	encounter.difficulty_id = str(state.difficulty_id)
-	encounter.source_scene = "scene_heifengzhai"
+	encounter.source_scene = scene_id
 	encounter.source_key = source_key
+	encounter.team_id = team_id
 	var battle = load(BATTLE_SCENE).instantiate()
 	battle.state_override = state
 	battle.encounter_override = encounter
@@ -1050,3 +1217,70 @@ func state_mastery_of(battle, char_id: String, skill_id: String) -> int:
 
 func state_mastery_ids(battle) -> Array:
 	return battle.state.masteries_of(str(battle.allies[0].actor_id))
+
+
+## 增益／异常的图标：**优先表里的 `icon`，空则退回行 id**（与 `item_base.icon` 同一套优先级），
+## 而且**有图才摆**（美术还没交付时卡片尺寸不变）。
+##
+## 由来（2026-10-04）：`buff_def.icon` 与 `status_effect.icon` 这两列**全项目没有一个地方读**
+## ——配表审计按**列名**查"有没有人在 src 里提过"，而 `icon` 这个名字被 `item_base`／`map_region`
+## 用着，于是这两列的死活**被同名的活列盖住了**，谁也看不见。美术一旦按这两列的值交图，
+## 结果就是"图来了但不显示"（决策 304／309 同一个坑）。这条用例把"读哪一列、怎么退回"钉住。
+func _check_effect_icons(db, battle) -> void:
+	# ① 表里的 icon 值优先：用真表的值算期望，不写死 id（美术/设计改名也不会假红）
+	var venom: Resource = db.get_row("buff_def", "buff_venom_edge")
+	check_not_null(venom, "表里有 buff_venom_edge（这条用例依赖它）")
+	var venom_icon := str(venom.icon) if venom != null else ""
+	check_true(not venom_icon.is_empty(), "淬毒那条 buff 的 icon 列有值：%s" % venom_icon)
+	var chip: Button = battle._make_effect_chip({
+		"kind": "buff", "buff_id": "buff_venom_edge", "entry_id": "buff_venom_edge",
+		"icon": venom_icon, "name": "淬毒", "stacks": 1, "remaining": 3, "is_debuff": true,
+	})
+	check_eq(
+		str(chip.get_meta("icon_path")),
+		IconPathsScript.buff(venom_icon),
+		"增益图标按 buff_def.icon 拼路径（%s）" % venom_icon,
+	)
+	chip.free()
+
+	# ② icon 列空 → 退回行 id（两条命名口径都能对上，美术按哪个交都不会漏）
+	var fallback: Button = battle._make_effect_chip({
+		"kind": "buff", "buff_id": "buff_guard", "entry_id": "buff_guard",
+		"icon": "", "name": "防御姿态", "stacks": 1, "remaining": 1, "is_debuff": false,
+	})
+	check_eq(
+		str(fallback.get_meta("icon_path")),
+		IconPathsScript.buff("buff_guard"),
+		"icon 列为空时退回行 id",
+	)
+	fallback.free()
+
+	# ③ 异常状态走 `icons/status/`（15 §4.3 的「异常状态 4」）
+	var poison: Resource = db.get_row("status_effect", "poison")
+	check_not_null(poison, "表里有 poison 这条异常状态")
+	var poison_icon := str(poison.icon) if poison != null else ""
+	var status_chip: Button = battle._make_effect_chip({
+		"kind": "status", "status_id": "poison", "entry_id": "poison",
+		"icon": poison_icon, "name": "中毒", "stacks": 2, "remaining": 2, "is_debuff": true,
+	})
+	check_eq(
+		str(status_chip.get_meta("icon_path")),
+		IconPathsScript.status(poison_icon if not poison_icon.is_empty() else "poison"),
+		"异常状态图标按 status_effect.icon 拼路径（空则退回行 id）",
+	)
+	# 「有图才摆」：**不写死"现在没图"**（美术交付后那条会假红），只要求「有图 ⟺ 文件在」
+	var status_path := str(status_chip.get_meta("icon_path"))
+	check_eq(
+		status_chip.icon != null, ResourceLoader.exists(status_path),
+		"有图才摆（%s 存在吗：%s）" % [status_path, str(ResourceLoader.exists(status_path))],
+	)
+	status_chip.free()
+
+	# ④ 端到端：真战斗里那条 chip 的 icon_path 也来自表（证明 BattleActor 把 icon 递到了界面）
+	var real: Button = battle.find_child("Buff_%s_buff_yunqi" % battle.allies[0].actor_id, true, false)
+	if real != null:
+		var yunqi: Resource = db.get_row("buff_def", "buff_yunqi")
+		var want := str(yunqi.icon) if yunqi != null else ""
+		if want.is_empty():
+			want = "buff_yunqi"
+		check_eq(str(real.get_meta("icon_path")), IconPathsScript.buff(want), "真战斗里的 chip 也带表里的图标路径")

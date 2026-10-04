@@ -91,6 +91,52 @@ func _check_passive_fit(db, growth) -> void:
 	)
 	var contributions: Array = growth.passive_contributions(one_small)
 	check_gt(float(contributions.size()), 0.0, "内功加成能转成属性贡献")
+	_check_mastery_scales_passive(db, growth)
+
+
+## 熟练度放大内功加成（0.15.0 口径确认第 3 条）：**只放大 `stat:` 类，不放大 `attr:` 类**。
+##
+## 用真实数据挑一部**同时有 attr: 与 stat: 两种加成**的内功，这样一条用例能同时钉两边：
+## 放大错边（把 attr 也乘了）或者系数公式换了都会红。
+func _check_mastery_scales_passive(db, growth) -> void:
+	var picked := ""
+	var attr_sum := 0.0
+	var stat_sum := 0.0
+	# 候选列表来自 `skill_passive_stat` 里**两种前缀都有**的那几部（一个都不能少，
+	# 少了这条用例会退化成"夹具找不到"的假绿）
+	for skill_id: String in ["pf_xuanwei_05", "pf_heifeng_02", "pf_heifeng_03", "pf_tieqiang_01", "pf_wudu_04"]:
+		var row: Resource = db.get_row("skill_base", skill_id)
+		if row == null:
+			continue
+		var has_attr := false
+		var has_stat := false
+		for stat_row: Resource in db.rows_where("skill_passive_stat", "skill_id", skill_id):
+			var parsed: Dictionary = stat_row.parsed_target()
+			if str(parsed["kind"]) == "attr":
+				has_attr = true
+			elif str(parsed["kind"]) == "stat":
+				has_stat = true
+		if has_attr and has_stat:
+			picked = skill_id
+			break
+	check_true(not picked.is_empty(), "找得到一部同时有 attr: 与 stat: 加成的内功（熟练度用例的夹具）")
+	if picked.is_empty():
+		return
+	var ids := PackedStringArray([picked])
+	var star := int(db.get_row("skill_base", picked).star)
+	var base: Array = growth.passive_contributions(ids)
+	var scaled_5: Array = growth.passive_contributions(ids, {picked: 5})
+	check_eq(scaled_5.size(), base.size(), "每条加成都在（熟练度不改变条数）")
+	var factor: float = growth.mastery_multiplier(star, 5)
+	check_gt(factor, 1.0, "5 级熟练度系数 > 1（实际 %.2f）" % factor)
+	for i in range(base.size()):
+		var before: Dictionary = base[i]
+		var after: Dictionary = scaled_5[i]
+		var is_attr: bool = str(before["kind"]) == "attr_point"
+		var expected: float = float(before["value"]) * (1.0 if is_attr else factor)
+		check_float(float(after["value"]), expected,
+			"%s 的 %s 加成熟练度 5 级后应为 %.3f（attr 不放大、stat 放大）"
+				% [picked, str(before["target"]), expected], 0.001)
 
 
 func _check_panel(db) -> void:

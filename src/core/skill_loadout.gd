@@ -13,6 +13,8 @@ extends RefCounted
 
 const AttributeCalculatorScript := preload("res://src/core/attribute_calculator.gd")
 const GrowthCalculatorScript := preload("res://src/core/growth_calculator.gd")
+## 天赋的 `rule:` 效果（图鉴翻倍那条）——门槛这一侧要与面板用同一个倍数
+const TalentServiceScript := preload("res://src/core/talent_service.gd")
 
 var db
 var state
@@ -55,7 +57,12 @@ func attrs() -> Dictionary:
 	# 图鉴奖励（收集本身也是成长）也要算进门槛与槽位：和面板那份属性同一套换算，
 	# 不然会出现「面板显示够门槛、实际学不会」（这条踩过）。
 	if state != null and _growth != null:
-		contributions.append_array(_growth.codex_contributions(state.collected_skill_count()))
+		# 天赋「藏书癖」把每一档翻倍——**门槛这一侧也要用同一个倍数**，
+		# 否则会出现「面板算上了翻倍、门槛没算」，正是这条注释上面写过的那个坑
+		var mult := TalentServiceScript.rule_value(db, state, char_id, "codex_bonus_multiplier", 0.0)
+		contributions.append_array(_growth.codex_contributions(
+			state.collected_skill_count(), mult if mult > 0.0 else 1.0
+		))
 	return _calculator.attr_totals_of(base, allocations, contributions)
 
 
@@ -81,6 +88,12 @@ func requirement_of(skill_id: String) -> Dictionary:
 	if value <= 0:
 		var star: Resource = _growth.star_row(int(row.star))
 		value = int(star.learn_req_value) if star != null else 0
+	# 天赋「悟剑」（设计 12：高星武学的**修习门槛 −3**）：从要求值上减，最低到 0——
+	# 不减到负数（负数等于没有门槛，那是另一套语义；门槛本身还是"够属性才学得会"）
+	if value > 0 and state != null:
+		value = maxi(0, value - int(TalentServiceScript.rule_value(
+			db, state, char_id, "learn_req_reduce", 0.0
+		)))
 	var current := int(attrs().get(attr_id, 0))
 	var ok := current >= value
 	return {
@@ -291,8 +304,14 @@ func battle_skill_ids() -> PackedStringArray:
 	return active_ids()
 
 
-## 内功装备即生效：加成转成 AttributeCalculator 的贡献列表
+## 内功装备即生效：加成转成 AttributeCalculator 的贡献列表。
+##
+## 0.15.0 起把**本队员对每部内功的熟练度**一起传进去——`stat:` 类加成按熟练度放大，
+## `attr:` 类不放大（口径见 `GrowthCalculator.passive_contributions`）。
 func contributions() -> Array:
 	if _growth == null:
 		return []
-	return _growth.passive_contributions(passive_ids())
+	var levels: Dictionary = {}
+	for skill_id: String in passive_ids():
+		levels[skill_id] = state.mastery_of(char_id, skill_id) if state != null else 0
+	return _growth.passive_contributions(passive_ids(), levels)

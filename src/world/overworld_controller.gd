@@ -16,7 +16,23 @@ const PLACEHOLDER_SCENE := "res://scenes/placeholder_game.tscn"
 const FieldBuffHudScript := preload("res://src/world/field_buff_hud.gd")
 const CopyGuardScript := preload("res://src/ui/copy_guard.gd")
 const GuideServiceScript := preload("res://src/core/guide_service.gd")
+const StoryServiceScript := preload("res://src/core/story_service.gd")
+const ChapterServiceScript := preload("res://src/core/chapter_service.gd")
+const OverlayStackScript := preload("res://src/ui/overlay_stack.gd")
+const CHARACTER_SCENE := "res://scenes/character_screen.tscn"
+const WorldEventServiceScript := preload("res://src/core/world_event_service.gd")
+const RngServiceScript := preload("res://src/core/rng_service.gd")
 const RecruitServiceScript := preload("res://src/core/recruit_service.gd")
+## NPC 交往与对话（设计 19／20）：大地图上的人 —— `npc_def.place_id` 允许写**区域节点**
+## （`NpcService.npcs_at()` 本来就两种都认），可这条交互以前只在小地图里接，
+## 于是「落雁坡的采药人老周」在大地图上按 E 什么也不发生。
+const NpcServiceScript := preload("res://src/core/npc_service.gd")
+const NpcPanelMode := preload("res://src/ui/npc_panel.gd")
+const NPC_SCENE := "res://scenes/npc_panel.tscn"
+## 站多近才能按 E 跟人说话（与 `local_map_controller` 同一个数）
+const NPC_DISTANCE := 30.0
+## 没配行的人顶着的称呼（与 `local_map_controller` 同一套）
+const NPC_SPEAKER := "路人"
 ## 走进这个距离就进小地图／算发现地标
 const PORTAL_DISTANCE := 26.0
 const DISCOVER_DISTANCE := 96.0
@@ -53,6 +69,13 @@ const WorldMapServiceScript := preload("res://src/core/world_map_service.gd")
 const WAYPOINT_SCENE := "res://scenes/waypoint_screen.tscn"
 const EventCheckServiceScript := preload("res://src/core/event_check_service.gd")
 const CLUE_SCENE := "res://scenes/clue_screen.tscn"
+## 行商货架（Q64：`world_event.we_caravan` 就地开张，不是常驻建筑）
+const SHOP_SCENE := "res://scenes/shop_screen.tscn"
+const ShopServiceScript := preload("res://src/core/shop_service.gd")
+## 观察点（设计 20 §3.2）：最薄的一张表，一个位点一句话
+const FlavorPointScript := preload("res://src/data/tables/flavor_point_row.gd")
+## 观察点的可见标记（设计 15 §一「可交互物暖色提亮」）：视觉只有一处出处
+const FlavorMarkerScript := preload("res://src/world/flavor_marker.gd")
 const SaveServiceScript := preload("res://src/core/save_service.gd")
 
 ## 起始地点：新游戏从清风驿出发
@@ -78,6 +101,16 @@ var _field_refresh_timer := 0.0
 var _map_label: Label = null
 ## 开局引导 HUD（设计 09 §3.1）：大地图上也常驻一行「当前目标」
 var _guide_label: Label = null
+## 随机事件的提示行（设计 19 §四：只在事件存活期间出现）
+var _event_label: Label = null
+## 当前活着的随机事件（一行 world_event；空 = 没有）
+var _event_row: Resource = null
+var _event_marker: Node2D = null
+var _event_timer := 0.0
+var _event_cooldown := 0.0
+## 上一次领剧情节点时的区域 id（`_track_region_for_story()` 用它判断「走进新区域了没有」）
+var _last_claimed_region := ""
+var _event_rng = null
 var _hud: CanvasLayer = null
 var _portals: Array = []
 ## 入口是否已武装（刚回图时人可能正踩在入口上，先离开圈外一次才算数）
@@ -86,15 +119,34 @@ var _portal_armed := false
 var waypoint_panel: Node = null
 ## 线索本（K 打开：野外事件按地标分组）
 var clue_panel: Node = null
+## 行商货架（随机事件就地开张；与线索本同一套浮层，出栈即关）
+var shop_panel: Node = null
+## 浮层栈（设计 18.1）：线索本／驿站／角色面板都压在它上面
+var _overlays = null
 var _save_service = null
 ## 地图揭开与驿站规则的唯一来源（状态写在存档里）
 var world_map
 ## 事件判定位点：{check_id, node, position}
 var events: Array = []
+## 观察点位点：{point_id, node, position}（设计 20 §3.2；大地图这边收 `region_id` 那几条）
+var flavor_points: Array = []
+## 大地图上的 NPC 站位（`Characters/npc_slot_0N`）
+var npcs: Array = []
+## NPC 交往面板（覆盖在当前场景上的接口，关掉就 queue_free）
+var npc_panel: Node = null
 ## 地标图标：node_id → Sprite2D（见 _build_node_icons）
 var _node_icons: Dictionary = {}
+## 条件地表层（`Conditional`，0.32.0）：大地图上那条「藏宝图上的细径」
+var _conditional_layer: TileMapLayer = null
+## 「这个地标的贴图两张都找不到」已经报过没（只报一次，别每帧刷屏）
+var _icon_missing_warned: Dictionary = {}
 ## 地标名字（node_id → Label，见 `_build_node_labels`）
 var _node_labels: Dictionary = {}
+## 相机默认倍数（设计 0.31.2「大地图扩容」）：一屏约 16×9 格，走起来才有"路程"。
+## **写在代码里、不写进场景**：大地图正由地编按 2048×1536 重建，场景一换这份设置会被覆盖掉。
+const CAMERA_ZOOM := 2.0
+## 指路牌文案（node_id → Label，见 `_build_signposts`）
+var _signpost_labels: Dictionary = {}
 ## 脚下的地标高亮（叠在最近的地标上）
 var _highlight: Sprite2D = null
 var _event_service = null
@@ -127,20 +179,74 @@ func setup() -> void:
 		ysort.y_sort_enabled = true
 	_spawn_player()
 	_spawn_enemies()
+	_conditional_layer = world.get_node_or_null("Conditional") as TileMapLayer
+	_apply_conditional_layer()
 	_build_node_icons()
 	_build_node_labels()
+	_build_signposts()
 	_collect_portals()
 	_collect_events()
+	_collect_flavor_points()
+	_collect_npc_slots()
 	world_map = WorldMapServiceScript.new(db, current_state())
 	world_map.apply_initial_reveals()
 	_build_status_label()
 	_refresh_status()
 	_build_map_label()
 	_build_guide_label()
+	_build_event_label()
 	_check_region_recruits()
+	# 剧情节点与派生引导旗标（0.22.0）：大地图上也有「不限地点」的节点（药王谷那条），
+	# 以及靠升级／买东西才会变真的备货条件。
+	GuideServiceScript.refresh_derived_flags(db, current_state())
+	_claim_story_nodes()
 	_apply_fog()
+	_apply_conditional_layer()
 	# 放在最后：状态栏提示与揭雾都不该被「刚脱身」这一步盖掉
 	_push_player_out_of_contact()
+
+
+## 领取大地图上能领的剧情节点（**`place_id` 留空的**＋**指向当前区域节点的**那些）。
+## 返回领到的节点，供状态栏播报。
+##
+## **为什么传当前区域 id 而不是空串**（2026-10-04 修）：`StoryService.place_matches` 对**空串**的口径是
+## 「**只**匹配 `place_id` 留空的节点」——所以 21 §九 那条把地点写成**区域节点**的
+## （林铁山的「镖车暗格」在落雁坡，`opp_gang.place_id = n_luoyanpo`）**在游戏里永远领不到**
+## （《沉沙心法·不还》成了拿不到的死内容）。服务层与用例一直是对的（它们显式传 `n_luoyanpo`），
+## 错的是这个调用点：**「用例过的路」和「游戏走的路」不是同一条**（决策 345）。
+##
+## `place_matches` 对「区域 id」是超集：`place_id` 留空的那些仍然会命中（`want.is_empty()` 先判）✓。
+func _claim_story_nodes() -> Array:
+	var state = current_state()
+	if state == null or db == null:
+		return []
+	var place := current_region_id()
+	_last_claimed_region = place
+	var claimed: Array = StoryServiceScript.claim_for(db, state, place)
+	if claimed.is_empty():
+		return []
+	var names := PackedStringArray()
+	for entry: Dictionary in claimed:
+		names.append(str(entry.get("text_cn", entry.get("node_id", ""))))
+	var advance: Dictionary = ChapterServiceScript.try_advance(db, state)
+	if bool(advance.get("advanced", false)):
+		names.append("章节推进：%s" % str(advance.get("name", "")))
+	if not str(advance.get("text", "")).is_empty():
+		names.append(str(advance.get("text")))
+	if _status != null and not names.is_empty():
+		_status.text = "；".join(names)
+	_refresh_guide()
+	return claimed
+
+
+## 走进新区域时再领一次：玩家是**走**过去的，而 `_claim_story_nodes()` 只在场景载入时跑过一遍。
+## 与 `_check_region_recruits()` 同一套口径——走到地标跟前就算「到了」。
+func _track_region_for_story() -> void:
+	if player == null or db == null:
+		return
+	if _last_claimed_region == current_region_id():
+		return
+	_claim_story_nodes()
 
 
 func current_state():
@@ -167,6 +273,8 @@ func _spawn_player() -> void:
 	camera = world.get_node_or_null("Camera")
 	if camera != null:
 		camera.global_position = player.global_position
+		# 2× 缩放（设计 0.31.2）：写在这里而不是场景里，理由见 CAMERA_ZOOM 的注释
+		camera.zoom = Vector2(CAMERA_ZOOM, CAMERA_ZOOM)
 
 
 func _start_position() -> Vector2:
@@ -283,6 +391,13 @@ func _build_node_icons() -> void:
 		var marker: Node2D = world.get_node_or_null("Markers/Node_%s" % node_id)
 		if marker == null:
 			continue
+		# 地编在地图上留了一份 `Markers/Node_<id>/icon`（**摆位参考**，给地图预览用）：
+		# 它默认可见、又不认揭雾，于是开局会把黑风寨／落雁坡／石隙的图标直接亮在图上——
+		# 与设计 0.32.0「没探索的地方完全不存在（没有图标、没有地名）」直接冲突。
+		# 运行期一律收掉那一份，图标只由下面这套按揭雾状态控制的 sprite 画。
+		var preview_icon: Node = marker.get_node_or_null("icon")
+		if preview_icon is CanvasItem:
+			(preview_icon as CanvasItem).visible = false
 		var sprite := Sprite2D.new()
 		sprite.name = "Icon_%s" % node_id
 		sprite.position = marker.position + ICON_OFFSET
@@ -298,6 +413,28 @@ func _build_node_icons() -> void:
 		_highlight.visible = false
 		_add_to_world(ysort_node(), _highlight)
 	refresh_node_icons()
+
+
+## 条件地表层（`Conditional`）：整层显隐，判据在 `WorldMapService.conditional_layer_rule`——
+## 这张图上那些地标里「持有类解锁」的，东西到手就显示（石隙细径绑 `item_treasure_map`）。
+## 每帧调一次很便宜（一次背包查询），因为藏宝图可能是在大地图上偷到／拿到的。
+func _apply_conditional_layer() -> void:
+	if _conditional_layer == null:
+		return
+	_conditional_layer.visible = WorldMapServiceScript.conditional_layer_visible(
+		db, current_state(), _landmark_node_ids()
+	)
+
+
+## 这张图上真的摆了位点的地标（条件地表层看的是它们的 `unlock_condition`）
+func _landmark_node_ids() -> PackedStringArray:
+	var out := PackedStringArray()
+	if world == null:
+		return out
+	for row: Resource in db.rows("map_region"):
+		if world.get_node_or_null("Markers/Node_%s" % str(row.node_id)) != null:
+			out.append(str(row.node_id))
+	return out
 
 
 ## 按揭雾/锁定状态更新图标（揭开一个新地标后要能立刻看到）
@@ -322,6 +459,12 @@ func refresh_node_icons() -> void:
 		if ResourceLoader.exists(file):
 			sprite.texture = load(file)
 			sprite.visible = true
+		else:
+			# **两版都没有**：这个地标会"什么都不画"——玩家只会觉得这里本来就没图标。
+			# 出声（每个地标只报一次）：数据里 icon 写错、或美术的图没进仓库，都该看得见。
+			if not _icon_missing_warned.has(node_id):
+				_icon_missing_warned[node_id] = true
+				push_error("[Overworld] 地标 %s 的图标 %s 两张贴图都不存在（%s）" % [node_id, icon_id, ICON_DIR])
 	_update_highlight()
 	refresh_node_labels()
 
@@ -329,11 +472,13 @@ func refresh_node_icons() -> void:
 ## 地标名字：图标之外再写一行字（`map_region.name_cn`），玩家不用挨个走进去才知道那是哪。
 ## 规则与图标一致：**没揭开的没有名字**（提前把地名写出来就是剧透）；
 ## 本章去不了的（锁定）用暗色字，和 `_dim` 图标一个口径。
+##
+## **2026-10-04（0.31.2）解耦**：名字**只看"揭没揭开"**，不再看 `map_region.icon` 有没有值。
+## 以前这两件事绑在一起（`if str(row.icon).is_empty(): continue`），于是设计侧按 16 §3.5
+## 「兴趣点不给图标」清空那四个 `icon` 时，**它们的名字会跟着一起消失**——两条本来无关的规则被一个条件拴住了。
 func _build_node_labels() -> void:
 	for row: Resource in db.rows("map_region"):
 		var node_id := str(row.node_id)
-		if str(row.icon).is_empty():
-			continue
 		var marker: Node2D = world.get_node_or_null("Markers/Node_%s" % node_id)
 		if marker == null:
 			continue
@@ -360,13 +505,44 @@ func refresh_node_labels() -> void:
 		var label: Label = _node_labels.get(node_id)
 		if label == null:
 			continue
-		if not world_map.is_revealed(node_id) or str(row.icon).is_empty():
+		# 名字的条件**只有一条**：揭没揭开（与 `icon` 解耦，见 `_build_node_labels` 的注释）
+		if not world_map.is_revealed(node_id):
 			label.visible = false
 			continue
 		label.text = str(row.name_cn)
 		label.visible = true
 		# 本章去不了的：字压暗（和 _dim 图标同一口径，不加额外文字免得挡住地图）
 		label.modulate = Color(0.62, 0.62, 0.62) if WorldMapServiceScript.LOCKED_SCENES.has(str(row.enter_scene)) else Color.WHITE
+	# 指路牌同理：跟着「这个地标揭没揭开」走（没揭开就不知道通往哪儿）
+	for node_id: String in _signpost_labels.keys():
+		(_signpost_labels[node_id] as Label).visible = world_map.is_revealed(node_id)
+
+
+## 指路牌（设计 0.31.2）：`map_region.signpost_cn` 非空的行，代码在**地编摆的 `Markers/Sign_<node_id>`**
+## 位点旁边把那句话摆出来。**文案只在表里**——不许在代码里拼「→ 多少里」这类句子；
+## 表里空 = 不摆（今天 8 行都空着，等地编写文案）。没摆位点时静默跳过，
+## 「有文案却没有牌子」由 `tests/test_map_assets.gd` 点名。
+func _build_signposts() -> void:
+	for row: Resource in db.rows("map_region"):
+		var text := str(row.signpost_cn).strip_edges()
+		if text.is_empty():
+			continue
+		var node_id := str(row.node_id)
+		var marker: Node2D = world.get_node_or_null("Markers/Sign_%s" % node_id)
+		if marker == null:
+			continue
+		var label := Label.new()
+		label.name = "SignLabel_%s" % node_id
+		label.text = text
+		label.visible = false
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.position = marker.position + Vector2(-70, -20)
+		label.add_theme_font_size_override("font_size", 12)
+		label.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
+		label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
+		_add_to_world(ysort_node(), label)
+		_signpost_labels[node_id] = label
+	refresh_node_labels()
 
 
 ## 高亮：离玩家最近的**已揭开**地标叠一层 icon_highlight（告诉玩家「你在这个地标附近」）
@@ -422,7 +598,7 @@ func _refresh_status() -> void:
 		return
 	var region := _region_name()
 	# 线索本 K 必须写出来：设计 03 要求「线索必须能被找到」，藏着一个键等于没有
-	_status.text = "%s　移动 WASD／方向键　潜行 Shift　交互 E　角色 Tab　线索 K　返回 Esc" % region
+	_status.text = "%s　移动 WASD／方向键　潜行 Shift　交互 E　看人 Q　角色 Tab　行囊 I　线索 K　返回 Esc" % region
 	_refresh_field_buffs()
 
 
@@ -459,6 +635,21 @@ func _build_guide_label() -> void:
 	_guide_label.add_theme_constant_override("shadow_offset_y", 1)
 	_hud_layer().add_child(_guide_label)
 	_refresh_guide()
+
+
+## 随机事件的提示行（设计 19 §四／0.25.1）：**只在事件存活期间出现**，
+## 文案取 `world_event.prompt_text_cn`（模糊的方向性提示，例「远处有车马声」）——
+## HUD 不说「商队」只说「车马声」，保留探索感。
+func _build_event_label() -> void:
+	_event_label = Label.new()
+	_event_label.name = "WorldEventPrompt"
+	_event_label.position = Vector2(12, 104)
+	_event_label.add_theme_color_override("font_color", Color("ffd479"))
+	_event_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	_event_label.add_theme_constant_override("shadow_offset_x", 1)
+	_event_label.add_theme_constant_override("shadow_offset_y", 1)
+	_hud_layer().add_child(_event_label)
+	_refresh_event_prompt()
 
 
 func _refresh_guide() -> void:
@@ -527,7 +718,15 @@ func map_progress_text() -> String:
 
 func _region_name() -> String:
 	var row: Resource = db.get_row("map_region", START_NODE)
-	return str(row.name_cn) if row != null else "江南道·东部"
+	if row == null:
+		return ""
+	# **大区名来自表**（`map_region.region_name_cn`，设计 11 §三／14 §六，0.31.1）——
+	# 以前这里写的是代码兜底串 `else "江南道·东部"`，违反「文案在表里」（见 `待策划确认.md` 实机反馈 ③）。
+	var from_table := str(row.region_name_cn).strip_edges()
+	if not from_table.is_empty():
+		return from_table
+	# 表里还没填时退回节点名：**不编中文**（宁可显示节点名，也不在代码里造一个地区名）
+	return str(row.name_cn)
 
 
 # ------------------------------------------------------------------ 帧循环
@@ -539,23 +738,232 @@ func _process(_delta: float) -> void:
 		return
 	_check_reveals()
 	_check_portal()
+	# 条件地表（石隙那条细径）跟背包走：藏宝图可能是在这张图上偷到／拿到的
+	_apply_conditional_layer()
 	_track_sneak()
 	_update_highlight()
 	# 剧情招募里那几位 `join_scene` 指向区域地标的（现例：林铁山在落雁坡）：
 	# 走到地标跟前就算「遇上了」，和脚下的高亮用同一个半径。
 	_check_region_recruits()
+	# 剧情节点同理：**走进新区域时再领一次**（21 §九 那条区域上的本命机遇就靠它，决策 345）
+	_track_region_for_story()
 	# 战斗外增益的剩余分钟按现实时间走：每秒刷一次就够（不必每帧重算文案）
 	_field_refresh_timer -= _delta
 	if _field_refresh_timer <= 0.0:
 		_field_refresh_timer = 1.0
 		_refresh_field_buffs()
+	# 随机事件（设计 19 §四）：每帧推进存活计时／接触判定（很轻，只有一两个判断）
+	_update_world_event(_delta)
+
+
+# ---------------------------------------------------------------- 随机事件
+
+## 随机事件的生命周期（设计 19 §四 ＋ 0.25.1 的提示两条规则）：
+## 冷却到点 → 在当前区域按权重抽一条 → 在玩家附近放一个**临时淡色光点** ＋ HUD 一行模糊提示
+## → 走上去触发／超时或走远消失。**同一时刻最多一条**（取最近的），
+## 「错过了」是玩家的选择而不是系统的疏忽。
+func _update_world_event(delta: float) -> void:
+	if _event_cooldown > 0.0:
+		_event_cooldown = maxf(0.0, _event_cooldown - delta)
+	if _event_row == null:
+		# 冷却好了、附近又没别的交互位点时才考虑刷一个（别在事件判定/驿站门口刷）
+		if _event_cooldown <= 0.0 and player != null and event_near_player().is_empty() \
+				and not post_station_near():
+			_try_spawn_world_event()
+		return
+	_event_timer -= delta
+	var gone := _event_timer <= 0.0
+	if _event_marker != null and is_instance_valid(_event_marker) and player != null:
+		var distance: float = player.position.distance_to(_event_marker.position)
+		if distance <= WorldEventServiceScript.TRIGGER_DISTANCE:
+			_trigger_world_event()
+			return
+		if distance > WorldEventServiceScript.DESPAWN_DISTANCE:
+			gone = true
+	if gone:
+		_despawn_world_event()
+
+
+## 当前区域（事件池按区域给：商队走官道、弟子在野外）。
+func current_region_id() -> String:
+	if player == null or world == null:
+		return ""
+	var best := ""
+	var best_distance := 1e9
+	for row: Resource in db.rows("map_region"):
+		var marker: Node2D = world.get_node_or_null("Markers/Node_%s" % str(row.node_id))
+		if marker == null:
+			continue
+		var distance: float = player.position.distance_to(marker.position)
+		if distance < best_distance:
+			best_distance = distance
+			best = str(row.node_id)
+	return best
+
+
+func _try_spawn_world_event() -> bool:
+	var region_id := current_region_id()
+	if region_id.is_empty():
+		return false
+	if WorldEventServiceScript.eligible(db, current_state(), region_id).is_empty():
+		_event_cooldown = WorldEventServiceScript.COOLDOWN
+		return false
+	if _event_rng == null:
+		_event_rng = RngServiceScript.new()
+	var row: Resource = WorldEventServiceScript.pick(
+		db, current_state(), region_id, float(_event_rng.randf())
+	)
+	if row == null:
+		return false
+	_event_row = row
+	_event_timer = WorldEventServiceScript.LIFETIME
+	_place_event_marker()
+	_refresh_event_prompt()
+	return true
+
+
+## 临时标记：比地标小、淡色、会随事件消失（0.25.1 的「一明一暗两处提示」里明的那一处）。
+func _place_event_marker() -> void:
+	if world == null or player == null:
+		return
+	var span := WorldEventServiceScript.SPAWN_MAX - WorldEventServiceScript.SPAWN_MIN
+	var angle: float = float(_event_rng.randf()) * TAU if _event_rng != null else 0.0
+	var distance: float = WorldEventServiceScript.SPAWN_MIN + span * 0.5
+	var spot: Vector2 = player.position + Vector2(cos(angle), sin(angle)) * distance
+	var marker := Polygon2D.new()
+	marker.name = "WorldEventMark"
+	# 淡色光点：菱形，不抢地标的视线
+	marker.polygon = PackedVector2Array([
+		Vector2(0, -7), Vector2(7, 0), Vector2(0, 7), Vector2(-7, 0),
+	])
+	marker.color = Color(1.0, 0.83, 0.47, 0.55)
+	marker.position = spot
+	marker.z_index = -1
+	_add_to_world(ysort_node(), marker)
+	_event_marker = marker
+
+
+func _refresh_event_prompt() -> void:
+	if _event_label == null:
+		return
+	if _event_row == null:
+		_event_label.text = ""
+		return
+	# HUD 只说模糊的那一句（「远处有车马声」），不说「商队」——保留探索感
+	_event_label.text = "（附近有动静）%s" % str(_event_row.prompt_text_cn)
+
+
+func _despawn_world_event() -> void:
+	if _event_marker != null and is_instance_valid(_event_marker):
+		_event_marker.queue_free()
+	_event_marker = null
+	_event_row = null
+	_event_timer = 0.0
+	_event_cooldown = WorldEventServiceScript.COOLDOWN
+	_refresh_event_prompt()
+
+
+## 走到光点上 → 触发。一次性事件记账在 `WorldEventService` 里。
+##
+## 效果分两半：能纯逻辑结算的（物品／线索／判定）在服务层就结了；要挂在场景上的
+## （开货架、切战斗）由 `_apply_world_event_effect()` 动手——**只有它真的没配上时**，
+## 才补一句「效果还没接上」。
+func _trigger_world_event() -> Dictionary:
+	if _event_row == null:
+		return {"ok": false, "error": "没有活着的事件"}
+	var event_id := str(_event_row.event_id)
+	var result: Dictionary = WorldEventServiceScript.trigger(db, current_state(), event_id)
+	var effect: Dictionary = result.get("effect", {})
+	var text := str(result.get("text", ""))
+	var acted: Dictionary = _apply_world_event_effect(event_id, effect)
+	if bool(acted.get("ok", true)):
+		var effect_text := str(effect.get("text", ""))
+		if not effect_text.is_empty():
+			text += "　%s" % effect_text
+		var acted_text := str(acted.get("text", ""))
+		if not acted_text.is_empty():
+			text += "（%s）" % acted_text
+	elif not str(acted.get("error", "")).is_empty():
+		text += "（%s）" % str(acted["error"])
+	var wired: bool = (
+		bool(effect.get("applied", false))
+		or not str(effect.get("scene_action", "")).is_empty()
+		or not str(effect.get("text", "")).is_empty()
+	)
+	if not wired and not str(effect.get("note", "")).is_empty():
+		# 效果那半没配时**如实说**，但**不把开发用的说明（含表名/列名）甩给玩家**——
+		# 玩家可见文案不许出现表内 id（CopyGuard 当场会点名）。细节留在 `effect.note` 里给日志与用例。
+		text += "（这条事件的效果还没接上，先记下这段经过）"
+	_set_status(text)
+	_despawn_world_event()
+	result["scene_effect"] = acted
+	return result
+
+
+## 事件效果的**场景那一半**（0.28.0 Q64）。
+##
+## `trade` 就地开行商货架（`effect_id` 是**货架组**，靠 `ShopService` 找对应的店）；
+## `spar` 与判定奖励的 Boss 走既有的两条开战通道。返回 {ok, text, error}——
+## `text` 是补在事件文案后面的**玩家可见**短句，`error` 只在真的做不成时非空。
+func _apply_world_event_effect(event_id: String, effect: Dictionary) -> Dictionary:
+	var action := str(effect.get("scene_action", ""))
+	match action:
+		"open_shop":
+			var building_id: String = ShopServiceScript.building_for_shop_group(db, str(effect.get("id", "")))
+			if building_id.is_empty():
+				return {"ok": false, "text": "", "error": "这批货暂时支不起摊子"}
+			var opened: Dictionary = open_shop(building_id)
+			if not bool(opened.get("ok", false)):
+				return {"ok": false, "text": "", "error": "货担没能摆开"}
+			return {"ok": true, "text": "就地摆开了货担", "error": ""}
+		"start_battle":
+			var source_key := "world_event_%s" % event_id
+			var enemy_id := str(effect.get("battle_enemy_id", ""))
+			if not enemy_id.is_empty():
+				_start_boss_encounter(enemy_id, source_key)
+				return {"ok": true, "text": "来者不善", "error": ""}
+			var started: Dictionary = _start_team_battle(str(effect.get("id", "")), source_key)
+			if not bool(started.get("ok", false)):
+				return {"ok": false, "text": "", "error": "对方没接这场切磋"}
+			return {"ok": true, "text": "两边摆开了架势", "error": ""}
+		_:
+			return {"ok": true, "text": "", "error": ""}
+
+
+func world_event_active_id() -> String:
+	return str(_event_row.event_id) if _event_row != null else ""
+
+
+## 探针用：直接放一个事件（用例固定内容，避免依赖随机）
+func force_world_event(event_id: String, offset: Vector2 = Vector2(64, 0)) -> bool:
+	var row: Resource = db.get_row("world_event", event_id)
+	if row == null or player == null:
+		return false
+	_event_row = row
+	_event_timer = WorldEventServiceScript.LIFETIME
+	_event_cooldown = 0.0
+	if _event_marker != null and is_instance_valid(_event_marker):
+		_event_marker.queue_free()
+	var marker := Polygon2D.new()
+	marker.name = "WorldEventMark"
+	marker.polygon = PackedVector2Array([
+		Vector2(0, -7), Vector2(7, 0), Vector2(0, 7), Vector2(-7, 0),
+	])
+	marker.color = Color(1.0, 0.83, 0.47, 0.55)
+	marker.position = player.position + offset
+	_add_to_world(ysort_node(), marker)
+	_event_marker = marker
+	_refresh_event_prompt()
+	return true
 
 
 ## 揭雾：proximity_N 走进去自动揭开、discover_X 在 X 揭开后跟着揭开，结果写进存档
 func _check_reveals() -> void:
 	if world_map == null:
 		return
-	var revealed: PackedStringArray = world_map.apply_proximity_reveals(player.position, _node_positions())
+	var revealed: PackedStringArray = world_map.apply_proximity_reveals(Vector2(player.position), _node_positions())
+	# 持有类（`item_<id>`）：拿到藏宝图这种就立刻揭开，不必等走到刷新点旁边
+	revealed.append_array(world_map.apply_held_reveals())
 	if revealed.is_empty():
 		return
 	_refresh_map_label()
@@ -674,6 +1082,143 @@ func event_near_player() -> String:
 	return best
 
 
+## 收集大地图上的观察点（`Observe_<point_id>`，表里填 `region_id` 的那几条）。
+## 与判定位点一样挂在 `Markers/` 下；小地图那几条由 `local_map_controller` 收，
+## 同一行不会两边都生效（表里 scene_id／region_id 二选一）。
+func _collect_flavor_points() -> void:
+	flavor_points = []
+	if world == null:
+		return
+	for row: Resource in db.rows("flavor_point"):
+		if str(row.region_id).is_empty():
+			continue
+		var point_id := str(row.point_id)
+		var marker: Node2D = world.get_node_or_null(
+			"Markers/%s" % FlavorPointScript.marker_name_of(point_id)
+		)
+		if marker == null:
+			continue
+		# **看得见**：观察点本身只是一根 Marker2D，挂一枚小暖色菱形（决策 337）。
+		# 幂等——重复 setup() 不会挂第二枚（名字撞了 Godot 会自动改名，用例按名字找会出错）。
+		if marker.get_node_or_null(FlavorMarkerScript.NODE_NAME) == null:
+			marker.add_child(FlavorMarkerScript.new())
+		flavor_points.append({"point_id": point_id, "node": marker, "position": marker.global_position})
+
+
+## 玩家身边的观察点（最近的那个 point_id；没有就空串）
+func flavor_near_player() -> String:
+	if player == null:
+		return ""
+	var best := ""
+	var best_distance := EVENT_DISTANCE
+	for entry: Dictionary in flavor_points:
+		var distance: float = player.position.distance_to(entry["position"])
+		if distance <= best_distance:
+			best = str(entry["point_id"])
+			best_distance = distance
+	return best
+
+
+## 收大地图上的 NPC 站位（`Characters/npc_slot_0N` 或按 id 绑的 `npc_<npc_id>`，
+## 与地编摆位点的命名一致；两种都收，见 `框架说明.md` 决策 332）。
+func _collect_npc_slots() -> void:
+	npcs = []
+	var box: Node = world.get_node_or_null("Characters") if world != null else null
+	if box == null:
+		return
+	for child in box.get_children():
+		if child is Node2D and str(child.name).begins_with(NpcServiceScript.SLOT_PREFIX):
+			npcs.append(child)
+
+
+## 玩家身边的 NPC 位点（最近的那个；没有就 null）
+func npc_near_player() -> Node2D:
+	if player == null:
+		return null
+	var best: Node2D = null
+	var best_distance := NPC_DISTANCE
+	for slot in npcs:
+		if not instance_valid(slot):
+			continue
+		var distance: float = (slot as Node2D).global_position.distance_to(player.position)
+		if distance <= best_distance:
+			best = slot
+			best_distance = distance
+	return best
+
+
+func instance_valid(node) -> bool:
+	return node != null and is_instance_valid(node)
+
+
+## 位点 → 人：**两种命名都认**，判定只有一处（`NpcService.npc_for_slot`）——
+## 按 id 绑的 `npc_<npc_id>` 优先，占位命名 `npc_slot_0N` 按**编号顺序**对上**当前区域**的 `npc_def` 顺序。
+##
+## 区域取「最近的地标」（`current_region_id()`，与随机事件同一份判定）——
+## 老周的 `place_id` 就是 `n_luoyanpo`，与 `NpcService.npcs_at()` 的两套地点口径能对上。
+func _npc_for_slot(slot_id: String) -> String:
+	return NpcServiceScript.npc_for_slot(db, slot_id, current_region_id())
+
+
+## 按 E 跟人说话：开交往面板（设计 19 §三）。内容还没到的人**不静默**——
+## `npc_panel` 会如实写「这个人还没有配 npc_def 行」。
+func _talk_to_npc(slot: Node2D) -> Dictionary:
+	var npc_id := _npc_for_slot(str(slot.name))
+	if npc_id.is_empty():
+		# 与 `local_map_controller` 同一句话：**表名不进玩家可见文案**（决策 329）。
+		push_error("[overworld] NPC 站位 %s 按编号顺序取不到 npc_def 行（本区域只有 %d 个人）"
+				% [str(slot.name), NpcServiceScript.npcs_at(db, current_region_id()).size()])
+		var text := "眼下没什么可说的（这个人还没配台词）"
+		_set_status("%s：%s" % [NPC_SPEAKER, text])
+		return {"ok": true, "npc": str(slot.name), "speaker": NPC_SPEAKER, "text": text}
+	return open_npc(npc_id)
+
+
+## 开 NPC 交往面板：`mode` 与设计 0.28.0 的 Q62 一致（E 进交互菜单、Q 只读看信息）
+func open_npc(npc_id: String, mode: String = NpcPanelMode.MODE_INTERACT) -> Dictionary:
+	if npc_panel != null and is_instance_valid(npc_panel):
+		_push_overlay("npc")
+		npc_panel.state_override = current_state()
+		npc_panel.npc_id = npc_id
+		npc_panel.mode = mode
+		npc_panel.refresh()
+		return {"ok": true, "error": "", "reopened": true}
+	var panel = load(NPC_SCENE).instantiate()
+	if panel == null:
+		return {"ok": false, "error": "NPC 面板加载失败"}
+	panel.name = "NpcPanel"
+	panel.state_override = current_state()
+	panel.npc_id = npc_id
+	panel.mode = mode
+	panel.return_handler = func() -> void: close_npc()
+	add_child(panel)
+	panel.setup()
+	npc_panel = panel
+	_push_overlay("npc")
+	return {"ok": true, "error": "", "reopened": false}
+
+
+func close_npc() -> void:
+	_close_overlay("npc")
+
+
+## 看一个观察点：只出一句碎句——不发奖励、不锁任何路（设计 20 §3.2）
+##
+## **0.32.0 补**：读过顺手记一枚 `flag_obs_<point_id>`。大地图上的观察点（落雁坡车辙那条）
+## 正是幕二「免战」选项的前置来源——不补这条，那枚旗标全项目没有出处，选项就是死的。
+func read_flavor_point(point_id: String) -> Dictionary:
+	var row: Resource = db.get_row("flavor_point", point_id)
+	if row == null:
+		return {"ok": false, "error": "没有这个观察点"}
+	var text := str(row.text_cn)
+	_set_status(text)
+	var state = current_state()
+	if state != null:
+		state.set_flag("flag_obs_%s" % point_id)
+		autosave("观察点")
+	return {"ok": true, "point_id": point_id, "text": text}
+
+
 ## 走一次事件判定：判定 → 奖励／失败说明；「指向某地」的奖励会顺带揭开地标
 func resolve_event(check_id: String) -> Dictionary:
 	var result: Dictionary = event_service().resolve(check_id)
@@ -685,6 +1230,38 @@ func resolve_event(check_id: String) -> Dictionary:
 		# 大地图这边与明雷遭遇共用同一套「写会话 + 切战斗场景」的收尾（见 `_on_encountered`）。
 		_start_boss_encounter(str(reward.get("id", "")), check_id)
 	return result
+
+
+## 事件触发的团队战（Q64 的「切磋」：`we_disciple` → `team_wanderer_disciple`）。
+##
+## 与明雷那次（`_on_encountered`）同一口径，只是没有刷新点行——队伍直接从
+## `enemy_team` 取，`source_key` 记成事件名（不进副本完成度、不参与明雷刷新）。
+## `is_elite=false`：切磋不是精英战，掉落与首杀都不该按精英走。
+func _start_team_battle(team_id: String, source_key: String) -> Dictionary:
+	var team: Resource = db.get_row("enemy_team", team_id)
+	if team == null:
+		push_error("[Overworld] 事件的队伍不在表里：%s" % team_id)
+		return {"ok": false, "error": "no_team"}
+	var state = current_state()
+	var difficulty := str(state.difficulty_id) if state != null else "normal"
+	var encounter = EncounterScript.build(db, {
+		"spawn_id": source_key,
+		"source_scene": "overworld",
+		"source_key": source_key,
+		"team_id": team_id,
+		"is_elite": false,
+	}, team, EncounterScript.CONTACT_FRONT, difficulty)
+	var session_node = session()
+	if session_node != null:
+		session_node.pending_encounter = encounter
+		session_node.set_world_position(player.position if player != null else Vector2.ZERO, current_state())
+	_set_status(encounter.headline())
+	if battle_switch_handler.is_valid():
+		battle_switch_handler.call(encounter)
+		return {"ok": true, "team_id": team_id, "error": ""}
+	# 正式游玩时没有人接管：直接切战斗场景（与明雷那条 `_on_encountered` 同一口径）
+	_change_scene(BATTLE_SCENE)
+	return {"ok": true, "team_id": team_id, "error": ""}
 
 
 ## 事件判定触发的 Boss 战：单人一支队，构造与「小地图隐藏 Boss」同一口径
@@ -714,6 +1291,11 @@ func _start_boss_encounter(enemy_id: String, source_key: String) -> void:
 	_set_status(encounter.headline())
 	if battle_switch_handler.is_valid():
 		battle_switch_handler.call(encounter)
+		return
+	# 以前这里**没有兜底**：正式游玩时没人接管 `battle_switch_handler`，于是
+	# 「判定过了 → Boss 现身」只会改一行状态文字，战斗永远不开（用例把 handler 接上了，
+	# 所以这一层只看得到 0.28.0 接 Q64 的 `we_patrol` 时才暴露）。
+	_change_scene(BATTLE_SCENE)
 
 
 ## 收集大地图上的入口位点（Portal_<scene_id>），以及进入门槛
@@ -818,30 +1400,138 @@ func autosave(reason: String) -> Dictionary:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# 驿站界面开着的时候输入归界面（E 不再触发交互，Esc 先关界面）
-	if (waypoint_panel != null and is_instance_valid(waypoint_panel)) or (clue_panel != null and is_instance_valid(clue_panel)):
+	# 浮层栈（设计 18.1，与 `local_map_controller` 同一套口径）：
+	# **全局快捷键在任何浮层里都可用**，Esc 一次只弹一层，栈空才回枢纽页。
+	if event.is_action_pressed("ui_cancel"):
+		if close_top_overlay():
+			return
+		_change_scene(PLACEHOLDER_SCENE)
 		return
 	if event.is_action_pressed("open_character"):
-		var tree := _tree()
-		if tree != null:
-			_change_scene("res://scenes/character_screen.tscn")
-	elif event.is_action_pressed("ui_cancel"):
-		_change_scene(PLACEHOLDER_SCENE)
-	elif event.is_action_pressed("interact"):
+		open_character_overlay(0)
+		return
+	if event.is_action_pressed("open_bag"):
+		open_character_overlay(2)
+		return
+	if event.is_action_pressed("show_clues"):
+		open_clues()
+		return
+	# 看 NPC 信息（设计 0.28.0 的 Q62，与 `local_map_controller` 同一套）：Q 只读、E 才交互
+	if event.is_action_pressed("npc_info"):
+		var who := npc_near_player()
+		# 与 `local_map_controller` 同一套：**失败也要出声**（见那边的注释，2026-10-04 实机反馈）
+		if who == null:
+			_set_status("这附近没有可以看的人（Q 是看人，E 才是搭话）")
+			return
+		var info_id := _npc_for_slot(str(who.name))
+		if info_id.is_empty():
+			_set_status("这个人还没配信息（位点 %s 没绑到表里）" % str(who.name))
+			return
+		open_npc(info_id, NpcPanelMode.MODE_INFO)
+		return
+	if overlays().depth() > 0:
+		return
+	if event.is_action_pressed("interact"):
 		var check_id := event_near_player()
 		if not check_id.is_empty():
 			resolve_event(check_id)
 		elif post_station_near():
 			open_waypoint()
+		elif npc_near_player() != null:
+			_talk_to_npc(npc_near_player())
+		elif not flavor_near_player().is_empty():
+			read_flavor_point(flavor_near_player())
 		else:
 			_set_status("这里暂时没什么可交互的（走进地标可以进小地图）")
-	elif event.is_action_pressed("show_clues"):
-		open_clues()
+
+
+# ------------------------------------------------------------------ 浮层栈
+
+func overlays():
+	if _overlays == null:
+		_overlays = OverlayStackScript.new()
+	return _overlays
+
+
+func _push_overlay(id: String) -> Array:
+	var closed: Array = overlays().push(id)
+	for closed_id: String in closed:
+		_free_overlay(closed_id)
+	return closed
+
+
+func close_top_overlay() -> bool:
+	var top_id: String = overlays().pop()
+	if top_id.is_empty():
+		return false
+	_free_overlay(top_id)
+	return true
+
+
+func _close_overlay(id: String) -> void:
+	for extra: String in overlays().remove(id):
+		_free_overlay(extra)
+	_free_overlay(id)
+	# 与 `local_map_controller._close_overlay` 同一条口径（决策 347）：浮层里的动作（行商买药等）
+	# 可能刚刚满足某条引导口径，关浮层时重算一次，别等下一次换图。
+	GuideServiceScript.refresh_derived_flags(db, current_state())
+	_refresh_guide()
+
+
+func _free_overlay(id: String) -> void:
+	match id:
+		"clue":
+			if clue_panel != null and is_instance_valid(clue_panel):
+				clue_panel.queue_free()
+			clue_panel = null
+		"waypoint":
+			if waypoint_panel != null and is_instance_valid(waypoint_panel):
+				waypoint_panel.queue_free()
+			waypoint_panel = null
+		"shop":
+			if shop_panel != null and is_instance_valid(shop_panel):
+				shop_panel.queue_free()
+			shop_panel = null
+		"npc":
+			if npc_panel != null and is_instance_valid(npc_panel):
+				npc_panel.queue_free()
+			npc_panel = null
+		"character":
+			var panel := find_child("CharacterPanel", true, false)
+			if panel != null:
+				panel.queue_free()
+		_:
+			pass
+
+
+## 角色与行囊（Tab／I）：**浮层**，与大地图同屏——切场景会把驿站那一层丢掉
+func open_character_overlay(tab_index: int = 0) -> Dictionary:
+	if overlays().has("character"):
+		_push_overlay("character")   # 已在栈里 → 弹回它
+		var existing := find_child("CharacterPanel", true, false)
+		if existing != null:
+			existing.state_override = current_state()
+			existing.refresh()
+			existing.select_tab(tab_index)
+		return {"ok": true, "error": "", "reopened": true}
+	var panel = load(CHARACTER_SCENE).instantiate()
+	if panel == null:
+		return {"ok": false, "error": "角色界面场景加载失败"}
+	panel.name = "CharacterPanel"
+	panel.state_override = current_state()
+	panel.back_handler = func() -> void: _close_overlay("character")
+	add_child(panel)
+	panel.setup()
+	panel.select_tab(tab_index)
+	_push_overlay("character")
+	return {"ok": true, "error": "", "reopened": false}
 
 
 ## 开线索本：野外事件按地标分组（在大地图上按 K）
 func open_clues() -> Dictionary:
 	if clue_panel != null and is_instance_valid(clue_panel):
+		_push_overlay("clue")
+		clue_panel.state_override = current_state()
 		clue_panel.refresh()
 		return {"ok": true, "error": "", "reopened": true}
 	var panel = load(CLUE_SCENE).instantiate()
@@ -854,14 +1544,46 @@ func open_clues() -> Dictionary:
 	add_child(panel)
 	panel.setup()
 	clue_panel = panel
+	_push_overlay("clue")
 	_set_status("线索本：野外的可交互点按地标列在这里（Esc 或点「离开」出来）")
 	return {"ok": true, "error": "", "reopened": false}
 
 
 func close_clues() -> void:
-	if clue_panel != null and is_instance_valid(clue_panel):
-		clue_panel.queue_free()
-	clue_panel = null
+	_close_overlay("clue")
+
+
+## 开货架：设计 19 §四的「货商车队」在野外就地开张（`bld_caravan` 没有地图位点）。
+## 节点名与「谁卖什么」全走 `building_def`／`shop_stock`，这里只负责把界面盖上来。
+func open_shop(building_id: String) -> Dictionary:
+	var service = ShopServiceScript.new(db, current_state())
+	if service.building(building_id) == null:
+		return {"ok": false, "error": "这个货架不在表里", "building_id": building_id}
+	if shop_panel != null and is_instance_valid(shop_panel):
+		_push_overlay("shop")
+		shop_panel.state_override = current_state()
+		shop_panel.open_building(building_id)
+		return {"ok": true, "error": "", "building_id": building_id, "reopened": true}
+	var panel = load(SHOP_SCENE).instantiate()
+	if panel == null:
+		return {"ok": false, "error": "商店场景加载失败", "building_id": building_id}
+	panel.name = "ShopPanel"
+	panel.state_override = current_state()
+	panel.building_id = building_id
+	panel.return_handler = func() -> void: close_shop()
+	add_child(panel)
+	panel.setup()
+	shop_panel = panel
+	_push_overlay("shop")
+	var welcome := "行商货担：货比城镇贵、还限量（Esc 或点「离开」出来）"
+	panel.show_message(welcome)
+	_set_status(welcome)
+	return {"ok": true, "error": "", "building_id": building_id, "reopened": false}
+
+
+func close_shop() -> void:
+	_close_overlay("shop")
+	_set_status("行商收起货担，继续赶路")
 
 
 ## 身边是不是驿站（`Markers/Node_n_post_station`）
@@ -877,6 +1599,8 @@ func post_station_near() -> bool:
 ## 开驿站界面：传送目标与难度切换都在这一个面板里
 func open_waypoint() -> Dictionary:
 	if waypoint_panel != null and is_instance_valid(waypoint_panel):
+		_push_overlay("waypoint")
+		waypoint_panel.state_override = current_state()
 		waypoint_panel.refresh()
 		return {"ok": true, "error": "", "reopened": true}
 	var panel = load(WAYPOINT_SCENE).instantiate()
@@ -892,6 +1616,7 @@ func open_waypoint() -> Dictionary:
 	add_child(panel)
 	panel.setup()
 	waypoint_panel = panel
+	_push_overlay("waypoint")
 	var welcome := "驿站：可以传送到已探索的地标，也能在这里改难度（Esc 或点「离开」出来）"
 	panel.show_message(welcome)
 	_set_status(welcome)
@@ -899,9 +1624,7 @@ func open_waypoint() -> Dictionary:
 
 
 func close_waypoint() -> void:
-	if waypoint_panel != null and is_instance_valid(waypoint_panel):
-		waypoint_panel.queue_free()
-	waypoint_panel = null
+	_close_overlay("waypoint")
 	_set_status("离开驿站")
 
 
@@ -1079,12 +1802,134 @@ func _run_world_selftest() -> void:
 	ok = ok and guide_no_overlap
 	lines.append("引导行不与上面三行叠字=%s（y=%.0f）" % [guide_no_overlap, _guide_label.position.y if _guide_label != null else -1.0])
 
+	# 浮层栈（设计 18.1）：驿站 → 角色（Tab）→ Esc 回驿站 → Esc 关驿站
+	# 大地图上的 NPC（设计 19：`npc_def.place_id` 允许写区域节点）——
+	# 老周就在落雁坡，按 E 应该能开他的交往面板；这条以前只在小地图里接，大地图上按 E 什么也不发生。
+	var npc_ok := true
+	npc_ok = npc_ok and npcs.size() >= 1
+	if not npcs.is_empty():
+		var slot: Node2D = npcs[0]
+		player.position = slot.global_position
+		npc_ok = npc_ok and npc_near_player() == slot
+		npc_ok = npc_ok and current_region_id() == "n_luoyanpo"
+		var npc_id := _npc_for_slot(str(slot.name))
+		npc_ok = npc_ok and npc_id == "npc_caiyao"
+		var opened: Dictionary = _talk_to_npc(slot)
+		npc_ok = npc_ok and bool(opened.get("ok", false)) and npc_panel != null
+		close_npc()
+		npc_ok = npc_ok and npc_panel == null
+		lines.append("大地图 NPC（落雁坡 %s 可交互）=%s" % [slot.name, npc_ok])
+	else:
+		lines.append("大地图 NPC：一个位点都没有（应为 1 个）")
+	ok = ok and npc_ok
+
+	var stack_ok := true
+	open_waypoint()
+	stack_ok = stack_ok and overlays().depth() == 1 and waypoint_panel != null
+	open_character_overlay(0)
+	stack_ok = stack_ok and overlays().depth() == 2 and waypoint_panel != null
+	open_character_overlay(2)
+	var char_panel := find_child("CharacterPanel", true, false)
+	stack_ok = stack_ok and overlays().depth() == 2 and char_panel != null and char_panel.current_tab() == 2
+	stack_ok = stack_ok and close_top_overlay() and overlays().depth() == 1 and waypoint_panel != null
+	stack_ok = stack_ok and close_top_overlay() and overlays().is_empty() and waypoint_panel == null
+	ok = ok and stack_ok
+	lines.append("浮层栈（驿站→角色→Esc 回驿站→Esc 关驿站）=%s" % stack_ok)
+
+	# 随机事件（设计 19 §四／0.25.1）：强制放一个 → HUD 出模糊提示 → 超时/走远消失
+	# → 再放一个走上去触发 → 一次性事件记账。
+	var event_ok := true
+	event_ok = event_ok and force_world_event("we_lost_item", Vector2(64, 0))
+	event_ok = event_ok and world_event_active_id() == "we_lost_item"
+	event_ok = event_ok and _event_label != null and _event_label.text.contains("路边")
+	lines.append("随机事件提示（HUD 模糊提示、不说事件名）=%s（%s）" % [event_ok, _event_label.text if _event_label != null else "-"])
+	_event_timer = 0.01
+	_update_world_event(0.1)
+	event_ok = event_ok and world_event_active_id().is_empty()
+	event_ok = event_ok and _event_label != null and _event_label.text.is_empty()
+	lines.append("超时后光点与提示一起消失=%s" % event_ok)
+	# 触发用一条**一次性**事件（`repeatable=0`）：这样能顺带验「发过就记账」。
+	force_world_event("we_hermit", Vector2(8, 0))
+	_update_world_event(0.1)
+	event_ok = event_ok and world_event_active_id().is_empty()
+	event_ok = event_ok and _status.text.contains("老人")
+	event_ok = event_ok and current_state().has_flag(WorldEventServiceScript.done_flag("we_hermit"))
+	lines.append("走上去触发（一次性记账）=%s（%s）" % [event_ok, _status.text])
+
+	# 事件效果的**场景那一半**（0.28.0 Q64）：开货架要真盖上来、切磋要真把遭遇交给场景层。
+	# 服务层那半（发物品／记线索／走判定）在 `tests/test_world_event.gd` 里验。
+	force_world_event("we_caravan", Vector2(8, 0))
+	_update_world_event(0.1)
+	event_ok = event_ok and overlays().has("shop") and shop_panel != null
+	event_ok = event_ok and _status.text.contains("货担")
+	lines.append("货商车队就地开张（%s）=%s" % [_status.text, overlays().has("shop") and shop_panel != null])
+	close_shop()
+	event_ok = event_ok and not overlays().has("shop") and shop_panel == null
+	var before_spar: int = captured.size()
+	force_world_event("we_disciple", Vector2(8, 0))
+	_update_world_event(0.1)
+	var spar_ok: bool = captured.size() == before_spar + 1
+	if spar_ok:
+		spar_ok = str(captured[before_spar].team_id) == "team_wanderer_disciple"
+		spar_ok = spar_ok and not bool(captured[before_spar].is_elite)
+	event_ok = event_ok and spar_ok
+	lines.append("门派弟子历练把遭遇交给场景层=%s" % spar_ok)
+	ok = ok and event_ok
+
 	# 玩家可见文案守卫：整页控件文字里不许出现表内 id 形态（决策 244）
 	var copy_hits: PackedStringArray = CopyGuardScript.id_tokens(self)
 	ok = ok and copy_hits.is_empty()
 	lines.append(CopyGuardScript.ascii_line(self))
 	if not copy_hits.is_empty():
 		lines.append("COPY 命中：%s" % "；".join(copy_hits))
+	# 观察点**看得见**（设计 15 §一「可交互物暖色提亮」，决策 337）：大地图那几条也要有那枚标记。
+	var highlight_ok := not flavor_points.is_empty()
+	for point: Dictionary in flavor_points:
+		var mark = (point["node"] as Node2D).get_node_or_null(FlavorMarkerScript.NODE_NAME)
+		highlight_ok = highlight_ok and FlavorMarkerScript.is_visible_highlight(mark)
+	ok = ok and highlight_ok
+	lines.append("观察点可见标记 %d 个 ok=%s" % [flavor_points.size(), highlight_ok])
+
+	# 地名常驻（设计 11 §三「地标一旦揭开，地名常驻」＋14 §六「大区名常驻 HUD 左上角」）。
+	# 2026-10-04 实机反馈「大地图地名不常驻」——而**两条都没有断言**：揭开了没字、或 HUD 那串
+	# 的大区名还写着代码兜底串，都会照样 `SELF-TEST: OK`。这里把两条都钉住：
+	#   ① 揭开一个地标之后，它的名字 Label **真的可见**（不是"画了但藏着"）；
+	#   ② HUD 领头那个大区名**来自 `map_region.region_name_cn`**（不许是代码里编的字符串）。
+	if world_map != null:
+		world_map.apply_initial_reveals()     # 幂等：开局该揭开的那几个（含起始地标）
+		# **断言的前提要自己铺**：地编正在按 0.31.2 重建大地图（画布换成 2048×1536，这一轮的 Marker
+		# 还是旧坐标）→ "走近揭开"那条路此刻不可靠。所以这里直接揭开（`reveal_node` 就是状态层 API、
+		# `WorldMapService._reveal()` 也是调它），断言的仍然是"**揭开之后名字必须看得见**"本身。
+		# 注意用 **`world_map.state`** 而不是 `current_state()`：自检夹具是在控制器 `_ready` **之后**
+		# 才把 `state_override` 塞进来的，两个引用不是同一个对象（2026-10-04 实测踩到：
+		# 直接调 `current_state().reveal_node()` 返回 false，而 `world_map` 那边仍然是 0 个揭开）。
+		# 自检夹具是「先建控制器、后塞 `state_override`」，于是 `world_map` 还绑在**旧状态**上——
+		# 不重建的话它永远是「0 个揭开」，这条断言也就永远量不到东西（2026-10-04 实测踩到）。
+		if current_state() != null:
+			world_map = WorldMapServiceScript.new(db, current_state())
+			world_map.apply_initial_reveals()
+			world_map.state.reveal_node(START_NODE)
+		refresh_node_labels()
+	var revealed_with_name := false
+	for node_id: String in _node_labels.keys():
+		if world_map != null and world_map.is_revealed(node_id) and (_node_labels[node_id] as Label).visible:
+			revealed_with_name = true
+			break
+	# **名字与 `icon` 解耦**（0.31.2）：只要那张图上有 `Node_<id>` 位点，就该有它的名字 Label——
+	# 设计侧清空四个兴趣点的 `icon` 之后，这条是"名字还在"的保证（今天 8 个都有图标，所以它还不咬人）。
+	var labelable := 0
+	for row: Resource in db.rows("map_region"):
+		if world.get_node_or_null("Markers/Node_%s" % str(row.node_id)) != null:
+			labelable += 1
+	var name_ok := revealed_with_name and _node_labels.size() == labelable
+	var region_row: Resource = db.get_row("map_region", START_NODE)
+	var want_region := str(region_row.region_name_cn).strip_edges() if region_row != null else ""
+	name_ok = name_ok and not want_region.is_empty() and _region_name() == want_region
+	ok = ok and name_ok
+	lines.append("地名常驻（labels=%d／该有名字的位点 %d 个／已揭开 %d 个／可见=%s／HUD 大区名「%s」来自表=%s）=%s"
+		% [_node_labels.size(), labelable, world_map.revealed_count() if world_map != null else -1, revealed_with_name,
+			want_region, not want_region.is_empty() and _region_name() == want_region, name_ok])
+
 	for line: String in lines:
 		print("  " + line)
 	print("WORLD SELF-TEST: %s" % ("OK" if ok else "FAILED"))

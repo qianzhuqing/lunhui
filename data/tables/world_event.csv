@@ -1,0 +1,9 @@
+﻿event_id,name_cn,kind,region_tags,weight,condition,repeatable,effect_kind,effect_id,prompt_text_cn,text_cn,note
+we_caravan,货商车队,caravan,n_luoyanpo;n_huangcun,20,,1,trade,shop_caravan,远处有车马声,一支商队正在路边歇脚，货担堆得老高,可以买卖；货比城镇贵但有限量品
+we_disciple,门派弟子历练,disciple,n_luoyanpo;n_heifengzhai,15,,1,spar,team_wanderer_disciple,林子里有人练功,几个别派弟子在此历练，见你走近便抱拳,可切磋；赢了好感与经验
+we_wanderer,江湖人问路,wanderer,n_huangcun;n_ferry_abandoned,12,,1,hint,trig_stealth_clear,有人在路边张望,一个江湖人向你打听去黑风寨的路,给线索或收一点问路钱
+we_hermit,隐士奇遇,omen,n_cave_collapse,4,,0,gift,eq_sword_04,洞口外好像坐着人,山洞外坐着一位老人，闭着眼，像在等谁,一次性；给一部武学或一件装备
+we_lost_item,路遗,omen,n_luoyanpo;n_huangcun,18,,1,gift,item_herb,路边似有东西,路边有个被遗落的包裹，四下无人,捡到材料或消耗品
+we_patrol,镇抚司巡查,official,n_qingfengyi;n_post_station,6,,1,check,ev_patrol_check,前面有官差盘查,一队佩刀的人正在盘查过路商旅,过事件判定；不过关要花钱打点
+we_rumor,驿站风声,omen,n_post_station,10,,1,hint,trig_wine,驿站那边有人围坐,驿站的旅人带来一个消息,给一条线索；主线线索的重要来源
+we_dog,野狗拦路,beast,n_luoyanpo,14,,1,gift,item_pelt,附近有犬吠,几只野狗围着一具倒毙的牲口,赶走或绕开；赶走得皮

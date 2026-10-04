@@ -1,5 +1,7 @@
-﻿step_id,sort_order,condition,text_cn,note
-gs_01,1,start,去清风驿的告示板看看——那里有营生的消息,开局第一目标：给玩家唯一引子
-gs_02,2,flag_board_read,到客栈找燕小七同行——一个人上山是送死,教玩家招募；第一个同伴补输出
-gs_03,3,flag_ch_ci_joined,在校场木桩上练到 5 级，把家伙和药备齐,教玩家练级与商店循环
-gs_04,4,flag_supplies_ready,出城上山，去黑风寨救人,备齐后进入正题
+﻿step_id,chapter_id,sort_order,condition,text_cn,condition_spec,note
+gs_01,chapter_01,1,start,去清风驿的告示板看看。营生的消息都在那儿贴着。,开局即显示,给玩家唯一引子
+gs_02,chapter_01,2,flag_board_read,到客栈找燕小七同行。一个人上山，是送死。,与告示板交互后,第一个同伴补输出
+gs_03,chapter_01,3,flag_ch_ci_joined,在校场木桩上练到 5 级，把家伙和药备齐。,燕小七入队后,教练级与商店循环
+gs_04,chapter_01,4,flag_supplies_ready,出城往落雁坡走，从那儿上山。,等级≥5 且背包里有回血道具,备齐后；0.32.0 起落雁坡要走到跟前才揭开，原句「出城上山」玩家会在大地图上摸不着北
+gs_05,chapter_01,5,flag_arrived_heifengzhai,进了寨子，把人救出来。,首次进入黑风寨前寨,副本三层
+gs_06,chapter_01,6,flag_shen_rescued,带沈小姐回清风驿复命。,在地牢与沈小姐交互后,回城触发章节结算

@@ -58,3 +58,9 @@ pf_taixu_01,太虚功·静心,passive,taixu,2,,gen,8,shop,bld_tavern,
 pf_luohan_01,罗汉功·铁布衫,passive,luohan,3,,gen,12,drop,en_bd_lone_wolf,
 pf_drunk_01,醉里乾坤·醉意,passive,zuidj,4,,gen,18,hidden,trig_wine,
 pf_drunk_02,醉里乾坤·忘忧,passive,zuidj,5,,gen,25,drop,en_hidden_drunk,
+pf_yipian_01,遗篇·归元,passive,yipian,5,,gen,25,item,item_scroll_yipian,前朝遗篇；第一章最高品质内功之一，只能从石隙迷窟拿
+pf_xuanwei_zhbai,玄微心法·知白,passive,xuanwei,4,,int,18,origin,opp_scholar,书生本命机遇（清风驿书铺·书箱底）
+pf_chensha_buhuan,沉沙心法·不还,passive,chensha,4,,str,18,origin,opp_gang,林铁山本命机遇（落雁坡旧镖车·车底暗格）
+pf_wudu_huandu,五毒心法·还毒,passive,wudu,4,,int,18,origin,opp_du,苏九娘本命机遇（荒村验毒·老药人送匣）
+pf_qingluo_ying,青骡心法·影,passive,qingluo,4,,agi,18,origin,opp_ci,燕小七本命机遇（黑风寨后寨·义兄刀鞘）
+pf_tiaoxi_huichun,调息诀·回春,passive,tiaoxi,4,,con,18,origin,opp_qi,白清和本命机遇（清风驿复命·沈雁回补方）

@@ -7,6 +7,14 @@ const GameStateScript := preload("res://src/core/game_state.gd")
 const SaveStoreScript := preload("res://src/core/save_store.gd")
 const RoamingEnemyScript := preload("res://src/world/roaming_enemy.gd")
 const OverworldControllerScript := preload("res://src/world/overworld_controller.gd")
+## 观察点的可见标记（设计 15 §一「可交互物暖色提亮」，决策 337）
+const FlavorMarkerScript := preload("res://src/world/flavor_marker.gd")
+## 剧情节点的记账旗标名（`story_done_<node_id>`）只有一处出处
+const StoryServiceScript := preload("res://src/core/story_service.gd")
+## 走路速度的判据要拿它算（0.31.2：相机 2× 之后按「清风驿→驿站 ≥4 秒」重估）
+const PlayerControllerScript := preload("res://src/world/player_controller.gd")
+## 条件地表层的判据（0.32.0）只有一处出处：`WorldMapService.conditional_layer_rule`
+const WorldMapServiceScript := preload("res://src/core/world_map_service.gd")
 
 const SAVE_TEST_DIR := "res://.logs/test_save_timing/run_world"
 
@@ -21,6 +29,7 @@ func run() -> void:
 		return
 	var db = get_db()
 	var state = solo_state(db)
+	_check_walk_speed_criterion(db)
 	# 0.8.1：大地图明雷默认**关着**（`feature_toggle.overworld_roaming_enemy=0`）。
 	# 这个用例验的是明雷机制本身，所以先把会话级开关打开（跑完在 _check_roaming_toggle 里还原）。
 	var session_node = scene_tree.root.get_node_or_null("GameSession")
@@ -51,11 +60,60 @@ func run() -> void:
 	_check_pinned_interaction_distances()
 	_check_roaming_toggle(db, state)
 	_check_field_buff_hud(controller)
+	_check_flavor_highlights(controller)
 	# 区域招募（09 §3.2 的落雁坡那条路）：用**独立的一份存档与大地图实例**跑，
 	# 免得把上面那份共用 state（队伍人数会被它改）带偏
 	_check_region_recruit(db)
+	_check_region_origin_gift(db)
+	_check_conditional_layer(db)
 	scene_tree.root.remove_child(controller)
 	controller.free()
+
+
+## 条件地表层（`Conditional`，0.32.0）：大地图上那条「落雁坡西 → 石隙迷窟」的碎石细径，
+## 道具是 `item_treasure_map`——到手之前它在地图上不存在（「藏宝图上的一条线」，16 §3.2）。
+##
+## 用**独立的一份存档＋大地图实例**跑：藏宝图是钥匙道具（`Inventory.remove_item` 拒删），
+## 拿主存档验会把「图已经在背包里」这个前提带歪；这里从干净状态走「没有 → 有」。
+## 判据不写死在代码里：控制器问的是这张图上持有类解锁的地标（`WorldMapService.conditional_layer_rule`）。
+func _check_conditional_layer(db) -> void:
+	var state = solo_state(db)
+	var map = load(OVERWORLD_RUN).instantiate()
+	map.state_override = state
+	scene_tree.root.add_child(map)
+	map.setup()
+	var layer: TileMapLayer = map.world.get_node_or_null("Conditional") as TileMapLayer
+	check_not_null(layer, "大地图有 `Conditional` 层（藏宝图那条细径铺在它上面）")
+	check_not_null(map.player, "独立实例里玩家在场")
+	if layer == null:
+		scene_tree.root.remove_child(map)
+		map.free()
+		return
+	check_gt(
+		float(layer.get_used_cells().size()), 0.0,
+		"这条细径不是空的（%d 格）" % layer.get_used_cells().size(),
+	)
+	var rule: Dictionary = WorldMapServiceScript.conditional_layer_rule(db, map._landmark_node_ids())
+	check_eq(
+		"、".join(rule["items"]), "item_treasure_map",
+		"条件是藏宝图（来自表里石隙迷窟的 unlock_condition，不是代码常量）",
+	)
+	check_false(layer.visible, "开局没有藏宝图 → 细径不在地图上")
+	# 走到石隙迷窟的地标跟前也不该露出来（它自己是「持图才揭开」）
+	var node: Node2D = map.world.get_node_or_null("Markers/Node_n_shixi")
+	if node != null:
+		map.player.global_position = node.global_position
+		map._check_reveals()
+	check_false(map.world_map.is_revealed("n_shixi"), "没图时石隙迷窟本身也不在地图上")
+	check_false(layer.visible, "走到跟前也还是看不到那条细径")
+	var added: Dictionary = state.inventory.add_item(db, "item_treasure_map", 1)
+	check_true(bool(added.get("ok", false)), "藏宝图能放进背包：%s" % str(added.get("error", "")))
+	map._apply_conditional_layer()
+	check_true(layer.visible, "拿到藏宝图 → 细径当场出现（不用回大地图再进一次）")
+	map._check_reveals()
+	check_true(map.world_map.is_revealed("n_shixi"), "图到手，石隙迷窟这个地标也跟着揭开")
+	scene_tree.root.remove_child(map)
+	map.free()
 
 
 ## 走到 `Markers/Node_n_luoyanpo` 跟前 → 把林铁山收进来（设计 09 §3.2 的区域招募）。
@@ -251,10 +309,15 @@ func _check_enter_position_rule(db, controller) -> void:
 ## 以前 `_check_portal()` 每帧只看距离，而从小地图回大地图时人正好站在入口位点上
 ## （设计 02 说「返回大地图原位置」，而原位置就是走进入口的那一步）——
 ## 于是「出图 → 立刻又被送回图」，玩家永远回不到大地图（真踩过）。
-func _check_portal_arm(db, controller, state) -> void:
-	var local_row: Resource = db.get_row("map_local", "scene_qingfengyi")
-	var region: Resource = db.get_row("map_region", str(local_row.parent_node))
-	var portal_pos := Vector2(float(region.pos_x), float(region.pos_y))
+func _check_portal_arm(_db, controller, state) -> void:
+	# 站上**图上那个入口位点**：`Portal_<scene_id>` 就是玩家走进小地图的那一格。
+	# （它和 `map_region.pos_*` 应当同坐标，那条由 `test_map_assets` 的地标坐标断言单独盯——
+	# 这里再去拿表里的坐标会变成"同一个事实量两遍"，而且地编重建大地图期间会假红。）
+	var portal_marker: Node2D = controller.world.get_node_or_null("Markers/Portal_scene_qingfengyi")
+	check_not_null(portal_marker, "大地图上有清风驿的入口位点")
+	if portal_marker == null:
+		return
+	var portal_pos := portal_marker.global_position
 	var session_node = scene_tree.root.get_node_or_null("GameSession")
 	var switched: Array = []
 	controller.scene_change_handler = func(path: String) -> void: switched.append(path)
@@ -284,8 +347,12 @@ func _check_portal_arm(db, controller, state) -> void:
 	controller._portal_armed = true
 
 
-## 地标图标（设计 02「已探索的地标显示在地图上」+ 07 §8.1 的 7 个图标 id）：
+## 地标图标（设计 02「已探索的地标显示在地图上」+ 07 §8.1 的图标 id + 16 §3.5 的类型规则）：
 ## 已揭开画正常图标、没揭开不画（不剧透）、本章去不了的用暗版、脚下最近的高亮。
+##
+## **0.32.0 起兴趣点不给图标**（靠地形认：山体上的洞口／焦黑屋舍群／水岸）——
+## 所以「揭开后图标出现」这条要用**有图标的地标**验，这里挑 `icon_wild` 的落雁坡；
+## 荒村与渡口反过来验「揭开后**只有名字、没有图标**」。
 func _check_node_icons(controller) -> void:
 	var city: Sprite2D = controller.node_icon("n_qingfengyi")
 	check_not_null(city, "清风驿有图标节点")
@@ -295,8 +362,8 @@ func _check_node_icons(controller) -> void:
 			str(city.texture.resource_path).contains("icon_town"),
 			"用的是表里配的 icon_town：%s" % str(city.texture.resource_path),
 		)
-	# 荒村要 proximity_5 才揭开，此刻应该还是暗的（黑风寨不行：落雁坡默认已揭开，
-	# discover_luoyanpo 的链式规则会把它一起揭开——这条口径本身是对的）
+	# 荒村要 proximity_5 才揭开，此刻应该还是暗的（黑风寨不行：走到落雁坡就会把它
+	# 链式揭开——discover_luoyanpo 这条口径本身是对的）
 	var hidden_icon: Sprite2D = controller.node_icon("n_huangcun")
 	check_not_null(hidden_icon, "荒村有图标节点")
 	if hidden_icon != null:
@@ -313,7 +380,7 @@ func _check_node_icons(controller) -> void:
 	if hidden_label != null:
 		check_false(hidden_label.visible, "还没揭开的地标不写名字")
 
-	# 走到荒村跟前揭开：图标当场出现，而且是正常版（它没被锁）
+	# 走到荒村跟前揭开：**名字当场出现，图标仍然不画**（它是兴趣点，0.32.0 靠地形认）
 	var ruin: Node2D = controller.world.get_node_or_null("Markers/Node_n_huangcun")
 	check_not_null(ruin, "地图上有荒村位点")
 	if ruin != null:
@@ -325,14 +392,25 @@ func _check_node_icons(controller) -> void:
 			check_eq(ruin_label.text, "荒村", "名字是荒村")
 		var ruin_icon: Sprite2D = controller.node_icon("n_huangcun")
 		if ruin_icon != null:
-			check_true(ruin_icon.visible, "揭开后荒村图标出现")
+			check_false(ruin_icon.visible, "揭开了也不画图标：荒村是兴趣点（16 §3.5）")
+
+	# 走到落雁坡跟前揭开：这个有 `icon_wild`，揭开后要用**正常版**（它没被锁）
+	var slope: Node2D = controller.world.get_node_or_null("Markers/Node_n_luoyanpo")
+	check_not_null(slope, "地图上有落雁坡位点")
+	if slope != null:
+		controller.player.global_position = slope.global_position + Vector2(0, 40)
+		controller._check_reveals()
+		var slope_icon: Sprite2D = controller.node_icon("n_luoyanpo")
+		check_not_null(slope_icon, "落雁坡有图标节点")
+		if slope_icon != null:
+			check_true(slope_icon.visible, "揭开后落雁坡图标出现")
 			check_true(
-				str(ruin_icon.texture.resource_path).contains("icon_ruin")
-					and not str(ruin_icon.texture.resource_path).contains("_dim"),
-				"没锁的地标用正常版图标：%s" % str(ruin_icon.texture.resource_path),
+				str(slope_icon.texture.resource_path).contains("icon_wild")
+					and not str(slope_icon.texture.resource_path).contains("_dim"),
+				"没锁的地标用正常版图标：%s" % str(slope_icon.texture.resource_path),
 			)
 
-	# 走到废弃渡口跟前：它是本章去不了的，图标要用暗版
+	# 走到废弃渡口跟前：它是本章去不了的**兴趣点**——所以是「有名字（压暗）、没有图标」
 	var ferry: Node2D = controller.world.get_node_or_null("Markers/Node_n_ferry_abandoned")
 	check_not_null(ferry, "地图上有废弃渡口位点")
 	if ferry != null:
@@ -341,10 +419,14 @@ func _check_node_icons(controller) -> void:
 		var ferry_icon: Sprite2D = controller.node_icon("n_ferry_abandoned")
 		check_not_null(ferry_icon, "废弃渡口有图标节点")
 		if ferry_icon != null:
-			check_true(ferry_icon.visible, "揭开后图标出现")
+			check_false(ferry_icon.visible, "渡口是兴趣点：揭开了也不画图标")
+		var ferry_label: Label = controller.find_child("NodeLabel_n_ferry_abandoned", true, false)
+		check_not_null(ferry_label, "废弃渡口有名字节点")
+		if ferry_label != null:
+			check_true(ferry_label.visible, "揭开后名字出现")
 			check_true(
-				str(ferry_icon.texture.resource_path).contains("_dim"),
-				"本章去不了的地标用暗版图标：%s" % str(ferry_icon.texture.resource_path),
+				ferry_label.modulate.r < 0.9,
+				"本章去不了的地标名字压暗：%s" % str(ferry_label.modulate),
 			)
 
 	# 高亮：站到清风驿旁边才亮，站远了不亮
@@ -412,14 +494,29 @@ func _check_sneak(controller, captures: Array) -> void:
 func _check_world_map(controller, state) -> void:
 	check_not_null(controller.world_map, "大地图有揭开服务")
 	check_true(controller.map_progress_text().contains("地图"), "HUD 显示已探索进度：%s" % controller.map_progress_text())
-	check_true(controller.world_map.is_revealed("n_luoyanpo"), "落雁坡一开始就可见")
+	# 0.32.0：开局公开的只有城镇与驿站（野外要自己走到跟前）
+	check_true(controller.world_map.is_revealed("n_qingfengyi"), "清风驿一开始就可见（城镇默认公开）")
+	check_true(controller.world_map.is_revealed("n_post_station"), "驿站一开始就可见")
+	check_false(controller.world_map.is_revealed("n_luoyanpo"), "落雁坡是野外，开局不亮（0.32.0）")
 	# 揭雾在画面上要看得见：已经揭开的地标周围，雾格被擦掉
 	var fog_before: int = controller.fog_cells()
 	check_gt(float(fog_before), 0.0, "地图上有雾层（%d 格）" % fog_before)
-	check_lt(
-		float(fog_before), 3267.0,
-		"初始揭开的地标周围已经擦掉一部分雾（剩 %d 格）" % fog_before,
-	)
+	# 不写死总格数（画布从 1024×768 改成 2048×1536 时那个数必然变）：
+	# 直接问「两个默认公开的地标脚下擦干净了没有」＋「没揭开的还盖着」
+	var fog_layer = controller.world.get_node_or_null("Fog")
+	check_not_null(fog_layer, "大地图有 Fog 图层")
+	if fog_layer != null:
+		for node_id: String in ["n_qingfengyi", "n_post_station"]:
+			var marker: Node2D = controller.world.get_node_or_null("Markers/Node_%s" % node_id)
+			check_not_null(marker, "地图上有 %s 位点" % node_id)
+			if marker == null:
+				continue
+			var cell: Vector2i = fog_layer.local_to_map(fog_layer.to_local(marker.global_position))
+			check_eq(fog_layer.get_cell_source_id(cell), -1, "%s 脚下的雾已经擦掉" % node_id)
+		var hidden: Node2D = controller.world.get_node_or_null("Markers/Node_n_heifengzhai")
+		if hidden != null:
+			var hidden_cell: Vector2i = fog_layer.local_to_map(fog_layer.to_local(hidden.global_position))
+			check_ne(fog_layer.get_cell_source_id(hidden_cell), -1, "没揭开的地标还盖着雾（不剧透）")
 
 	# 走到塌陷山洞跟前 → 揭开（proximity_3）
 	var cave: Node2D = controller.world.get_node_or_null("Markers/Node_n_cave_collapse")
@@ -460,7 +557,8 @@ func _check_world_map(controller, state) -> void:
 	check_true(controller.waypoint_panel == null, "关掉后引用清空")
 
 	# 事件判定：翻墙（敏 9 ≥ 9 过）、推门（力 5 < 8 失败）、追足迹（生存 1 < 3 失败）
-	check_eq(controller.events.size(), 7, "大地图有 7 个事件判定位点：%s" % str(controller.events.size()))
+	# 0.28.0 的 A7 加了官道关卡 `Event_ev_patrol_check`（与随机事件 we_patrol 共用一行判定）
+	check_eq(controller.events.size(), 8, "大地图有 8 个事件判定位点：%s" % str(controller.events.size()))
 	var wall: Node2D = controller.world.get_node_or_null("Markers/Event_ev_climb_wall")
 	check_not_null(wall, "地图上有翻墙判定位点")
 	if wall != null:
@@ -489,7 +587,10 @@ func _check_spawn(db, controller) -> void:
 	check_eq(controller.enemies.size(), 17, "roaming_spawn 的 17 个明雷都生成")
 	check_not_null(controller.player, "玩家在场")
 	check_not_null(controller.camera, "相机在场")
-	check_eq(controller.camera.limit_right, 1024, "相机沿用地图边界")
+	# 画布是设计 0.31.2 定死的 **2048×1536**（64×48 格）——相机边界必须跟着它，
+	# 不然玩家能走出地形边缘、或者半张图看不到（见 07 §十二 与 11 §三）
+	check_eq(controller.camera.limit_right, 2048, "相机右边界 = 画布宽 2048")
+	check_eq(controller.camera.limit_bottom, 1536, "相机下边界 = 画布高 1536")
 
 	var patrol = _enemy(controller, "sp_lp_patrol_01")
 	check_not_null(patrol, "巡逻明雷在场")
@@ -530,8 +631,32 @@ func _check_spawn(db, controller) -> void:
 		)
 	# 精英发光（设计 07）：精英挂光晕、普通明雷不挂
 	check_true(lone.has_elite_glow(), "精英明雷挂上了发光标识")
-	check_not_null(lone.get_node_or_null("EliteGlow"), "发光节点叫 EliteGlow（编辑器里能直接看到）")
-	check_eq(lone.elite_marker_id(), "marker_elite_red", "地编的精英贴图 id 仍在表里（等美术到位换贴图）")
+	var lone_glow: Node = lone.get_node_or_null("EliteGlow")
+	check_not_null(lone_glow, "发光节点叫 EliteGlow（编辑器里能直接看到）")
+	check_eq(lone.elite_marker_id(), "marker_elite_red", "地编的精英贴图 id 在表里")
+	# 2026-10-04：美术交付了 `marker_elite_red`，精英标识必须**真的用那张贴图**——
+	# 以前是程序化八边形顶着，换图这一步漏做的话玩家看到的还是旧光晕，而验收不会有任何反应。
+	var glow_sprite := lone_glow as Sprite2D
+	check_not_null(glow_sprite, "精英标识用的是贴图（不再拿程序化光晕顶）")
+	if glow_sprite != null:
+		check_eq(
+			glow_sprite.texture.resource_path,
+			RoamingEnemyScript.elite_marker_texture_path("marker_elite_red"),
+			"用的就是表里点名的那张贴图（按 id 拼路径，表里换图只改一处）",
+		)
+	# 兜底：贴图缺失时退回程序化光晕——资产没到不该变成「精英看不出是精英」
+	check_eq(RoamingEnemyScript.elite_marker_texture_path(""), "", "空 id 不拼路径")
+	check_false(
+		ResourceLoader.exists(RoamingEnemyScript.elite_marker_texture_path("no_such_marker")),
+		"不存在的贴图 id 不会凭空出现（拼错时走兜底）",
+	)
+	var probe := RoamingEnemyScript.new()
+	probe.is_elite = true
+	probe.row = {"elite_marker": "no_such_marker"}
+	var fallback: Node2D = probe._make_elite_glow()
+	check_true(fallback is Polygon2D, "贴图缺失时退回程序化光晕（不静默失去精英标识）")
+	fallback.free()
+	probe.free()
 	check_false(wolf.has_elite_glow(), "普通明雷不发光")
 	check_eq(wolf.elite_marker_id(), "", "普通明雷没有精英贴图 id")
 
@@ -767,3 +892,126 @@ func _check_cleared(db, state) -> void:
 	check_gt(float(cleared_count), 0.0, "回到大地图后已清的明雷是隐藏状态")
 	scene_tree.root.remove_child(controller)
 	controller.free()
+
+
+## 观察点在图上**看得见**（设计 15 §一「可交互物要在低饱和背景里暖色提亮」，决策 337）。
+##
+## 大地图那几条（落雁坡旧镖车那种）与小地图各收各的，但视觉只有一处出处
+## （`src/world/flavor_marker.gd`）——两边都挂，这里查大地图这一半。
+func _check_flavor_highlights(controller) -> void:
+	var points: Array = controller.flavor_points
+	check_gt(float(points.size()), 0.0, "大地图收了观察点位点（%d 个）" % points.size())
+	for point: Dictionary in points:
+		var node := point["node"] as Node2D
+		var mark = node.get_node_or_null(FlavorMarkerScript.NODE_NAME)
+		check_not_null(mark, "大地图观察点 %s 挂着可见标记" % str(point["point_id"]))
+		if mark != null:
+			check_true(
+				FlavorMarkerScript.is_visible_highlight(mark),
+				"标记是暖色提亮且可见（%s）" % str(point["point_id"])
+			)
+			check_eq(mark.position, Vector2.ZERO, "标记贴着位点（不偏）")
+
+
+## 本命机遇里唯一把地点写在**区域节点**上的那条（21 §九：林铁山的「镖车暗格」在落雁坡，
+## `story_node.opp_gang` 的 `place_id = n_luoyanpo`）——走到落雁坡就该领到《沉沙心法·不还》。
+##
+## **这一段以前只有服务层用例**（`test_story` 显式 `claim_for(db, gang, "n_luoyanpo")`），
+## 而大地图控制器当时把**空串**当 place——`StoryService.place_matches` 对空串的口径是
+## 「只匹配 `place_id` 留空的节点」，于是**游戏里这条路根本走不通**：
+## **用例过的路与游戏走的路不是同一条**（2026-10-04 修，见 `框架说明.md` 决策 345）。
+func _check_region_origin_gift(db) -> void:
+	# ① 人在清风驿（另一个区域）时：这条**不该**被领
+	var idle = GameStateScript.new_game(db, "normal", PackedStringArray(["ch_gang"]))
+	var idle_map = load(OVERWORLD_RUN).instantiate()
+	idle_map.state_override = idle
+	scene_tree.root.add_child(idle_map)
+	idle_map.setup()
+	check_false(
+		idle.has_flag(StoryServiceScript.done_flag("opp_gang")),
+		"人在清风驿区域时领不到落雁坡那条（区域要匹配）"
+	)
+	scene_tree.root.remove_child(idle_map)
+	idle_map.free()
+
+	# ② 力不够 18（林铁山 1 级只有 12）：走到落雁坡会**记成领过**，但不假装学会——
+	#    门槛口径见 21 §9.6 ①（★4 与 18 都不动，把 `learn_req_attr` 换成该角色的**本命可加点**属性）
+	var weak = GameStateScript.new_game(db, "normal", PackedStringArray(["ch_gang"]))
+	var weak_map = load(OVERWORLD_RUN).instantiate()
+	weak_map.state_override = weak
+	scene_tree.root.add_child(weak_map)
+	weak_map.setup()
+	var weak_node: Node2D = weak_map.world.get_node_or_null("Markers/Node_n_luoyanpo")
+	check_not_null(weak_node, "大地图上有落雁坡地标")
+	if weak_node != null:
+		weak_map.player.global_position = weak_node.global_position
+		# 每帧那条路（`_process` 里跟区域变化）——测试里直接调它，等价于「走过去」
+		weak_map._track_region_for_story()
+		check_true(
+			weak.has_flag(StoryServiceScript.done_flag("opp_gang")),
+			"走到落雁坡就记成领过（不会一直挂在待领名单里反复弹）"
+		)
+		check_false(
+			weak.is_learned("ch_gang", "pf_chensha_buhuan"),
+			"力不够 18 时不假装学会"
+		)
+		check_true(
+			str(weak_map._status.text).contains("沉沙心法·不还"),
+			"状态栏把这条播报出来（%s）" % str(weak_map._status.text)
+		)
+		# 同一区域再走一遍不该重复播报
+		weak_map._track_region_for_story()
+		check_true(weak.has_flag(StoryServiceScript.done_flag("opp_gang")), "同一条只领一次")
+	scene_tree.root.remove_child(weak_map)
+	weak_map.free()
+
+	# ③ 把本命可加点属性（力）加到 18：同一段路真的把 ★4 发到手
+	var ready = GameStateScript.new_game(db, "normal", PackedStringArray(["ch_gang"]))
+	ready.char_levels["ch_gang"] = 3
+	for _i in 6:
+		ready.spend_point(db, "ch_gang", "str")
+	check_eq(int(ready.allocations_of("ch_gang").get("str", 0)), 6, "力加了 6 点（12 ＋ 6 ＝ 18）")
+	var map = load(OVERWORLD_RUN).instantiate()
+	map.state_override = ready
+	scene_tree.root.add_child(map)
+	map.setup()
+	var node: Node2D = map.world.get_node_or_null("Markers/Node_n_luoyanpo")
+	if node != null:
+		map.player.global_position = node.global_position
+		map._track_region_for_story()
+		check_true(
+			ready.is_learned("ch_gang", "pf_chensha_buhuan"),
+			"力够了就把《沉沙心法·不还》真发到手（这条路以前走不通）"
+		)
+		check_true(ready.has_flag(StoryServiceScript.done_flag("opp_gang")), "领过就记账")
+	scene_tree.root.remove_child(map)
+	map.free()
+
+
+## 走路速度的判据（设计 0.31.2）：相机改 2× 之后按「**清风驿走到驿站不短于约 4 秒**」重估 WALK_SPEED。
+##
+## 为什么写成用例而不是写进注释：它是**跨文件**的一条约束——`WALK_SPEED`（`player_controller`）
+## 与两个地标的坐标（`map_region`）。设计再动坐标、或者谁改了速度，这条会跟着红，
+## 提示"重估一次"，而不是靠人记得当初那个 4 秒是怎么来的。
+##
+## 口径：用**直线距离**（实际要顺着路走，路程只会更长）当**下界**——下界都得 ≥4 秒，
+## 真实路程自然满足。宁可严一点，也别拿"路程大概多长"糊过去。
+func _check_walk_speed_criterion(db) -> void:
+	var from: Resource = db.get_row("map_region", "n_qingfengyi")
+	var to: Resource = db.get_row("map_region", "n_post_station")
+	check_not_null(from, "表里有清风驿这个地标")
+	check_not_null(to, "表里有驿站这个地标")
+	if from == null or to == null:
+		return
+	var distance := Vector2(float(from.pos_x), float(from.pos_y)).distance_to(
+		Vector2(float(to.pos_x), float(to.pos_y))
+	)
+	var speed := float(PlayerControllerScript.WALK_SPEED)
+	check_gt(speed, 0.0, "WALK_SPEED 是正数（%.1f）" % speed)
+	var seconds := distance / speed
+	check_true(
+		seconds >= 4.0,
+		"清风驿→驿站直线 %.1fpx ÷ WALK_SPEED %.1f = **%.2f 秒**，短于设计判据的 4 秒——"
+			% [distance, speed, seconds]
+		+ "要么把 WALK_SPEED 压下来、要么确认地标坐标是不是又被放近了（设计 0.31.2）",
+	)

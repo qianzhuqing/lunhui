@@ -36,6 +36,9 @@ extends "res://src/data/table_row.gd"
 @export var special_effect: String = ""
 @export var drop_only: bool = false
 @export var desc: String = ""
+## 图标 id：**值＝`equip_id`**（设计 15 §六＋A14，0.31.1）。与 `item_base.icon` 同形——
+## 界面按 `assets/icons/equip/<icon>.png` 取图、空则退回 `equip_id`，所以"还没出图"不等于数据错。
+@export var icon: String = ""
 
 
 ## 直接加派生数值的部分，键为 stat_def.stat_id。

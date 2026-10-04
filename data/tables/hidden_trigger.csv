@@ -1,8 +1,9 @@
 ﻿trigger_id,name_cn,scene_id,room_id,trigger_type,required_item,required_condition,reward_type,reward_id,once_only,clue_source,note
-trig_wine,醉刀客,scene_heifengzhai,hf1_deep,item,item_wine_gourd,,boss,en_hidden_drunk,0,牢房老者自言自语;当铺老板提到疯子,给酒葫芦触发隐藏Boss
+trig_wine,醉刀客,scene_heifengzhai,hf1_deep,item,item_wine_gourd,,boss,en_hidden_drunk,0,牢房老者自言自语;当铺老板提到疯子;渡口封桩上刻着「漕帮」二字，刻缝里嵌着洗不掉的酒渍,给酒葫芦触发隐藏Boss（第三条线索 0.32.0 补，位点见 flavor_point 的 ob_dukou_pile_04）
 trig_dig,后山密道,scene_cave,cave_02,space,item_pickaxe,,room,hf3_dungeon,1,樵夫抱怨山后塌方;洞内骸骨,挖通后直通后山地牢
 trig_brazier,三火盆密室,scene_heifengzhai,hf1_brazier,sequence,,sequence=1-3-2,equip,eq_head_01,1,聚义厅挂歪的画;山寨喽啰闲聊,按1-3-2次序点燃
 trig_stealth_clear,潜行入寨,scene_heifengzhai,hf3_gate,behavior,,flag_stealth_full=1,event,event_stealth_reward,0,悬赏板提示守卫松懈;换防规律,全程未被发现则获得额外剧情与宝箱
 trig_poison_kill,毒杀毒手,scene_heifengzhai,hf2_poison,kill_style,item_poison_wine,kill_with=poison,skillbook,item_scroll_wudu,0,毒堂药罐;药铺老板提到毒酒,毒杀获得独门秘籍，正面击杀不掉
 trig_chest_all,宝箱全开,scene_heifengzhai,hf1_vault,completion,,chest_open_rate=1.0,room,hf1_secret,1,副本完成度界面,前寨宝箱全开浮现隐藏门
 trig_rusty_sword,锈剑共鸣,scene_heifengzhai,hf2_hall,carry,item_rusty_sword,,event,event_sword_resonance,1,荒野锈剑的描述文本;聚义厅门上的剑痕,解锁一剑式
+trig_shixi_reward,石隙遗篇,scene_shixi,mz_06,item,item_treasure_map,,skillbook,item_scroll_yipian,1,藏宝图上的笔迹;石台的刻字,带着藏宝图走到石台；研读残卷学会归元

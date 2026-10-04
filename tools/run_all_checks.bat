@@ -42,6 +42,8 @@ call "tools\check_scene.bat" "cultivate" "res://scenes/cultivate_screen.tscn" "-
 call "tools\check_scene.bat" "waypoint"  "res://scenes/waypoint_screen.tscn"  "--waypoint-selftest"  "" && (echo   [OK] scene:waypoint& set /a PASSED_STEPS+=1) || (echo   [FAIL] scene:waypoint& set "FAILED_STEPS=!FAILED_STEPS! waypoint")
 call "tools\check_scene.bat" "clue"      "res://scenes/clue_screen.tscn"      "--clue-selftest"      "" && (echo   [OK] scene:clue& set /a PASSED_STEPS+=1) || (echo   [FAIL] scene:clue& set "FAILED_STEPS=!FAILED_STEPS! clue")
 call "tools\check_scene.bat" "dungeon"   "res://scenes/dungeon_screen.tscn"   "--dungeon-selftest"   "" && (echo   [OK] scene:dungeon& set /a PASSED_STEPS+=1) || (echo   [FAIL] scene:dungeon& set "FAILED_STEPS=!FAILED_STEPS! dungeon")
+call "tools\check_scene.bat" "creation"  "res://scenes/creation_screen.tscn"  "--creation-selftest" "" && (echo   [OK] scene:creation& set /a PASSED_STEPS+=1) || (echo   [FAIL] scene:creation& set "FAILED_STEPS=!FAILED_STEPS! creation")
+call "tools\check_scene.bat" "npc"       "res://scenes/npc_panel.tscn"        "--npc-selftest"       "" && (echo   [OK] scene:npc& set /a PASSED_STEPS+=1) || (echo   [FAIL] scene:npc& set "FAILED_STEPS=!FAILED_STEPS! npc")
 call "tools\check_scene.bat" "menu"      "res://scenes/main_menu.tscn"        "--menu-selftest"      "--save-dir=res://.logs/menu_selftest" && (echo   [OK] scene:menu& set /a PASSED_STEPS+=1) || (echo   [FAIL] scene:menu& set "FAILED_STEPS=!FAILED_STEPS! menu")
 
 rem Final step: the run must not leave an engine process behind. A selftest that wedges (misspelled

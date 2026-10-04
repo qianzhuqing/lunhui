@@ -1,0 +1,25 @@
+﻿talent_id,name_cn,category,cost,desc
+tal_sword_bone,天生剑骨,combat,3,剑系招式伤害 +10%，并额外获得一部剑法
+tal_wu_chi,武痴,combat,2,招式熟练度成长 +30%
+tal_yi_tong,一通百通,combat,3,内功容量 +1 格
+tal_wu_jian,悟剑,combat,2,高星武学的修习门槛 -3
+tal_dan_shi,天生武胆,combat,3,招式伤害 +15%，但内伤抗性 -20%
+tal_shen_li,天生神力,body,2,力 +4、敏 -2
+tal_tie_gu,铜皮铁骨,body,2,体 +4、敏 -2
+tal_jiu_ming,九命,body,3,气血上限 +15%，且败北气血恢复额外提高
+tal_tie_shen,铁打身板,body,1,内伤抗性 +10%
+tal_qing_yan,身轻如燕,agile,2,敏 +4、体 -2
+tal_yan_ji,眼疾手快,agile,2,暴击率 +5%、命中 +5%
+tal_xian_fa,先发制人,agile,3,每场战斗第一回合必定先手
+tal_guo_mu,过目不忘,mind,2,智 +4、力 -2
+tal_hui_gen,慧根,mind,3,悟性 +3
+tal_dao_ti,天生道体,mind,3,根骨 +3
+tal_jing_xin,静心,mind,1,内力回复 +20%
+tal_jian_duo,见多识广,social,2,全部事件判定 +1
+tal_san_cun,三寸不烂之舌,social,2,文学判定 +2
+tal_xuan_hu,悬壶济世,social,1,医术判定 +2
+tal_bai_xiao,江湖百晓生,social,3,事件判定的难度门槛 -2
+tal_jia_di,家底殷实,fortune,1,起始铜钱 +500
+tal_guo_ri,会过日子,fortune,1,商店买入价 -10%
+tal_cai_mi,财迷,fortune,2,掉落机缘 +10%
+tal_cang_shu,藏书癖,fortune,2,图鉴奖励翻倍（每 5 部给 +2 而非 +1）

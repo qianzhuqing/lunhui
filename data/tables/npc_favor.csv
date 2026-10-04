@@ -1,0 +1,13 @@
+﻿npc_id,initial_favor,favor_max,like_item_ids,like_categories,dislike_item_ids,gift_favor,spar_favor,steal_difficulty
+npc_wang_tie,0,100,item_iron,material,,5,8,6
+npc_zhang_gui,0,100,item_med_02,consumable,,5,6,4
+npc_qian_dafu,0,100,item_herb,material,,5,5,8
+npc_sun_zhanggui,0,100,item_med_01,consumable,,5,4,5
+npc_caiyao,10,100,item_herb,material,,6,6,5
+npc_huangcun,-10,100,item_med_01,consumable,,8,0,3
+npc_qiutu,20,100,item_med_01,consumable,,8,0,0
+ch_ci,0,100,,,,5,5,0
+ch_gang,0,100,,,,5,5,0
+ch_du,0,100,,,,5,5,0
+ch_qi,0,100,,,,5,5,0
+npc_shen_yanhui,0,100,,,,5,0,0

@@ -88,7 +88,7 @@ func _build_placeholder() -> void:
 	label.name = "Name"
 	label.text = str(row.name_cn)
 	label.position = Vector2(-26, -34)
-	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_font_size_override("font_size", 12)
 	label.add_theme_color_override("color", Color(1, 1, 1, 0.85))
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
 	add_child(label)

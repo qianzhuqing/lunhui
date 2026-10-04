@@ -47,6 +47,11 @@ const CASES := [
 	{"name": "副本楼层为 0", "table": "dungeon_room", "id": "hf1_yard", "column": "floor", "value": 0, "expect": "floor"},
 	{"name": "判定来源缺前缀", "table": "event_check", "id": "ev_gamble", "column": "check_source", "value": "luk", "expect": "check_source"},
 	{"name": "敌人血量下限", "table": "enemy_base", "id": "en_wolf", "column": "hp_base", "value": 0, "expect": "hp_base"},
+	# 设计 10 §二 连带规则①的**容量**那半边（2026-10-04 补的规则）：屠夫身上那部内功占格 2 → 3，
+	# 3＋1＝4 格 > 它 8 级／根骨 8 的容量 3——构建期必须点名它
+	{"name": "敌人内功超编（占格被写大）", "table": "skill_passive", "id": "pf_chensha_02", "column": "slot_cost", "value": 3, "expect": "内功超编"},
+	# 装备图标列（A14，0.31.1）：`icon` 必须等于自己的 equip_id——写错不会报错，只会画出别人家的图标
+	{"name": "装备图标列指向别人", "table": "equip_base", "id": "eq_sword_02", "column": "icon", "value": "eq_sword_01", "expect": "icon"},
 	{"name": "内功被动加成为 0", "table": "skill_passive_stat", "id": "pf_xuanwei_01|stat:qi_max", "column": "value", "value": 0, "expect": "白填"},
 	{"name": "困难档比普通还弱", "table": "difficulty_config", "id": "hard", "column": "enemy_atk_mul", "value": 0.5, "expect": "难度越高数值反而越小"},
 	{"name": "难度解锁短语写错", "table": "difficulty_config", "id": "nightmare", "column": "unlock_condition", "value": "通关第一章并击败醉刀客（误）", "expect": "永远解锁不了"},

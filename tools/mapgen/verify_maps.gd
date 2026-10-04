@@ -23,17 +23,25 @@ const SPAWN_CSV := "res://data/tables/roaming_spawn.csv"
 const ROOM_CSV := "res://data/tables/dungeon_room.csv"
 const TRIGGER_CSV := "res://data/tables/hidden_trigger.csv"
 const EVENT_CSV := "res://data/tables/event_check.csv"
+const FLAVOR_CSV := "res://data/tables/flavor_point.csv"
+const NPC_CSV := "res://data/tables/npc_def.csv"
 
 const OVERWORLD := "res://scenes/maps/overworld.tscn"
 const PARENT_REGION := "jiangnan_east"
 const MAX_TILE_LAYERS := 4
+## 大地图 0.32.0 起多一层 **`Conditional`**（条件地表：石隙那条细径，16 §3.2）——
+## 地面 4 层 ＋ 条件地表 = 5 层。其余五张小地图照旧 ≤4。
+const MAX_TILE_LAYERS_OVERWORLD := 5
 const MAX_TILES := 5000
+## 大地图 64×48＝**3072 格/层**：光「草底 ＋ 雾」两层就 6000 出头，`5000` 那条是按
+## 32×24（768 格/层）定的。0.31.2 扩容后按面积重算，大地图单独给一档上限。
+const MAX_TILES_OVERWORLD := 12000
 const MAX_SPAWNS_PER_REGION := 8
 ## 明雷离所属区域地标的最大格数：归属检查用的宽松半径（表里只给了 region_id）。
 const SPAWN_REGION_RADIUS := 12
 ## 挂钩点前缀（07 文档第二节）。Team_ / Exit_ 是 2026-10-02 审计后补的两条。
 const MARKER_PREFIXES := ["Node_", "Portal_", "Room_", "Chest_", "Spawn_", "Event_",
-	"Trigger_", "Patrol_", "Team_", "Exit_"]
+	"Trigger_", "Patrol_", "Team_", "Exit_", "Observe_", "Sign_"]
 
 var _problems: Array[String] = []
 ## 表本身的问题（不是地图的问题），单独回报设计侧，不判地图失败。
@@ -66,7 +74,9 @@ func _run() -> int:
 	_check_exit_markers(local_scenes)
 	_check_npc_slots(local_scenes)
 	_check_facility_markers(local_scenes)
-	_check_ground_not_solid()
+	_check_observe_points(local_scenes)
+	_check_only_decor_blocks()
+	_check_conditional_layers()
 	_check_budget()
 
 	for path: String in _scenes:
@@ -175,6 +185,7 @@ func _check_overworld() -> void:
 	_check_walkable(scene, "大地图·地标", _group_names(names, "Node_"))
 	_check_walkable(scene, "大地图·明雷", _group_names(names, "Spawn_"))
 	_check_walkable(scene, "大地图·判定位点", _group_names(names, "Event_"))
+	_check_walkable(scene, "大地图·观察点", _group_names(names, "Observe_"))
 	_check_patrols(scene)
 	print("[check] 大地图：Node %d / Portal %d / Spawn %d / Patrol %d / Event %d" % [
 		_group_names(names, "Node_").size(), _group_names(names, "Portal_").size(),
@@ -260,6 +271,17 @@ func _check_local_maps(local_scenes: Array) -> void:
 		if not scene_id.is_empty():
 			event_expected[str(row["room_id"])] = "Event_" + str(row["check_id"])
 	_compare_room_items("Event_", event_expected, "event_check.check_id")
+
+	# 观察点（设计 20 §3.2／0.29.1）：表里 `flavor_point.csv` 一条一个位点，
+	# 位点名 `Observe_<point_id>`。房间级的按房间比；`region_id` 那几条在大地图上，
+	# 由「大地图 Marker 并集」那条统一收（前缀已进 MARKER_PREFIXES）。
+	var flavor_expected := {}
+	for row: Dictionary in MapKit.read_csv(FLAVOR_CSV):
+		var scene_id := str(row.get("scene_id", ""))
+		if scene_id.is_empty():
+			continue
+		flavor_expected[str(row["room_id"])] = "Observe_" + str(row["point_id"])
+	_compare_room_items("Observe_", flavor_expected, "flavor_point.point_id")
 
 
 ## 房间内的挂钩点：同名 id 分在不同房间文件夹下，这里按「名字出现过」比对。
@@ -547,22 +569,29 @@ func _check_exit_markers(local_scenes: Array) -> void:
 			_problems.append("%s：缺少回程出口 %s" % [scene_id, exit_name])
 
 
-## 07 §9 第 12 条 ＋ §12：城镇 NPC 站位用 `Characters/npc_slot_0N` 占位（对话表还没建，所以没有 id 可对）。
+## 07 §9 第 12 条 ＋ §12：城镇 NPC 站位**两种命名都认**——占位 `Characters/npc_slot_0N`，
+## 或按 id 绑的 `Characters/npc_<npc_id>`（对话表 0.31.0 落表后就可以这么改，代码侧已支持，见决策 332）。
 ##
-## 没表可对不等于没得查——这里钉三件**能钉的事**：**命名**、**没卡在障碍里**、**从出生点走得到**。
+## 没表可对不等于没得查——这里钉四件**能钉的事**：**命名**（含按 id 绑的那个 id 真的在这个地点上）、
+## **没卡在障碍里**、**从出生点走得到**、**城镇的站位数量**。
 ## 一个卡在墙里／走不到的 NPC，等对话表到了也点不着；而这类问题在验收里原本**完全看不见**
 ## （`_walk` 只收 `MARKER_PREFIXES` 里那几种，`npc_slot_` 不在其中）。
 func _check_npc_slots(local_scenes: Array) -> void:
 	var type_by_scene := {}
 	for row: Dictionary in MapKit.read_csv(LOCAL_CSV):
 		type_by_scene[str(row["scene_id"])] = str(row.get("scene_type", ""))
+	# 按 id 绑的位点要能核：`npc_<npc_id>` 得是 `npc_def` 里的人，而且**就在这张图上**
+	# （`place_id` 命中本场景，或命中本场景的父区域节点——与 `NpcService.npcs_at` 同一口径）。
+	var npc_place := {}
+	for row: Dictionary in MapKit.read_csv(NPC_CSV):
+		npc_place[str(row.get("npc_id", ""))] = str(row.get("place_id", ""))
 	for scene_id: String in local_scenes:
 		var path := "res://scenes/maps/%s.tscn" % scene_id
 		var scene: Dictionary = _scenes.get(path, {})
 		if scene.is_empty():
 			continue
 		var root: Node = scene["root"]
-		var slots: Array = root.find_children("npc_slot_*", "Node2D", true, false)
+		var slots: Array = root.find_children("npc_*", "Node2D", true, false)
 		var is_town := str(type_by_scene.get(scene_id, "")) == "town"
 		if slots.is_empty():
 			if is_town:
@@ -575,9 +604,20 @@ func _check_npc_slots(local_scenes: Array) -> void:
 		var reachable: Dictionary = _flood(scene, spawn_cell) if spawn_cell.x >= 0 and decor != null else {}
 		for slot: Node in slots:
 			var slot_name := String(slot.name)
-			var suffix := slot_name.substr("npc_slot_".length())
-			if not suffix.is_valid_int():
-				_problems.append("%s：%s 的编号不是数字（07 §12 约定 `npc_slot_0N`）" % [scene_id, slot_name])
+			if slot_name.begins_with("npc_slot_"):
+				var suffix := slot_name.substr("npc_slot_".length())
+				if not suffix.is_valid_int():
+					_problems.append("%s：%s 的编号不是数字（07 §12 约定 `npc_slot_0N`）" % [scene_id, slot_name])
+			else:
+				# 按 id 绑：名字本身就是 `npc_<npc_id>`
+				if not npc_place.has(slot_name):
+					_problems.append("%s：%s 是「按 id 绑」的位点，但 npc_def 里没有这个人（07 §九 第 12 条）" % [
+						scene_id, slot_name])
+				else:
+					var want: String = str(npc_place[slot_name])
+					if want != scene_id and want != _parent_node_of(scene_id):
+						_problems.append("%s：%s 这个人不在本图（npc_def 里他绑的是 %s）——位点摆错地图了" % [
+							scene_id, slot_name, want])
 			var parent := slot.get_parent()
 			if parent == null or String(parent.name) != "Characters":
 				_problems.append("%s：%s 不在 `Characters/` 下（07 §2 的节点结构）" % [scene_id, slot_name])
@@ -595,6 +635,15 @@ func _check_npc_slots(local_scenes: Array) -> void:
 		print("[check] %s：NPC 站位 %d 个" % [scene_id, slots.size()])
 
 
+## 本场景对应的父区域节点（`map_local.parent_node`）——按 id 绑的位点允许指向父区域上的人
+## （与 `NpcService.npcs_at` 的口径一致）。
+func _parent_node_of(scene_id: String) -> String:
+	for row: Dictionary in MapKit.read_csv(LOCAL_CSV):
+		if str(row.get("scene_id", "")) == scene_id:
+			return str(row.get("parent_node", ""))
+	return ""
+
+
 ## `Characters/<name>` 落在哪个格子；找不到返回 (-1,-1)
 func _character_cell(root: Node, node_name: String) -> Vector2i:
 	var node: Node2D = root.get_node_or_null("Characters/%s" % node_name)
@@ -602,6 +651,39 @@ func _character_cell(root: Node, node_name: String) -> Vector2i:
 		return Vector2i(-1, -1)
 	var pos := MapKit.accumulated_position(node)
 	return Vector2i(int(pos.x) / MapKit.TILE_PX, int(pos.y) / MapKit.TILE_PX)
+
+
+## 观察点（0.31.0 起 `flavor_point` 表已上线）：这里**只查几何**——不卡在墙里、
+## 且从出生点走得到，也就是设计要的「必须看得见」。
+## 名字与房间归属由 `tests/test_map_assets.gd::_check_flavor_points` 按表硬校验（那边是权威）；
+## 大地图那 3 条在 `_check_overworld` 里查。
+func _check_observe_points(local_scenes: Array) -> void:
+	var total := 0
+	for scene_id: String in local_scenes:
+		var scene: Dictionary = _scenes.get("res://scenes/maps/%s.tscn" % scene_id, {})
+		if scene.is_empty():
+			continue
+		var points: Dictionary = _group_names(scene["names"], "Observe_")
+		if points.is_empty():
+			continue
+		total += points.size()
+		_check_walkable(scene, "%s·观察点" % scene_id, points)
+		var spawn_cell := _character_cell(scene["root"], "player_spawn")
+		if spawn_cell.x >= 0:
+			var reachable: Dictionary = _flood(scene, spawn_cell)
+			for point_id: String in points:
+				if not reachable.has(points[point_id]):
+					_problems.append("%s：观察点 %s（%s）从出生点走不到——玩家看不见它" % [
+						scene_id, point_id, str(points[point_id])])
+		print("[check] %s：观察点 %d 个" % [scene_id, points.size()])
+	if total > 0:
+		# 大地图那几处同源，**当场算**：写死「另加大地图 3 个 = 17」只会随表行数漂移
+		# （0.32.0 加了渡口封渡木桩那一条，这个数字当场就过期了）。
+		var world_scene: Dictionary = _scenes.get(OVERWORLD, {})
+		var world_points := _group_names(world_scene.get("names", {}), "Observe_").size()
+		print("[check] 小地图观察点合计 %d 个（另加大地图 %d 个 = %d）" % [
+			total, world_points, total + world_points,
+		])
 
 
 ## 无表设施（当铺／悬赏板／客栈）的位点名必须在控制器的 `FACILITY_LABELS` 里。
@@ -634,47 +716,78 @@ func _check_budget() -> void:
 		var scene: Dictionary = _scenes[path]
 		if scene.is_empty():
 			continue
+		var is_overworld: bool = path == OVERWORLD
+		var max_layers: int = MAX_TILE_LAYERS_OVERWORLD if is_overworld else MAX_TILE_LAYERS
+		var max_tiles: int = MAX_TILES_OVERWORLD if is_overworld else MAX_TILES
 		var layers: Array = scene["layers"]
-		if layers.size() > MAX_TILE_LAYERS:
+		if layers.size() > max_layers:
 			_problems.append("%s 有 %d 个 TileMapLayer，超过上限 %d" % [
-				path.get_file(), layers.size(), MAX_TILE_LAYERS])
+				path.get_file(), layers.size(), max_layers])
 		var total := 0
 		for layer: TileMapLayer in layers:
 			total += layer.get_used_cells().size()
-		if total > MAX_TILES:
-			_problems.append("%s 瓦片用量 %d，超过上限 %d" % [path.get_file(), total, MAX_TILES])
+		if total > max_tiles:
+			_problems.append("%s 瓦片用量 %d，超过上限 %d" % [path.get_file(), total, max_tiles])
 		print("[check] %s：TileMapLayer %d 层 / 瓦片 %d" % [path.get_file(), layers.size(), total])
 
 
-## Ground 层是「走得上去的地面」：按 mapgen 的模型，挡路的东西一律画在 Decor，
-## **Ground 上不该出现任何带物理碰撞的瓦片**。
+## **挡路的瓦片只许画在 `Decor` 层**（16 §3.2 的「挡路」列：Ground／Overlay／Conditional／Fog 全是「否」）。
 ##
-## 这一条是 2026-10-04 玩家报的「副本里无法行走」的根因所在：主题 TileSet 把地板瓦片
+## 这一条源自 2026-10-04 玩家报的「副本里无法行走」：主题 TileSet 把地板瓦片
 ## （`T_FLOOR`＝1,9）也列进了 solid，于是副本／洞穴的整张 Ground 都是碰撞盒——
 ## 玩家脚下就是墙，`move_and_slide` 一步也推不动。当时地图验收与场景自检**都是绿的**：
 ## verify_maps 只看 Decor 挡不挡，场景自检全靠瞬移（决策 269）。
-func _check_ground_not_solid() -> void:
+## 那次只补了 Ground 一条；0.32.0 加了第 5 层 `Conditional`（石隙细径：整层随藏宝图显隐）
+## 与「岩檐压在 Overlay 上」之后，`Overlay`／`Conditional` 同样必须干净——
+## 否则玩家会在某些格子上被莫名顶住，而 `Conditional` 那层还会「拿到图才出现」。
+func _check_only_decor_blocks() -> void:
 	for path: String in _scenes:
 		var scene: Dictionary = _scenes[path]
 		if scene.is_empty():
 			continue
-		var ground: TileMapLayer = scene["ground"]
-		if ground == null:
-			continue
-		var solid_cells := PackedStringArray()
-		var total := 0
-		for cell: Vector2i in ground.get_used_cells():
-			if not _tile_has_collision(ground, cell):
+		for layer: TileMapLayer in scene["layers"]:
+			if layer.name == "Decor":
 				continue
-			total += 1
-			if solid_cells.size() < 5:
-				solid_cells.append("(%d,%d)" % [cell.x, cell.y])
-		if total == 0:
+			var solid_cells := PackedStringArray()
+			var total := 0
+			for cell: Vector2i in layer.get_used_cells():
+				if not _tile_has_collision(layer, cell):
+					continue
+				total += 1
+				if solid_cells.size() < 5:
+					solid_cells.append("(%d,%d)" % [cell.x, cell.y])
+			if total == 0:
+				continue
+			# Ground 那次的报错措辞留着：它是玩家最可能撞上的那一种，接手的人要能一眼认出来
+			var tail := (
+				"挡路的瓦片要画在 Decor 层，地板瓦片不能带碰撞盒"
+				if layer.name == "Ground"
+				else "挡路的东西只许画在 Decor 层（16 §3.2 的分层表）"
+			)
+			_problems.append(
+				"%s 的 %s 层有 %d 格带物理碰撞（例：%s）——"
+					% [path.get_file(), layer.name, total, "、".join(solid_cells)]
+				+ tail
+			)
+
+
+## `Conditional` 层（16 §3.2 第 5 层，0.32.0 新增）：**整层**显隐的条件地表，
+## 现在唯一用途是石隙迷窟那 22 格碎石细径（绑 `item_treasure_map`，代码侧已接）。
+## 地编交付后这里会打印格数；还没交付就打一行「待补」提醒（不判失败——缺资产不该挡住整条验收链）。
+func _check_conditional_layers() -> void:
+	var delivered := 0
+	for path: String in _scenes:
+		var scene: Dictionary = _scenes[path]
+		if scene.is_empty():
 			continue
-		_problems.append(
-			"%s 的 Ground 层有 %d 格带物理碰撞（例：%s）——玩家会卡在原地不动；"
-				% [path.get_file(), total, "、".join(solid_cells)]
-			+ "挡路的瓦片要画在 Decor 层，地板瓦片不能带碰撞盒"
+		var layer: TileMapLayer = scene["root"].get_node_or_null("Conditional")
+		if layer == null:
+			continue
+		delivered += 1
+		print("[check] %s：Conditional 层 %d 格" % [path.get_file(), layer.get_used_cells().size()])
+	if delivered == 0:
+		_asset_notes.append(
+			"还没有任何场景交付 `Conditional` 层（0.32.0：石隙细径 22 格铺在它上面，代码已按藏宝图显隐）"
 		)
 
 

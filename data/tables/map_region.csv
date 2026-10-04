@@ -1,8 +1,9 @@
-﻿node_id,name_cn,node_type,parent_region,pos_x,pos_y,icon,unlock_condition,reveal_on_map,enter_scene,respawn_group,note
-n_qingfengyi,清风驿,town,jiangnan_east,320,480,icon_town,default,1,scene_qingfengyi,,枢纽安全区
-n_post_station,驿站,fast_travel,jiangnan_east,420,420,icon_post,default,1,,,解锁后可快速传送
-n_luoyanpo,落雁坡,wild,jiangnan_east,540,620,icon_wild,default,1,,group_luoyanpo,明雷区
-n_heifengzhai,黑风寨,dungeon,jiangnan_east,760,420,icon_dungeon,discover_luoyanpo,0,scene_heifengzhai,,章节主副本
-n_cave_collapse,塌陷山洞,poi,jiangnan_east,610,700,icon_cave,proximity_3,0,scene_cave,,隐藏入口
-n_huangcun,荒村,poi,jiangnan_east,880,680,icon_ruin,proximity_5,0,scene_huangcun,group_huangcun,野外精英与隐藏宝箱
-n_ferry_abandoned,废弃渡口,poi,jiangnan_east,260,760,icon_ferry,proximity_3,0,scene_ferry_locked,,第二章入口，本章不开放
+﻿node_id,name_cn,node_type,parent_region,pos_x,pos_y,icon,unlock_condition,reveal_on_map,enter_scene,respawn_group,note,region_name_cn,signpost_cn
+n_qingfengyi,清风驿,town,jiangnan_east,350,1050,icon_town,default,1,scene_qingfengyi,,主路起点；枢纽安全区,江南道·东部,→ 驿站。出了这镇子，路就得自己认。
+n_post_station,驿站,fast_travel,jiangnan_east,800,800,icon_post,default,1,,,主路第二站；解锁后可快速传送,江南道·东部,→ 落雁坡。山里天变得快，早去早回。
+n_luoyanpo,落雁坡,wild,jiangnan_east,1250,1100,icon_wild,proximity_5,0,,group_luoyanpo,主路第三站；三条支路从这里岔出；明雷区；0.32.0 起需走近才揭开（野外≠城镇）,江南道·东部,→ 黑风寨。这条路，走的人不多。
+n_heifengzhai,黑风寨,dungeon,jiangnan_east,1750,700,icon_dungeon,discover_luoyanpo,0,scene_heifengzhai,,主路终点；章节主副本,江南道·东部,← 清风驿。原路，比来时难走。
+n_cave_collapse,塌陷山洞,poi,jiangnan_east,1400,1300,,proximity_3,0,scene_cave,,支路（落雁坡→）；洞口开在山体上，不给图标（揭开后只有地名）,江南道·东部,
+n_huangcun,荒村,poi,jiangnan_east,1850,1250,,proximity_5,0,scene_huangcun,group_huangcun,支路（落雁坡→）；焦黑屋舍群，不给图标（揭开后只有地名）,江南道·东部,
+n_ferry_abandoned,废弃渡口,poi,jiangnan_east,300,1400,,proximity_3,0,scene_ferry_locked,,支路（驿站→）；水岸地形，不给图标（揭开后只有地名）；本章不开放,江南道·东部,
+n_shixi,石隙迷窟,poi,jiangnan_east,750,1250,icon_shixi,item_treasure_map,0,scene_shixi,,支路（落雁坡西）；窄岩缝开在山体上；兴趣点里唯一给图标的例外（藏宝图上画着它）,江南道·东部,

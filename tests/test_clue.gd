@@ -50,7 +50,7 @@ func _check_clue_source_parsing(db) -> void:
 		check_eq(Array(event_row.clues()).size(), 2, "事件判定的线索来源走同一套解析")
 
 
-## 长列表：把黑风寨的隐藏内容复制成 6 倍（36 条隐藏 + 4 条事件 = 40 条），
+## 长列表：把黑风寨的隐藏内容复制成 6 倍（36 条隐藏 + 5 条事件 = 41 条），
 ## 面板要**逐条建行**、不许悄悄截断。真实数据只有 8 条左右，这种规模靠当前内容到不了——
 ## 而「列表被截断」在界面上看起来只是「少了几条」，很难被发现。
 func _check_long_list_ui(db, state) -> void:
@@ -60,7 +60,7 @@ func _check_long_list_ui(db, state) -> void:
 	var wide = table_with_duplicated_triggers(db, "scene_heifengzhai", 6)
 	var clues = ClueServiceScript.new(wide, state)
 	var expected: int = clues.clues_for_scene("scene_heifengzhai").size()
-	check_eq(expected, 40, "6 倍复制后是 36 条隐藏 + 4 条事件")
+	check_eq(expected, 41, "6 倍复制后是 36 条隐藏 + 5 条事件")
 	var screen = load(CLUE_SCENE).instantiate()
 	screen.db_override = wide
 	screen.state_override = state
@@ -72,7 +72,7 @@ func _check_long_list_ui(db, state) -> void:
 	var subtitle: Label = screen.find_child("Subtitle", true, false)
 	check_not_null(subtitle, "有「共 N 条」的小标题")
 	if subtitle != null:
-		check_true(subtitle.text.contains("共 40 条"), "小标题写清总数：%s" % subtitle.text)
+		check_true(subtitle.text.contains("共 41 条"), "小标题写清总数：%s" % subtitle.text)
 	var rows := 0
 	for node: Node in screen.find_children("Clue_*", "Label", true, false):
 		rows += 1
@@ -84,7 +84,7 @@ func _check_long_list_ui(db, state) -> void:
 ## 一张图的线索：隐藏内容 + 事件判定，每条都要有线索来源
 func _check_scene_clues(db, state, clues) -> void:
 	var entries: Array = clues.clues_for_scene("scene_heifengzhai")
-	check_eq(entries.size(), 10, "黑风寨 6 条隐藏 + 4 条事件判定")
+	check_eq(entries.size(), 11, "黑风寨 6 条隐藏 + 5 条事件判定")
 	var hidden := 0
 	var events := 0
 	for entry: Dictionary in entries:
@@ -97,7 +97,7 @@ func _check_scene_clues(db, state, clues) -> void:
 		check_true(text.contains("线索："), "%s 的文案写清线索：%s" % [str(entry["id"]), text])
 		check_true(text.contains("未完成"), "新档都还没完成：%s" % str(entry["id"]))
 	check_eq(hidden, 6, "黑风寨本图 6 条隐藏（后山密道那条属于塌陷山洞）")
-	check_eq(events, 4, "黑风寨 4 条事件判定")
+	check_eq(events, 5, "黑风寨 5 条事件判定（0.29.0 加了 `ev_shen_rescue`：地牢里救沈雁回）")
 
 	# 后山密道的线索在塌陷山洞那张图里
 	var cave: Array = clues.clues_for_scene("scene_cave")
@@ -123,7 +123,7 @@ func _check_scene_clues(db, state, clues) -> void:
 ## 大地图线索按地标归组
 func _check_region_clues(db, clues) -> void:
 	var all_entries: Array = clues.region_clues()
-	check_eq(all_entries.size(), 8, "野外共 8 条事件判定（落雁坡 3／荒村 1／山洞 1／黑风寨 2／清风驿 1）")
+	check_eq(all_entries.size(), 9, "野外共 9 条事件判定（落雁坡 3／荒村 1／山洞 1／黑风寨 2／清风驿 1／驿站 1）")
 	check_eq(clues.clues_for_region("n_luoyanpo").size(), 3, "落雁坡 3 条")
 	check_eq(clues.clues_for_region("n_huangcun").size(), 1, "荒村 1 条")
 	check_eq(clues.clues_for_region("n_qingfengyi").size(), 1, "清风驿 1 条（赌局）")
@@ -163,11 +163,11 @@ func _check_panel_scene(db, state) -> void:
 	panel.return_handler = func() -> void: closes.append(true)
 	scene_tree.root.add_child(panel)
 	panel.setup()
-	check_eq(panel.entry_count(), 10, "面板按条目数渲染：%d" % panel.entry_count())
-	check_true(str(panel._subtitle.text).contains("共 10 条"), "标题写清总数：%s" % str(panel._subtitle.text))
+	check_eq(panel.entry_count(), 11, "面板按条目数渲染：%d" % panel.entry_count())
+	check_true(str(panel._subtitle.text).contains("共 11 条"), "标题写清总数：%s" % str(panel._subtitle.text))
 	panel.scope = "region"
 	panel.refresh()
-	check_eq(panel.entry_count(), 8, "切成野外视角后按地标列 8 条")
+	check_eq(panel.entry_count(), 9, "切成野外视角后按地标列 9 条")
 	check_true(str(panel._title.text).contains("野外"), "标题跟着作用域变：%s" % str(panel._title.text))
 	panel.press_return()
 	check_eq(closes.size(), 1, "离开按钮触发回退")

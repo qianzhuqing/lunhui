@@ -36,3 +36,7 @@ dr_chest_s_03,drop_chest_silver,3,item_potion_qi,consumable,2,3,1.0,independent,
 dr_chest_g_01,drop_chest_gold,1,item_money,money,150,300,1.0,independent,0,0,0,
 dr_chest_g_02,drop_chest_gold,2,eq_armor_03,equip,1,1,1.0,independent,0,0,0,珍品保底
 dr_chest_g_03,drop_chest_gold,3,item_rusty_sword,key,1,1,0.50,independent,0,0,0,剑气事件需要
+dr_chest_s_04,drop_chest_silver,4,eq_sword_02,equip,1,1,1.0,independent,0,0,0,良品剑；箱里出，铁匠铺只卖白板
+dr_chest_g_04,drop_chest_gold,4,eq_spear_02,equip,1,1,1.0,independent,0,0,0,良品枪；枪系敌人不存在，只能从箱里拿
+dr_shixi_01,drop_shixi_hound,1,item_pelt,material,1,3,0.60,independent,0,1,0,
+dr_shixi_02,drop_shixi_hound,2,item_money,money,40,80,1.0,independent,0,0,0,

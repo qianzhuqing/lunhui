@@ -1,4 +1,4 @@
-## 设备设置（音量）与它在枢纽页上的入口。
+## 设备设置（音量 ＋ 自动战斗开关）与它们在枢纽页上的入口。
 ##
 ## 由来：音效接上以后玩家**关不掉**——设计没有设置界面／暂停菜单，而音量是玩家随时会想改的东西。
 ## 这条用例钉三件事：① 设置文件读写（读不到／读坏／写不进去都要有说法，**绝不悄悄静音**）；
@@ -19,8 +19,60 @@ func suite_name() -> String:
 func run() -> void:
 	_check_store_round_trip()
 	_check_store_tolerates_broken()
+	_check_auto_battle_round_trip()
 	_check_volume_hits_the_bus()
 	_check_hub_button()
+	_check_hub_auto_battle_button()
+
+
+## 自动战斗开关（设计 11 §四）：默认**关**、能存能读，
+## 而且**两个设置互不覆盖**——这是这条用例真正的重点：
+## 每个设置各自 `ConfigFile.new()` 后整份保存过一次，那会把另一个键冲掉。
+func _check_auto_battle_round_trip() -> void:
+	var dir := TEST_DIR + "/auto"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var store = SettingsStoreScript.new(dir)
+	DirAccess.remove_absolute(store.file_path())
+	var missing: Dictionary = store.load_auto_battle()
+	check_true(bool(missing["ok"]), "没有设置文件时读自动战斗不报错")
+	check_false(bool(missing["enabled"]), "默认**关**（自动是省事不是夺权）")
+
+	check_true(bool(store.save_auto_battle(true)["ok"]), "能写自动战斗开关")
+	check_true(bool(store.load_auto_battle()["enabled"]), "写进去 true，读回来还是 true")
+
+	# 关键：再动音量，**不能**把自动战斗冲掉；再动自动战斗，也不能把音量冲掉
+	check_true(bool(store.save_volume(0.5)["ok"]), "顺手写一次音量")
+	check_true(bool(store.load_auto_battle()["enabled"]), "写音量之后自动战斗开关还在（两个键互不覆盖）")
+	check_float(float(store.load_volume()["volume"]), 0.5, "音量也确实写进去了")
+	check_true(bool(store.save_auto_battle(false)["ok"]), "再关掉自动战斗")
+	check_float(float(store.load_volume()["volume"]), 0.5, "关自动战斗之后音量还在")
+	check_false(bool(store.load_auto_battle()["enabled"]), "关掉之后读回来是关")
+
+
+## 枢纽页那个自动战斗按钮：按一下开／关、文案跟着走、写进设置文件
+func _check_hub_auto_battle_button() -> void:
+	if scene_tree == null:
+		fail("没有注入场景树")
+		return
+	var dir := TEST_DIR + "/hub_auto"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var hub = load(HUB_SCENE).instantiate()
+	hub._settings_override = SettingsStoreScript.new(dir)
+	DirAccess.remove_absolute(hub._settings_override.file_path())
+	scene_tree.root.add_child(hub)
+	hub.setup()
+	var button: Button = hub.find_child("AutoBattleButton", true, false)
+	check_not_null(button, "枢纽页有自动战斗开关（与音量同处，设计 11 §四）")
+	if button != null:
+		check_true(button.text.contains("关"), "默认文案是「关」：%s" % button.text)
+		button.emit_signal("pressed")
+		check_true(button.text.contains("开"), "按一下变「开」：%s" % button.text)
+		check_true(bool(hub._settings_override.load_auto_battle()["enabled"]), "开关写进了设置文件")
+		button.emit_signal("pressed")
+		check_true(button.text.contains("关"), "再按一下变回「关」：%s" % button.text)
+		check_false(bool(hub._settings_override.load_auto_battle()["enabled"]), "关也写进了设置文件")
+	scene_tree.root.remove_child(hub)
+	hub.free()
 
 
 func _check_store_round_trip() -> void:

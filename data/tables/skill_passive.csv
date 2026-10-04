@@ -23,3 +23,9 @@ pf_taixu_01,1,,内伤抗性
 pf_luohan_01,2,,减伤
 pf_drunk_01,2,,闪避与暴击
 pf_drunk_02,3,effect_drunk_mastery,属性与暴击伤害
+pf_yipian_01,3,effect_yipian_return,前朝遗篇；攻守兼备
+pf_xuanwei_zhbai,2,,智与悟；字与名
+pf_chensha_buhuan,2,,刚猛一路；破架势与穿透
+pf_wudu_huandu,2,,以毒还毒；攻守一体
+pf_qingluo_ying,2,,轻身一路；闪避与暴击
+pf_tiaoxi_huichun,2,,内息绵长；气血与内力回复

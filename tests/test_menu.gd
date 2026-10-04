@@ -10,6 +10,7 @@ const GameStateScript := preload("res://src/core/game_state.gd")
 
 const MENU_SCENE := "res://scenes/main_menu.tscn"
 const PLACEHOLDER_SCENE := "res://scenes/placeholder_game.tscn"
+const CREATION_SCENE := "res://scenes/creation_screen.tscn"
 const TEST_DIR := "res://.logs/test_menu"
 const SLOTS := 3
 
@@ -65,6 +66,12 @@ func _check_controller_flow() -> void:
 	check_eq(str(created["state"].char_ids), str(initial_ids), "开局队伍与 recruit_def 的初始成员逐人一致（顺序也照表）")
 	check_eq(str(created.get("start_scene", "")), MenuControllerScript.START_HUB, "新建游戏进占位枢纽页")
 	check_true(store.slot_exists(1), "新建游戏会立刻自动存档")
+	# 空方案走 `_with_defaults`：默认用第一张出身卡，名字预填**真名**而不是卡标题
+	# （设计 21 §七 第 5 条：书生那张卡叫「家道失落的书生」，真名是陆文昭）
+	check_eq(
+		str(created["state"].char_name(get_db(), str(created["state"].char_ids[0]))), "陆文昭",
+		"没给名字时默认用出身卡的真名",
+	)
 
 	controller.refresh()
 	check_true(controller.can_load(), "有了存档后读取可用")
@@ -153,16 +160,41 @@ func _check_scene_flow() -> void:
 	check_true(load_button.disabled, "没有存档时读取按钮置灰")
 	check_true(bool(menu.slot_button(1).disabled), "空槽按钮不可点")
 
-	# 点「新建游戏」：真实按钮回调 → 真实存档写入 → 会话状态就位
+	# 点「新建游戏」：**只切到创建界面**（设计 13：创建没走完不写存档）——
+	# 以前这里直接建号落盘，现在中间多了创建角色那一步。
 	new_button.emit_signal("pressed")
-	check_eq(switched.size(), 1, "新建后触发进入游戏")
-	check_eq(menu.pending_scene, menu.PLACEHOLDER_SCENE, "新建游戏落在占位枢纽页")
-	check_true(store.slot_exists(1), "新建后确实落盘")
+	check_eq(switched.size(), 1, "点新建游戏切到创建界面")
+	check_eq(str(switched[0]), menu.CREATION_SCENE, "切的是创建角色场景")
+	check_false(store.slot_exists(1), "创建没走完**不写存档**")
+
+	# 走创建界面：真实场景、真实按钮 → 确认 → 落盘 + 进枢纽页
+	var creation = load(CREATION_SCENE).instantiate()
+	creation.store_override = store
+	var creation_switched: Array = []
+	creation.scene_switch_handler = func(path: String) -> void: creation_switched.append(path)
+	scene_tree.root.add_child(creation)
+	creation.setup()
+	var origin_button: Button = creation.find_child("Origin_ori_scholar", true, false)
+	check_not_null(origin_button, "创建界面有出身卡按钮（ori_scholar）")
+	if origin_button != null:
+		origin_button.emit_signal("pressed")
+	var confirm_button: Button = creation.find_child("ConfirmButton", true, false)
+	check_not_null(confirm_button, "创建界面有「确认创建」按钮")
+	check_true(confirm_button != null and not confirm_button.disabled, "选了出身就能确认（不是禁用态）")
+	if confirm_button != null:
+		confirm_button.emit_signal("pressed")
+	check_true(store.slot_exists(1), "确认创建后落盘")
+	check_eq(creation_switched.size(), 1, "确认后进游戏")
+	check_eq(str(creation_switched[0]), creation.HUB_SCENE, "新建游戏落在占位枢纽页")
+	scene_tree.root.remove_child(creation)
+	creation.free()
+
 	var session = scene_tree.root.get_node_or_null("GameSession")
 	check_not_null(session, "GameSession 单例在场（/root 现有：%s）" % _describe_root())
 	check_true(session != null and session.state != null, "会话状态被写入 GameSession")
 
 	# 回菜单重来一次，验证「读取存档」真的能载入
+	menu._refresh()
 	menu.press_load_game()
 	check_true(load_button.disabled == false, "有存档后读取按钮可用")
 	var slot_button: Button = menu.slot_button(1)

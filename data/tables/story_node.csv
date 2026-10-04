@@ -1,0 +1,12 @@
+﻿node_id,kind,chapter_id,place_id,trigger_condition,grant_skill_ids,bonus_attr_id,bonus_attr_value,bonus_stat_id,bonus_stat_value,text_cn,note
+chapter1_end,chapter_end,chapter_01,scene_qingfengyi,flag_shen_rescued,sk_xuanwei_08;sk_common_02;pf_xuanwei_05,,,,,第一章·黑风劫，完。,结算口吻（真正的收束句交给幕结那三条对话）；救出沈小姐后回清风驿触发；同时置 flag_chapter1_done
+xuanwei,faction,chapter_01,scene_qingfengyi,flag_board_read,sk_xuanwei_06;pf_xuanwei_04,,,,,玄微门派传授分水与周天,看过告示板后可回门派领；门派支线
+yaowang,faction,chapter_01,,flag_poison_hall,pf_yaowang_02,,,,,药王谷传授续命诀,毒堂之后；地点不限
+ledger_public,choice,chapter_01,,flag_ledger_public,,wu,2,qi_max,20,「清名」：真相归了公门——悟性 +2、内力上限 +20,账册三选一之一（呈官）；永久增益，跟存档走
+ledger_buried,choice,chapter_01,,flag_ledger_buried,,gen,2,hp_max,40,「藏锋」：护住活人——根骨 +2、气血上限 +40,账册三选一之二（沉底）；永久增益，跟存档走
+ledger_scattered,choice,chapter_01,,flag_ledger_scattered,,luk,4,drop_rate,0.03,「江湖」：真相入了江湖——运 +4、掉落机缘 +3%,账册三选一之三（散页）；永久增益，跟存档走
+opp_scholar,origin_gift,chapter_01,scene_qingfengyi,flag_board_read&origin:scholar_fallen,pf_xuanwei_zhbai,,,,,书箱底：一卷手抄的《玄微心法·知白》,清风驿书铺；主角是书生时才认得出这笔字
+opp_gang,origin_gift,chapter_01,n_luoyanpo,origin:ch_gang,pf_chensha_buhuan,,,,,镖车暗格：油布裹着的《沉沙心法·不还》,落雁坡旧镖车；主角是林铁山时才摸车底
+opp_du,origin_gift,chapter_01,scene_huangcun,origin:ch_du,pf_wudu_huandu,,,,,退货：匣子里的《五毒心法·还毒》,荒村；主角是苏九娘时才验得出毒源
+opp_ci,origin_gift,chapter_01,scene_heifengzhai,origin:ch_ci,pf_qingluo_ying,,,,,义兄的刀鞘：油纸里的《青骡心法·影》,黑风寨后寨；主角是燕小七时才找得到那座新坟
+opp_qi,origin_gift,chapter_01,scene_qingfengyi,flag_shen_rescued&origin:ch_qi,pf_tiaoxi_huichun,,,,,补方：沈雁回补上的《调息诀·回春》,清风驿；主角是白清和时才对得上药方

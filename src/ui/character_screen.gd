@@ -12,7 +12,12 @@ const TableDbScript := preload("res://src/core/table_db.gd")
 const GameStateScript := preload("res://src/core/game_state.gd")
 const SkillGrantScript := preload("res://src/core/skill_grant.gd")
 const LevelServiceScript := preload("res://src/core/level_service.gd")
+const TalentServiceScript := preload("res://src/core/talent_service.gd")
+## 抉择的永久增益（设计 20 §八）：面板要把它摆出来，玩家才知道"为什么多了这 2 点"
+const StoryServiceScript := preload("res://src/core/story_service.gd")
 const LayoutBudgetScript := preload("res://src/ui/layout_budget.gd")
+## 图标路径的唯一出处（15 §六）：武学／道具那一列有图才摆，没图就照旧从文字开始
+const IconPathsScript := preload("res://src/ui/icon_paths.gd")
 
 const PLACEHOLDER_SCENE := "res://scenes/placeholder_game.tscn"
 
@@ -44,6 +49,12 @@ var _char_box: VBoxContainer
 var _equip_box: VBoxContainer
 var _bag_box: VBoxContainer
 var _status: Label
+## 左侧立绘（设计 14：角色面板左侧 320×480；占位是 80×120 的剪影，4 倍放大显示）
+var _portrait: TextureRect = null
+
+## 立绘目录与命名：**按 char_id**（`assets/sprites/portraits/portrait_<char_id>.png`）。
+## 美术出图后同名替换；缺图时**退回纯文字占位**，不报错（占位美术阶段的既有口径）。
+const PORTRAIT_DIR := "res://assets/sprites/portraits/"
 
 
 func _ready() -> void:
@@ -118,6 +129,21 @@ func select_char(char_id: String) -> void:
 	_selected_char = char_id
 	_selected_slot = ""
 	refresh()
+
+
+## 刷新左侧立绘（选中谁显示谁）。缺图时给一句文字占位，不留空白框（0.19.1 的准话）。
+func _refresh_portrait() -> void:
+	if _portrait == null:
+		return
+	var path := "%sportrait_%s.png" % [PORTRAIT_DIR, _selected_char]
+	if _selected_char.is_empty() or not ResourceLoader.exists(path):
+		_portrait.texture = null
+		return
+	_portrait.texture = load(path)
+
+
+func portrait_path() -> String:
+	return "%sportrait_%s.png" % [PORTRAIT_DIR, _selected_char]
 
 
 ## 加一点，返回 {ok, error, remaining}
@@ -250,6 +276,7 @@ func drop_item(item_id: String) -> Dictionary:
 func refresh() -> void:
 	if _tabs == null:
 		return
+	_refresh_portrait()
 	_rebuild_header()
 	_rebuild_character()
 	_rebuild_equipment()
@@ -295,12 +322,26 @@ func _build_ui() -> void:
 	back.pressed.connect(press_back)
 	top.add_child(back)
 
+	# 左侧立绘（设计 14 §「角色面板」：左侧立绘 320×480 ｜ 右侧标签页）。
+	# 占位是**原生 80×120 的人形剪影**，这里 4 倍放大显示（15 §4.6：颗粒要和地图同一量级），
+	# 美术出图后**同名替换**，代码一行不动。
+	var body := HBoxContainer.new()
+	body.name = "Body"
+	body.add_theme_constant_override("separation", 12)
+	column.add_child(body)
+	_portrait = TextureRect.new()
+	_portrait.name = "Portrait"
+	_portrait.custom_minimum_size = Vector2(320, 480)
+	_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_portrait.stretch_mode = TextureRect.STRETCH_SCALE
+	_portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	body.add_child(_portrait)
 	_tabs = TabContainer.new()
 	_tabs.name = "Tabs"
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.custom_minimum_size = Vector2(760, 520)
 	_tabs.tab_changed.connect(_on_tab_changed)
-	column.add_child(_tabs)
+	body.add_child(_tabs)
 	_char_box = _make_tab("角色")
 	_equip_box = _make_tab("装备")
 	_bag_box = _make_tab("背包")
@@ -367,8 +408,24 @@ func _rebuild_header() -> void:
 	if not state.char_ids.is_empty():
 		var progress: Dictionary = levels.exp_progress(str(state.char_ids[0]))
 		exp_text += "（已满级）" if bool(progress["maxed"]) else "（下一级还需 %d）" % int(progress["need"])
-	_header.text = "铜钱 %d　%s　难度 %s" % [
-		int(state.inventory.money), exp_text, state.difficulty_name(_db),
+	# 天赋（设计 12／14 §三条共性要求：「角色面板显示剩余属性点与天赋点」）：
+	# 天赋**创建时就定死了**（之后不能改），所以这里写「已选的那几个 + 花了多少点」，
+	# **不写「剩余」**——那会让玩家以为还能加。属性点的「未分配」在下面五维表头那一行。
+	var talent_text := "天赋：无（创建时未选）"
+	if not _selected_char.is_empty():
+		var picks: PackedStringArray = TalentServiceScript.picked_of(state, _selected_char)
+		var names := PackedStringArray()
+		for talent_id: String in picks:
+			var row: Resource = _db.get_row("talent_def", talent_id)
+			names.append(str(row.name_cn) if row != null else talent_id)
+		if not picks.is_empty():
+			talent_text = "天赋：%s（%d/%d 点）" % [
+				"、".join(names),
+				TalentServiceScript.cost_of(_db, picks),
+				TalentServiceScript.budget(_db),
+			]
+	_header.text = "铜钱 %d　%s　难度 %s　%s" % [
+		int(state.inventory.money), exp_text, state.difficulty_name(_db), talent_text,
 	]
 
 
@@ -454,6 +511,15 @@ func _rebuild_character() -> void:
 	))
 
 	# 派生数值：按攻击 / 防御 / 资源与行动分组
+	# 永久增益（设计 20 §八 第 1 条：「跟存档、跨章保留、**界面要能看见**」）：
+	# 账册三选一给的是**资质与派生上限**，它们已经算进上面的五维与下面的战斗属性里，
+	# 但玩家看不出来"为什么多了这 2 点"——所以在这儿写明是哪一条、加了多少。
+	var bonus_labels: PackedStringArray = StoryServiceScript.bonus_labels(_db, state, _selected_char)
+	_char_box.add_child(_make_label(
+		"PermanentBonus",
+		"永久增益：%s" % ("、".join(bonus_labels) if not bonus_labels.is_empty() else "无（账册三选一之后见）"),
+	))
+
 	_char_box.add_child(_make_label("StatHeader", "战斗属性", 18))
 	# 战斗外气血（v11 起进存档）：面板上要看得见，不然玩家不知道为什么要去医馆
 	var current_hp := int(panel.current_hp())
@@ -520,6 +586,11 @@ func _make_skill_row(row: Dictionary) -> Control:
 	var line := HBoxContainer.new()
 	line.name = "SkillRow%s" % skill_id
 	line.add_theme_constant_override("separation", 6)
+	# 武学图标（15 §六：`assets/icons/skill/<skill_id>.png`）——**有图才摆**，
+	# 美术那 65 张只到了一部分，没图的行照旧从文字开始（不是错，别刷引擎错误）
+	var skill_icon := IconPathsScript.make_icon(IconPathsScript.skill(skill_id), "SkillIcon%s" % skill_id)
+	if skill_icon != null:
+		line.add_child(skill_icon)
 	var label := _make_label(
 		"Skill%s" % skill_id,
 		"%s★　%s　%s　熟练 %d/%d（×%.2f）　%s%s" % [
@@ -575,6 +646,12 @@ func _rebuild_equipment() -> void:
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if not bool(row["empty"]):
 			button.add_theme_color_override("font_color", Color(str(row["rarity_color"])))
+			# 装备图标（设计 15 §六＋A14，0.31.1）：**有图才摆**（还没出图就不占位）
+			var equipped_icon := IconPathsScript.make_icon(
+				equip_icon_path(str(row["base"].equip_id)), "EquipIcon%s_%d" % [slot_id, index]
+			)
+			if equipped_icon != null:
+				line.add_child(equipped_icon)
 		line.add_child(button)
 		if not bool(row["empty"]):
 			var slot_index := index
@@ -610,7 +687,23 @@ func _rebuild_equipment() -> void:
 			func() -> void: equip_instance(instance_id), not bool(candidate["ok"])
 		)
 		button.add_theme_color_override("font_color", Color(str(candidate["color"])))
+		var candidate_icon := IconPathsScript.make_icon(
+			equip_icon_path(str(candidate["base_id"])), "EquipIconCand%s" % instance_id
+		)
+		if candidate_icon != null:
+			_equip_box.add_child(candidate_icon)
 		_equip_box.add_child(button)
+
+
+## 装备图标的路径：**优先 `equip_base.icon`，空则退回 `equip_id`**——与道具行／武学行同一套优先级
+## （设计 15 §六＋A14，0.31.1），所以美术按哪个名字交都能对上；找不到图时 `make_icon()` 返回 null、
+## 调用方不留空位（"还没出图"不是数据错）。
+func equip_icon_path(base_id: String) -> String:
+	var row: Resource = _db.get_row("equip_base", base_id) if _db != null else null
+	var icon_id := str(row.icon).strip_edges() if row != null else ""
+	if icon_id.is_empty():
+		icon_id = base_id
+	return IconPathsScript.equip(icon_id)
 
 
 ## 某个槽位可用的背包装备：{instance_id, name, rarity, color, summary, ok, error}
@@ -631,6 +724,7 @@ func _candidate_rows(slot_id: String) -> Array:
 		)
 		out.append({
 			"instance_id": instance_id,
+			"base_id": str(base.equip_id),     # 装备取图要用（优先 icon、空则退回它）
 			"name": str(base.name_cn),
 			"rarity": panel.rarity_name(str(base.rarity)),
 			"color": panel.rarity_color(str(base.rarity)),
@@ -677,6 +771,14 @@ func _rebuild_bag() -> void:
 		var line := HBoxContainer.new()
 		line.name = "ItemRow%s" % item_id
 		line.add_theme_constant_override("separation", 8)
+		# 道具图标（15 §六：`assets/icons/item/<item_id>.png`；表里的 `icon` 列写了就用它，
+		# 那条列本来就是"图标 id"）。同样**有图才摆**——19 张只到了 3 张。
+		var icon_id := str(row.icon)
+		if icon_id.is_empty():
+			icon_id = item_id
+		var item_icon := IconPathsScript.make_icon(IconPathsScript.item(icon_id), "ItemIcon%s" % item_id)
+		if item_icon != null:
+			line.add_child(item_icon)
 		var label := _make_label(
 			"ItemLabel%s" % item_id,
 			"%s ×%d（%s）%s" % [
@@ -922,6 +1024,25 @@ func _run_character_selftest() -> void:
 	lines.append(LayoutBudgetScript.ascii_line(self))
 	ok = ok and LayoutBudgetScript.has_opaque_backdrop(self)
 	lines.append(LayoutBudgetScript.ascii_backdrop_line(self))
+	# 顶部「剩余配额」那一行（设计 14 §三条共性要求）：铜钱／经验／难度 ＋ **天赋**
+	# （属性点的「未分配」在五维表头那一行）。天赋写「已选 + 花了几点」而不是「剩余」——
+	# 它创建时就定死了，写「剩余」会让玩家以为还能加。
+	var quota_ok: bool = _header.text.contains("铜钱") and _header.text.contains("天赋：")
+	ok = ok and quota_ok
+	lines.append("顶部配额行（铜钱／经验／难度／天赋）=%s（%s）" % [quota_ok, _header.text])
+	# 永久增益那一行（设计 20 §八 第 1 条：「界面要能看见」）：没做过抉择也要如实写「无」，
+	# 不能留白——这条通道在面板上必须有位置。
+	var bonus_label: Label = find_child("PermanentBonus", true, false)
+	var bonus_ok: bool = bonus_label != null and bonus_label.text.contains("永久增益：")
+	ok = ok and bonus_ok
+	lines.append("永久增益行=%s（%s）" % [bonus_ok, bonus_label.text if bonus_label != null else "缺"])
+	# 立绘位（设计 0.19.1／14）：左侧 320×480、按 char_id 取图；缺图不留空白框
+	var portrait: TextureRect = find_child("Portrait", true, false)
+	var portrait_ok: bool = portrait != null \
+		and portrait.custom_minimum_size == Vector2(320, 480) \
+		and portrait.texture != null
+	ok = ok and portrait_ok
+	lines.append("立绘位 320×480 且占位图已加载=%s（%s）" % [portrait_ok, portrait_path()])
 	# 页签内容宽度：**外层版式量不到滚动区里的内容**（`get_combined_minimum_size()` 到 ScrollContainer
 	# 就断了，量到的其实是 `_tabs.custom_minimum_size` 那个写死的常量），而横向滚动是关着的——
 	# 内容一宽就被裁掉、代码一声不吭。

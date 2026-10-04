@@ -136,8 +136,8 @@ func _check_every_field_round_trip(db, store) -> void:
 	check_eq(loaded_state.migrated_from, 0, "当前版本的档不需要迁移")
 	var diff := _diff_path(state.to_dict(), loaded_state.to_dict())
 	check_eq(diff, "", "全字段往返零差异（第一处差异：%s）" % diff)
-	# 24 = 22 + v12 的 field_buffs（战斗外增益）+ v13 的 world_pos（大地图坐标）；新增字段要一起登记
-	check_eq(int(Dictionary(state.to_dict()).size()), 24, "to_dict 的字段数没变（新增字段要一起登记）")
+	# 27 = 26 + v15 的 npc_favor（NPC 好感）；新增字段要一起登记
+	check_eq(int(Dictionary(state.to_dict()).size()), 27, "to_dict 的字段数没变（新增字段要一起登记）")
 	check_eq(loaded_state.world_position(), Vector2(1234.5, -678.25), "大地图坐标（v13）往返一致")
 	# 自查：比较器本身真的能报差异，否则上面那条断言就是空的
 	check_ne(_diff_path({"a": 1, "b": 2}, {"a": 1}), "", "比较器能发现丢字段")

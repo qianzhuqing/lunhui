@@ -11,3 +11,5 @@ ev_climb_wall,n_heifengzhai,,,attr:agi,9,hard,none,,0,翻越失败被发现,寨�
 ev_force_gate,n_heifengzhai,,,attr:str,8,hard,none,,0,推不开粗木闩,寨门横着一根粗木闩,推开木闩省一场战斗
 ev_night_watch,n_luoyanpo,,,attr:con,7,soft,none,,0,疲惫一整晚,野外无处投宿,寒夜守夜不受伤
 ev_gamble,n_qingfengyi,,,attr:luk,6,soft,item,item_money,0,输光押注,客栈里有人摆赌局,赌局赢钱
+ev_patrol_check,n_post_station,,,skill:wenxue,4,soft,none,,0,被勒令交出盘缠,官道上有官差设卡盘查,官差在官道上设卡，过了能省一笔盘缠
+ev_shen_rescue,,scene_heifengzhai,hf1_cell,skill:wenxue,2,soft,event,flag_shen_rescued,0,她只肯说这么多,铁栏后的人不肯回头,铁栏后的人要你替她查一件事

@@ -132,7 +132,9 @@ func resolve_dot(
 	var type_id := dot_type_id if not dot_type_id.is_empty() else str(skill_row.damage_type)
 	var damage_type_row: Resource = _db.get_row("damage_type", type_id)
 	if damage_type_row == null:
-		return {"ok": false, "damage": 0, "detail": {}, "error": "damage_type 不存在：%s" % type_id}
+		# 数据错：id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[DamageResolver] damage_type 不存在：%s" % type_id)
+		return {"ok": false, "damage": 0, "detail": {}, "error": "这一招的伤害类型没配（数据错，已记进日志）"}
 	var skill_id := str(skill_row.skill_id)
 	var skill_base: Resource = _db.get_row("skill_base", skill_id)
 	var star := int(skill_base.star) if skill_base != null else 1
@@ -214,8 +216,10 @@ func defense_reduction(defense: float, attacker_level: int) -> float:
 
 ## 命中率 = 攻击者命中基准 + 命中 - 防守者闪避，夹在 [5%, 99%]。
 ##
-## 玩家角色的命中基准是 1.0（敏给的命中率是加成），敌人的命中基准是 0.0
-## （enemy_base.hit_rate 本身就是命中率），细节见 battle_actor.base_accuracy。
+## **敌我命中基准现在都是 1.0**（设计 10 §七第四条，0.28.0 答 Q57）：`hit_rate` 一律是
+## 敏经 diminishing 曲线给的**加成**，真正决定打不打得中的是对方的 `dodge_rate`。
+## 手搓的战斗单位（用例夹具）仍可以传 0.0 走「命中 − 闪避＝绝对命中率」的老语义，
+## 细节见 `battle_actor.base_accuracy`。
 func hit_chance(attacker, defender) -> float:
 	return clampf(
 		_accuracy_base(attacker) + _stat(attacker, "hit_rate") - _stat(defender, "dodge_rate"),
@@ -245,7 +249,9 @@ func resolve(attacker, defender, skill_row: Resource, modifiers: Dictionary = {}
 	var type_id: String = str(skill_row.damage_type)
 	var damage_type_row: Resource = _db.get_row("damage_type", type_id)
 	if damage_type_row == null:
-		return _fail("招式 %s 的 damage_type '%s' 不存在" % [skill_row.skill_id, type_id])
+		# 数据错：id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[DamageResolver] 招式 %s 的 damage_type '%s' 不存在" % [skill_row.skill_id, type_id])
+		return _fail("这一招的伤害类型没配（数据错，已记进日志）")
 	if damage_type_row.is_dot():
 		# 持续伤害不算直伤：这一下只负责「命中判定 + 把层数挂上去」，
 		# 每层伤害由 resolve_dot() 在施加那一刻算好并锁死（快照制）。
@@ -277,6 +283,13 @@ func resolve(attacker, defender, skill_row: Resource, modifiers: Dictionary = {}
 	if attacker.has_method("mastery_of"):
 		mastery = int(attacker.mastery_of(skill_id))
 	var mastery_multiplier: float = _growth.mastery_multiplier(star, mastery)
+	# 天赋「天生武胆」（设计 12 §六：招式伤害 +15%）：**只对真招式**算——
+	# 普通攻击没有 skill_base 行，不吃这一条（设计写的是"招式伤害"）。乘区放在最后一步之后
+	# 统一乘，见 step 8 之前那一行，免得插进九步顺序里。
+	var talent_skill_factor := 1.0
+	if skill_base != null:
+		var rules: Dictionary = attacker.talent_rules if attacker.talent_rules != null else {}
+		talent_skill_factor += float(rules.get("skill_damage", 0.0))
 
 	var element: String = str(modifiers.get("element_override", skill_row.element))
 	if element.is_empty():
@@ -334,7 +347,8 @@ func resolve(attacker, defender, skill_row: Resource, modifiers: Dictionary = {}
 			)
 	var step_b := step_r * (1.0 - block_reduction)
 	# 7. 增伤 / 减伤（减伤是终局乘区：装备属性 + 临时效果）
-	var dmg_up := 1.0 + float(modifiers.get("dmg_up", 0.0))
+	# 天赋「天生武胆」的招式伤害加成也落在**增伤**这一区（不是另插一步，九步顺序不动）
+	var dmg_up := (1.0 + float(modifiers.get("dmg_up", 0.0))) * talent_skill_factor
 	var total_reduction := clampf(
 		_stat(defender, "dmg_reduction") + float(modifiers.get("dmg_down", 0.0)),
 		0.0,
@@ -365,6 +379,7 @@ func resolve(attacker, defender, skill_row: Resource, modifiers: Dictionary = {}
 			"star": star,
 			"mastery": mastery,
 			"mastery_multiplier": mastery_multiplier,
+			"talent_skill_factor": talent_skill_factor,
 			"step_d": step_d,
 			"step_a": step_a,
 			"step_c": step_c,

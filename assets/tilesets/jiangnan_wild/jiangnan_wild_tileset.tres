@@ -1,7 +1,7 @@
 [gd_resource type="TileSet" format=3]
 
-[ext_resource type="Texture2D" path="res://assets/tilesets/_common/tiny_town_32.png" id="1_sr71u"]
-[ext_resource type="Texture2D" path="res://assets/tilesets/_common/fog_tile.png" id="2_uynt4"]
+[ext_resource type="Texture2D" path="res://assets/tilesets/ink_jianghu/jiangnan_wild/tilemap_packed.png" id="1_sr71u"]
+[ext_resource type="Texture2D" path="res://assets/tilesets/ink_jianghu/fog_tile.png" id="2_uynt4"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_uobvi"]
 texture = ExtResource("1_sr71u")
@@ -96,6 +96,55 @@ texture_region_size = Vector2i(32, 32)
 1:7/0 = 0
 1:7/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
 1:7/0/custom_data_0 = true
+6:0/0 = 0
+6:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+6:0/0/custom_data_0 = true
+6:1/0 = 0
+6:2/0 = 0
+6:3/0 = 0
+6:4/0 = 0
+6:5/0 = 0
+2:4/0 = 0
+2:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+2:4/0/custom_data_0 = true
+3:4/0 = 0
+3:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+3:4/0/custom_data_0 = true
+4:4/0 = 0
+4:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+4:4/0/custom_data_0 = true
+2:5/0 = 0
+2:5/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+2:5/0/custom_data_0 = true
+3:5/0 = 0
+3:5/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+3:5/0/custom_data_0 = true
+4:5/0 = 0
+4:5/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+4:5/0/custom_data_0 = true
+2:6/0 = 0
+2:6/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+2:6/0/custom_data_0 = true
+3:6/0 = 0
+3:6/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+3:6/0/custom_data_0 = true
+4:6/0 = 0
+4:6/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+4:6/0/custom_data_0 = true
+8:4/0 = 0
+8:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+8:4/0/custom_data_0 = true
+0:4/0 = 0
+0:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+0:4/0/custom_data_0 = true
+0:5/0 = 0
+0:5/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+0:5/0/custom_data_0 = true
+0:6/0 = 0
+7:4/0 = 0
+7:6/0 = 0
+7:6/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+7:6/0/custom_data_0 = true
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_de253"]
 texture = ExtResource("2_uynt4")
@@ -107,5 +156,7 @@ tile_size = Vector2i(32, 32)
 physics_layer_0/collision_layer = 2
 custom_data_layer_0/name = "blocked"
 custom_data_layer_0/type = 1
+custom_data_layer_1/name = "covering"
+custom_data_layer_1/type = 1
 sources/0 = SubResource("TileSetAtlasSource_uobvi")
 sources/1 = SubResource("TileSetAtlasSource_de253")

@@ -25,6 +25,15 @@ function Initialize-Probe {
     Copy-Item (Join-Path $root 'data\tables') (Join-Path $pristine 'data\tables') -Recurse
     Copy-Item (Join-Path $root 'docs\design\*') (Join-Path $pristine 'docs\design')
     Copy-Item (Join-Path $root 'docs\dev\模块对接表.csv') (Join-Path $pristine 'docs\dev')
+    # **贴图目录也要带上**：验收里有一条「`map_region.icon` 指向的贴图必须存在」（5.21g），
+    # 探针里没有 assets 的话那条会对每一行都报红——基线本来就红，改坏它反而看不出变化
+    # （探针的判定是「错误/警告条数有没有变」）。三类资源里现在只有地标图标被规则查过。
+    $iconsSrc = Join-Path $root 'assets\sprites\icons'
+    if (Test-Path -LiteralPath $iconsSrc) {
+        $iconsDst = Join-Path $pristine 'assets\sprites\icons'
+        New-Item -ItemType Directory -Path $iconsDst -Force | Out-Null
+        Copy-Item (Join-Path $iconsSrc '*') $iconsDst
+    }
 }
 
 function Reset-Work {
@@ -32,6 +41,10 @@ function Reset-Work {
     New-Item -ItemType Directory -Path $work -Force | Out-Null
     Copy-Item (Join-Path $pristine 'data') (Join-Path $work 'data') -Recurse
     Copy-Item (Join-Path $pristine 'docs') (Join-Path $work 'docs') -Recurse
+    $iconsSrc = Join-Path $pristine 'assets'
+    if (Test-Path -LiteralPath $iconsSrc) {
+        Copy-Item $iconsSrc (Join-Path $work 'assets') -Recurse
+    }
 }
 
 function Get-CsvLines {
@@ -153,6 +166,92 @@ $cases = [ordered]@{
         $c[$ri] = '0'
         $l[1] = $c -join ','
         Save-CsvLines 'difficulty_drop_rate.csv' $l
+    }
+    # 0.31.0 起的三张新表／新规则，各留一条「故意改坏」：证明这两道网真的盖到它们。
+    '对话选项指向不存在的节点' = {
+        $l = Get-CsvLines 'dialogue_option.csv'
+        $h = $l[0] -split ','
+        $ni = [array]::IndexOf($h, 'node_id')
+        $c = $l[1] -split ','
+        $c[$ni] = 'bogus_node'
+        $l[1] = $c -join ','
+        Save-CsvLines 'dialogue_option.csv' $l
+    }
+    '对话选项的心性旗标形状非法' = {
+        $l = Get-CsvLines 'dialogue_option.csv'
+        $h = $l[0] -split ','
+        $fi = [array]::IndexOf($h, 'set_flag')
+        $c = $l[1] -split ','
+        $c[$fi] = 'heartz_yi'
+        $l[1] = $c -join ','
+        Save-CsvLines 'dialogue_option.csv' $l
+    }
+    '观察点既没有小地图也没有区域' = {
+        $l = Get-CsvLines 'flavor_point.csv'
+        $h = $l[0] -split ','
+        $si = [array]::IndexOf($h, 'scene_id')
+        $ri = [array]::IndexOf($h, 'region_id')
+        $c = $l[1] -split ','
+        $c[$si] = ''; $c[$ri] = ''
+        $l[1] = $c -join ','
+        Save-CsvLines 'flavor_point.csv' $l
+    }
+    '抉择节点四列增益全空' = {
+        $l = Get-CsvLines 'story_node.csv'
+        $h = $l[0] -split ','
+        $ki = [array]::IndexOf($h, 'kind')
+        $ai = [array]::IndexOf($h, 'bonus_attr_id')
+        $si = [array]::IndexOf($h, 'bonus_stat_id')
+        for ($i = 1; $i -lt $l.Count; $i++) {
+            $c = $l[$i] -split ','
+            if ($c[$ki] -ne 'choice') { continue }
+            $c[$ai] = ''; $c[$si] = ''
+            $l[$i] = $c -join ','
+            break
+        }
+        Save-CsvLines 'story_node.csv' $l
+    }
+    '好感挂到不存在的人身上' = {
+        $l = Get-CsvLines 'npc_favor.csv'
+        $h = $l[0] -split ','
+        $ni = [array]::IndexOf($h, 'npc_id')
+        $c = $l[1] -split ','
+        $c[$ni] = 'bogus_person'
+        $l[1] = $c -join ','
+        Save-CsvLines 'npc_favor.csv' $l
+    }
+    '委托奖励指向不存在的物品' = {
+        $l = Get-CsvLines 'npc_quest.csv'
+        $h = $l[0] -split ','
+        $ri = [array]::IndexOf($h, 'reward_item_ids')
+        $c = $l[1] -split ','
+        $c[$ri] = 'bogus_reward'
+        $l[1] = $c -join ','
+        Save-CsvLines 'npc_quest.csv' $l
+    }
+    '地标图标指向不存在的贴图' = {
+        $l = Get-CsvLines 'map_region.csv'
+        $h = $l[0] -split ','
+        $ii = [array]::IndexOf($h, 'icon')
+        $c = $l[1] -split ','
+        $c[$ii] = 'icon_bogus'
+        $l[1] = $c -join ','
+        Save-CsvLines 'map_region.csv' $l
+    }
+    '套装档位凑不出来（把上限抬到拿不到）' = {
+        # 5.19b：黑风套最多穿 4 件（武器／身体／戒指／肩部各一），把档位抬到 5 就该报出来
+        $l = Get-CsvLines 'set_bonus.csv'
+        $h = $l[0] -split ','
+        $si = [array]::IndexOf($h, 'set_id')
+        $ci = [array]::IndexOf($h, 'required_count')
+        for ($i = 1; $i -lt $l.Count; $i++) {
+            $c = $l[$i] -split ','
+            if ($c[$si] -ne 'set_heifeng' -or $c[$ci] -ne '4') { continue }
+            $c[$ci] = '5'
+            $l[$i] = $c -join ','
+            break
+        }
+        Save-CsvLines 'set_bonus.csv' $l
     }
 }
 

@@ -26,6 +26,8 @@ const ADDED_IN := {
 	11: ["char_hp"],
 	12: ["field_buffs"],
 	13: ["world_pos"],
+	14: ["talent_picks", "custom_templates"],
+	15: ["npc_favor"],
 }
 
 
@@ -36,7 +38,8 @@ func suite_name() -> String:
 func run() -> void:
 	var db = get_db()
 	# 存档结构版本写死绝对值：升版本必须同时写迁移与 `ADDED_IN`（漏一边就有档读不回来）
-	check_eq(GameStateScript.VERSION, 13, "存档结构版本是 13（v13 = 大地图坐标 world_pos）")
+	check_eq(GameStateScript.VERSION, 15,
+		"存档结构版本是 15（v15 = NPC 好感 npc_favor，设计 19）")
 	_clean_dir(TEST_DIR)
 	_check_direct_migration(db)
 	_check_store_migration(db)
@@ -47,6 +50,7 @@ func run() -> void:
 	_check_v10_migration(db)
 	_check_v12_field_buffs(db)
 	_check_v13_world_pos(db)
+	_check_v14_creation(db)
 	_check_every_legacy_version(db)
 	_check_retired_characters(db)
 	_check_corrupt(db)
@@ -338,6 +342,52 @@ func _check_v13_world_pos(db) -> void:
 	var salvaged = GameStateScript.from_dict(broken, db)
 	check_eq(salvaged.world_position(), Vector2.ZERO, "写坏的坐标被丢掉，不当成一条记录")
 	session.free()
+
+
+## v13 → v14：天赋与自建角色模板进存档（设计 12／13）。
+##
+## 两条都要：① 老档（没有这两份记录）读进来 = 没天赋、没自建角色，且版本升到 14；
+## ② 新档往返：天赋列表原样回来；**自建角色的模板要重新注入 db**，
+## 否则按 char_id 取 `character_base` 会查不到，装备与武学全落空。
+func _check_v14_creation(db) -> void:
+	var fresh = GameStateScript.new_game(db, "normal")
+	var char_id := str(fresh.char_ids[0])
+	fresh.talent_picks[char_id] = ["tal_tie_shen"]
+	var data: Dictionary = fresh.to_dict()
+	var back = GameStateScript.from_dict(data, db)
+	check_eq(Array(back.talent_picks.get(char_id, [])).size(), 1, "天赋随存档往返")
+	check_eq(str(Array(back.talent_picks.get(char_id, []))[0]), "tal_tie_shen", "天赋 id 原样")
+
+	# 老档（v13）：把这两份记录删掉再读 → 空，版本升到 14
+	var legacy: Dictionary = data.duplicate(true)
+	legacy["version"] = 13
+	legacy.erase("talent_picks")
+	legacy.erase("custom_templates")
+	var old = GameStateScript.from_dict(legacy, db)
+	check_true(old.talent_picks.is_empty(), "v13 老档没有天赋记录（不是坏档）")
+	check_true(old.custom_templates.is_empty(), "v13 老档没有自建角色")
+	check_eq(old.version, GameStateScript.VERSION, "老档读进来后升到当前版本")
+
+	# 自建角色：模板进存档 → 读档时重新注入 character_base，按 char_id 查得到
+	var custom: Dictionary = data.duplicate(true)
+	custom["version"] = 14
+	custom["char_ids"] = ["char_custom"]
+	custom["char_levels"] = {"char_custom": 1}
+	custom["talent_picks"] = {}
+	custom["custom_templates"] = {"char_custom": {
+		"name_cn": "自建书生", "role_tag": "自建", "weapon_type": "sword",
+		"attrs": {"str": 8, "con": 8, "agi": 8, "int": 9, "luk": 5, "wu": 6, "gen": 5},
+		"start_level": 1, "start_skill_ids": "sk_xuanwei_01", "start_equip_ids": "eq_sword_01",
+	}}
+	var restored = GameStateScript.from_dict(custom, db)
+	check_not_null(restored, "自建角色的档读得回来")
+	if restored != null:
+		check_true(restored.char_ids.has("char_custom"), "自建角色留在队伍里（没被当成下架角色清掉）")
+		var row: Resource = db.get_row("character_base", "char_custom")
+		check_not_null(row, "读档时把自建模板重新注入 character_base")
+		if row != null:
+			check_eq(int(row.initial_con), 8, "自建模板的七维从存档恢复")
+			check_eq(str(row.weapon_type), "sword", "武器类型也恢复")
 
 
 ## v10（没有战斗外气血）老档：读进来当作全队满血，版本升到 v11。

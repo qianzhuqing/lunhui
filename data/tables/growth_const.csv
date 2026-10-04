@@ -15,3 +15,7 @@ codex_bonus,图鉴奖励幅值,1,每次奖励七项属性各 +1
 codex_cap,图鉴奖励次数上限,10,
 dummy_xp_cap_level,木桩经验上限等级,5,角色到这一级后木桩战不再给经验
 dummy_mastery_cap,木桩熟练度上限,3,参与木桩战的招式熟练度只涨到这一级
+talent_points,创建天赋点数,5,创建角色时可分配的天赋点总数
+create_attr_total,创建属性总和,49,创建角色时七维必须正好加到这一点数
+create_attr_min,创建单项下限,3,单项最低值
+create_attr_max,创建单项上限,15,单项最高值

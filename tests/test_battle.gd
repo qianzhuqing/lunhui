@@ -4,6 +4,7 @@ extends "res://tests/test_case.gd"
 const BattleActorScript := preload("res://src/core/battle_actor.gd")
 const BattleSimulatorScript := preload("res://src/core/battle_simulator.gd")
 const EnemyFactoryScript := preload("res://src/core/enemy_factory.gd")
+const AttributeCalculatorScript := preload("res://src/core/attribute_calculator.gd")
 const RngServiceScript := preload("res://src/core/rng_service.gd")
 const EncounterScript := preload("res://src/core/encounter.gd")
 
@@ -95,34 +96,31 @@ func _check_rewards(db) -> void:
 func _check_difficulty_scaling(db) -> void:
 	var factory = EnemyFactoryScript.new(db)
 	var base: Resource = db.get_row("enemy_base", "en_bd_thug")
-	# 0.14.0（设计 10 §五）：敌人属性现在是「七维/派生列 **+ 装备加成**」——
-	# 山寨喽啰身上挂着柴刀与布衣，布衣给 20 点气血，所以期望值要把装备那一份算进来
-	# （装备加成是**乘倍率之前**的基础值：难度倍率照旧在最后乘）。
-	var equip_hp := 0
-	var equip_atk := 0.0
-	var equip_def := 0.0
-	for equip_row: Resource in db.rows_where("enemy_equip", "enemy_id", "en_bd_thug"):
-		var equip: Resource = db.get_row("equip_base", str(equip_row.equip_id))
-		if equip == null:
-			continue
-		equip_hp += int(equip.bonus_hp_max)
-		equip_atk += float(equip.bonus_atk_phys)
-		equip_def += float(equip.bonus_def_phys)
-	check_gt(float(equip_hp), 0.0, "夹具前提：山寨喽啰的装备里有加血的那件（布衣 +20）")
+	# 0.28.0（设计 10 §七）：敌人走**共用管线但不吃 `level_growth` 基础列**——
+	# 派生数值 = 七维 → `attr_to_stat` ＋ 装备／内功固定值（山寨喽啰挂着柴刀与布衣，
+	# 布衣给 20 点气血），难度倍率照旧**在最后乘**。
+	# 期望值直接用**同一份** `AttributeCalculator` 现算，不写死数字（数据变它就跟着变）。
+	var calculator = AttributeCalculatorScript.new(db)
+	check_false(base.attr_map().is_empty(), "夹具前提：山寨喽啰的七维配着（不再是空的）")
+	var expected_base: Dictionary = calculator.compute(
+		int(base.level), base.attr_map(), {},
+		factory._enemy_contributions("en_bd_thug"), false
+	)
+	check_gt(float(expected_base.get("hp_max", 0.0)), 0.0, "夹具前提：七维算得出气血")
 	for difficulty_id: String in ["normal", "hard", "nightmare"]:
 		var row: Resource = db.get_row("difficulty_config", difficulty_id)
 		var actor = factory.create("en_bd_thug", difficulty_id)
 		check_eq(
-			actor.max_hp(), roundi(float(base.hp_base + equip_hp) * float(row.enemy_hp_mul)),
-			"%s：血量 = (hp_base + 装备加成) × enemy_hp_mul" % difficulty_id,
+			actor.max_hp(), roundi(float(expected_base["hp_max"]) * float(row.enemy_hp_mul)),
+			"%s：血量 = 七维算出的基础 × enemy_hp_mul" % difficulty_id,
 		)
 		check_float(
-			actor.stat("atk_phys"), float(base.atk_phys + equip_atk) * float(row.enemy_atk_mul),
-			"%s：外功 = (atk_phys + 装备加成) × enemy_atk_mul" % difficulty_id,
+			actor.stat("atk_phys"), float(expected_base["atk_phys"]) * float(row.enemy_atk_mul),
+			"%s：外功 = 七维算出的基础 × enemy_atk_mul" % difficulty_id,
 		)
 		check_float(
-			actor.stat("def_phys"), float(base.def_phys + equip_def) * float(row.enemy_def_mul),
-			"%s：外防 = (def_phys + 装备加成) × enemy_def_mul" % difficulty_id,
+			actor.stat("def_phys"), float(expected_base["def_phys"]) * float(row.enemy_def_mul),
+			"%s：外防 = 七维算出的基础 × enemy_def_mul" % difficulty_id,
 		)
 	var normal = factory.create("en_bd_thug", "normal")
 	var hard = factory.create("en_bd_thug", "hard")

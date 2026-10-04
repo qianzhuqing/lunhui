@@ -11,6 +11,7 @@ const TEST_SCRIPTS := [
 	"res://tests/test_attribute.gd",
 	"res://tests/test_damage.gd",
 	"res://tests/test_battle.gd",
+	"res://tests/test_battle_fuzz.gd",
 	"res://tests/test_drop.gd",
 	"res://tests/test_end_to_end.gd",
 	"res://tests/test_save_store.gd",
@@ -25,6 +26,7 @@ const TEST_SCRIPTS := [
 	"res://tests/test_encounter.gd",
 	"res://tests/test_battle_session.gd",
 	"res://tests/test_overworld.gd",
+	"res://tests/test_world_event.gd",
 	"res://tests/test_battle_ui.gd",
 	"res://tests/test_local_map.gd",
 	"res://tests/test_poise.gd",
@@ -50,6 +52,11 @@ const TEST_SCRIPTS := [
 	"res://tests/test_audio.gd",
 	"res://tests/test_settings.gd",
 	"res://tests/test_guide.gd",
+	"res://tests/test_story.gd",
+	"res://tests/test_talent.gd",
+	"res://tests/test_dialogue.gd",
+	"res://tests/test_creation.gd",
+	"res://tests/test_overlay_stack.gd",
 	"res://tests/test_recruit.gd",
 	"res://tests/test_guard.gd",
 	"res://tests/test_practice.gd",
@@ -63,14 +70,15 @@ const TEST_SCRIPTS := [
 ## 2026-10-03 之前这里停在 4366 而实际已经 5318，空了 952 条的窟窿——那次是「有下限」和「没下限」的区别。
 ## 同一天晚些时候又量了一次：停在 6059、实际 6213，**又空了 154 条**——
 ## 这次不是"没下限"，而是**下限松到拦不住"删掉一整块断言"**（最小的用例文件也就 15 条断言）。
-## 现在贴到 6841−10＝6831（0.7.0／0.8.x 那批新表与新用例上来之后；本条是"余量上限"逼着贴的，
-## 见决策 211）。并加了余量上限（见 `SLACK_LIMIT`）：
+## 现在贴到 9620−10＝9610（0.32.0 那批用例上来之后：探索口径两条断言、`Conditional`／
+## `Overlay` 分层、UI 九宫格与架势图、序幕 `flag_open_*` 与 `flag_obs_*`；本条是"余量上限"
+## 逼着贴的，见决策 211）。并加了余量上限（见 `SLACK_LIMIT`）：
 ## 基线再漂就会被自己点名。
 ## 注意「整个用例文件被摘掉」**不归这条管**：那件事由 `test_handshake._check_verify_tests_are_executed`
 ## （登记的用例必须在 `TEST_SCRIPTS` 里、否则红）兜着。这条守的是**文件内部的整块断言被删**。
 ## 数据表行数改动也会带来断言增减（逐行断言的循环）：确认无误后把这一行改到新值——
 ## 那是**有意识的行为**，不是把下限调松。
-const MIN_ASSERTIONS := 8051
+const MIN_ASSERTIONS := 9610
 
 ## 基线最大余量：实际断言数 − `MIN_ASSERTIONS` 超过它，说明基线松了（这条网在退化成摆设）。
 ## 有它是因为真发生过两次：`4366 vs 5318`（952 条窟窿）、`6059 vs 6213`（154 条）。

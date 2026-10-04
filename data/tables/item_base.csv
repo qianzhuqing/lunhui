@@ -15,3 +15,6 @@ item_bd_token,黑风寨腰牌,key,fine,,1,0,1,item_bd_token,伪装入寨所需
 item_poison_wine,毒酒,key,rare,,1,0,1,item_poison_wine,可毒杀聚义厅毒手
 item_scroll_wudu,五毒秘籍残页,skillbook,rare,,99,0,0,item_scroll_wudu,集齐解锁五毒武学
 item_scroll_drunk,醉里乾坤残卷,skillbook,legend,,99,0,1,item_scroll_drunk,隐藏武学，集齐解锁
+item_treasure_map,藏宝图,key,rare,,1,0,1,item_treasure_map,画的是落雁坡西边一处石隙；笔迹很旧
+item_scroll_yipian,遗篇残卷,skillbook,legend,,99,0,1,item_scroll_yipian,前朝遗篇·归元；第一章最高品质的内功
+item_bd_ledger,账册,key,rare,,1,0,1,item_bd_ledger,白鹭渡沉银案的账册：前面记着贪墨的数目，最后几页夹着一份活人名册

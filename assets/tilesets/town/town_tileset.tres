@@ -1,7 +1,7 @@
 [gd_resource type="TileSet" format=3]
 
-[ext_resource type="Texture2D" path="res://assets/tilesets/_common/tiny_town_32.png" id="1_xjfgh"]
-[ext_resource type="Texture2D" path="res://assets/tilesets/_common/fog_tile.png" id="2_qoi7o"]
+[ext_resource type="Texture2D" path="res://assets/tilesets/ink_jianghu/town/tilemap_packed.png" id="1_xjfgh"]
+[ext_resource type="Texture2D" path="res://assets/tilesets/ink_jianghu/fog_tile.png" id="2_qoi7o"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_gk3hh"]
 texture = ExtResource("1_xjfgh")
@@ -96,6 +96,14 @@ texture_region_size = Vector2i(32, 32)
 1:7/0 = 0
 1:7/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
 1:7/0/custom_data_0 = true
+6:0/0 = 0
+6:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+6:0/0/custom_data_0 = true
+6:1/0 = 0
+6:2/0 = 0
+6:3/0 = 0
+6:4/0 = 0
+6:5/0 = 0
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_ybvt1"]
 texture = ExtResource("2_qoi7o")
@@ -107,5 +115,7 @@ tile_size = Vector2i(32, 32)
 physics_layer_0/collision_layer = 2
 custom_data_layer_0/name = "blocked"
 custom_data_layer_0/type = 1
+custom_data_layer_1/name = "covering"
+custom_data_layer_1/type = 1
 sources/0 = SubResource("TileSetAtlasSource_gk3hh")
 sources/1 = SubResource("TileSetAtlasSource_ybvt1")

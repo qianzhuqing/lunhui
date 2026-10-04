@@ -4,7 +4,10 @@
 ##   `drop`   击败指名的敌人（战斗结算调用）
 ##   `hidden` 触发指名的隐藏点位（小地图触发点调用）
 ##   `item`   研读指名的秘籍（背包里研读调用；一次性，学会就消耗一本）
-## 未实现：`npc`（门派传授，要 NPC 对话）、`story`（章节节点，要剧情旗标）、`shop`（商店买武学）。
+## 0.22.0 起 **`story` 也接上了**（设计 18 §3.1）：`source_id` 指向 `story_node.node_id`，
+## 由 `StoryService` 在「条件旗标点亮 + 到了指定地点」时发放——
+## 那 6 部原来悬空的武学（`chapter1_end`／`xuanwei`／`yaowang`）由此有了落地处。
+## 未实现：`npc`（门派传授，要 NPC 对话表）、`shop`（商店买武学，要价格落点）。
 ##
 ## 口径：学到的武学进**每个队员**的已学列表（队伍共享，图鉴按去重计数），
 ## 单人专属来源（门派指定传人、秘籍指定某人）未做。
@@ -14,7 +17,9 @@ extends RefCounted
 const SkillLoadoutScript := preload("res://src/core/skill_loadout.gd")
 
 ## 已接入的来源类型（其余类型即使 source_id 撞上了也不发放）
-const IMPLEMENTED_SOURCES := ["drop", "hidden", "item"]
+## `origin`（出身本命机遇，设计 21 §九）与 `story` **同一条发放通道**——
+## 区别只在条件：`story` 看旗标，`origin` 看"主角是不是这个出身"。
+const IMPLEMENTED_SOURCES := ["drop", "hidden", "item", "story", "origin"]
 
 
 ## 某个来源带哪些武学（source_type + source_id 命中）

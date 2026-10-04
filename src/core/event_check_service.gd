@@ -27,6 +27,8 @@ extends RefCounted
 
 const CharacterSheetScript := preload("res://src/core/character_sheet.gd")
 const RngServiceScript := preload("res://src/core/rng_service.gd")
+## 天赋的 `rule:` 效果（判定加成 / 门槛）——谁消费谁读，这里读的是判定那两条
+const TalentServiceScript := preload("res://src/core/talent_service.gd")
 ## 奖励物品入账的口径与战斗结算**共用一处**（货币进钱、装备建实例、其余堆叠）
 const BattleRewardScript := preload("res://src/core/battle_reward.gd")
 
@@ -43,6 +45,17 @@ const SOFT_MAX := 0.95
 ## 按 04 文档「暂缓规则」的同一口径在界面上如实说明。设计补了代价列（如 `hp_cost`）之后，
 ## 把这条清单和说明一起删掉。
 const PENDING_COST_CHECKS := ["ev_shed_trap"]
+
+## 「这条判定过了 → 顺手置这枚旗标」。
+##
+## 现例：地牢里**救治被囚村民**（`ev_cell_heal`）＝ 救出阿福 → `flag_qiutu_saved`。
+## 钱大夫的委托（`nq_qian_01`：药王符 ＋ 好感 30）等的就是它——**没有这条映射，
+## 那条委托永远交不了**：`flag_qiutu_saved` 在全项目里只有"要求"、没有任何"来源"。
+##
+## 为什么写在这里而不是表里：`event_check` 的奖励是"一 row 一种类型"（`reward_type` 单项），
+## 而这条判定**既给药品又要记账**（设计 06 允许的 7 种奖励里没有"兼得"这一种）。
+## 已记 `待策划确认.md` Q70——设计给列（例如 `event_check.set_flag`）就挪进表。
+const SUCCESS_FLAGS := {"ev_cell_heal": "flag_qiutu_saved"}
 
 var db
 var state
@@ -150,6 +163,21 @@ func soft_chance(value: int, difficulty: int) -> float:
 	)
 
 
+## 有天赋加成时**实际要比的门槛**（设计 12 §六：江湖百晓生「判定门槛 −2——让不想打的人也能推内容」）。
+##
+## 队伍里只要有人带着 `rule:event_check_difficulty`，门槛就往下压（取队里最大的一份）；
+## 压到 0 为止，**不写负数**——门槛是负数会让「不够就做不到」的硬判定变成永远能做，
+## 那是另一套语义（设计没要）。
+## 台账上把两个数都记下来（`difficulty_base` 与 `difficulty`）：界面与用例要能看出被减了多少。
+func effective_difficulty(row: Resource) -> int:
+	var base := int(row.difficulty)
+	if db == null or state == null:
+		return base
+	return maxi(0, base - int(TalentServiceScript.party_rule_value(
+		db, state, "event_check_difficulty", 0.0
+	)))
+
+
 ## 判定：{ok(能不能判，比如已经做过), success(确定性结果), roll_needed, chance,
 ##        value, difficulty, source_label, who, text}
 ##
@@ -172,7 +200,7 @@ func judge(check_id: String) -> Dictionary:
 	var best: Dictionary = best_check_value(source)
 	if int(best["value"]) < -900:
 		return {"ok": false, "success": false, "text": "%s：判定来源 %s 无效" % [str(row.note), source]}
-	var difficulty := int(row.difficulty)
+	var difficulty := effective_difficulty(row)
 	var value := int(best["value"])
 	var check_type := str(row.check_type)
 	var success: bool = value >= difficulty
@@ -235,6 +263,10 @@ func resolve(check_id: String) -> Dictionary:
 				text += "　%s" % grant_text
 		if state != null:
 			state.record_event_check(check_id, "done")
+			# 「过了这条判定 → 置旗标」（见 `SUCCESS_FLAGS` 的注释）：判定成功才记账，
+			# 失败不置（软判定失败不惩罚，但也没"救出来"）。
+			if SUCCESS_FLAGS.has(check_id):
+				state.set_flag(str(SUCCESS_FLAGS[check_id]))
 	else:
 		text += "　%s" % str(row.fail_note)
 		if PENDING_COST_CHECKS.has(check_id):

@@ -110,7 +110,10 @@ func refresh() -> void:
 		entries = clues.region_clues()
 	else:
 		var row: Resource = db.get_row("map_local", scene_id)
-		_title.text = "线索本　（%s）" % (str(row.name_cn) if row != null else scene_id)
+		if row == null:
+			# 数据错：scene id 只进日志（AGENTS：玩家可见文案不许出现表内 id，见决策 329）
+			push_error("[clue] map_local 里没有这张图：%s" % scene_id)
+		_title.text = "线索本　（%s）" % (str(row.name_cn) if row != null else "数据错，已记进日志")
 		entries = clues.clues_for_scene(scene_id)
 	var done := 0
 	for entry: Dictionary in entries:
@@ -206,8 +209,9 @@ func _run_clue_selftest() -> void:
 			with_clues += 1
 		if bool(entry.get("unsupported", false)):
 			unsupported += 1
-	# 黑风寨本图 6 条隐藏（后山密道那条的 scene_id 是 scene_cave）
-	ok = ok and hidden == 6 and events == 4 and with_clues == scene_entries.size()
+	# 黑风寨本图 6 条隐藏（后山密道那条的 scene_id 是 scene_cave）＋ 5 条事件判定
+	# （0.29.0 加了 `ev_shen_rescue`：地牢里救沈雁回）
+	ok = ok and hidden == 6 and events == 5 and with_clues == scene_entries.size()
 	lines.append("黑风寨：隐藏 %d 条／事件 %d 条／都有线索=%s（缺位点未做 %d 条）" % [
 		hidden, events, with_clues == scene_entries.size(), unsupported,
 	])
@@ -226,8 +230,9 @@ func _run_clue_selftest() -> void:
 	scope = "region"
 	refresh()
 	var region_entries: Array = clues.region_clues()
-	# 野外按地标：落雁坡 3、荒村 1、塌陷山洞 1、黑风寨 2、清风驿 1 = 8
-	ok = ok and region_entries.size() == 8
+	# 野外按地标：落雁坡 3、荒村 1、塌陷山洞 1、黑风寨 2、清风驿 1、官道 1 = 9
+	# （官道那条是 0.28.0 的 `ev_patrol_check`，此前这条期望值一直少算了驿站这一格）
+	ok = ok and region_entries.size() == 9
 	lines.append("大地图线索=%d 条（落雁坡 %d／荒村 %d）" % [
 		region_entries.size(),
 		clues.clues_for_region("n_luoyanpo").size(),

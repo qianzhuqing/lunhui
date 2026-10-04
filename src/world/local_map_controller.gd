@@ -13,6 +13,8 @@ extends Node2D
 
 const PlayerControllerScript := preload("res://src/world/player_controller.gd")
 const CopyGuardScript := preload("res://src/ui/copy_guard.gd")
+## 条件地表看「母地标是不是持有类解锁」，判据与大地图共用一份（`WorldMapService.held_item_id`）
+const WorldMapServiceScript := preload("res://src/core/world_map_service.gd")
 const RoamingEnemyScript := preload("res://src/world/roaming_enemy.gd")
 const ChestScript := preload("res://src/world/chest.gd")
 const TriggerPointScript := preload("res://src/world/trigger_point.gd")
@@ -29,7 +31,21 @@ const TableDbScript := preload("res://src/core/table_db.gd")
 ## 战斗外增益 HUD：与大地图共用同一份文案（`FieldBuffHud`）
 const FieldBuffHudScript := preload("res://src/world/field_buff_hud.gd")
 const GuideServiceScript := preload("res://src/core/guide_service.gd")
+const StoryServiceScript := preload("res://src/core/story_service.gd")
+const ChapterServiceScript := preload("res://src/core/chapter_service.gd")
+const OverlayStackScript := preload("res://src/ui/overlay_stack.gd")
+const NpcServiceScript := preload("res://src/core/npc_service.gd")
+## NPC 面板的两种模式（设计 0.28.0 的 Q62）：E = 交互、Q = 只读信息
+const NpcPanelMode := preload("res://src/ui/npc_panel.gd")
+const CHARACTER_SCENE := "res://scenes/character_screen.tscn"
+const NPC_SCENE := "res://scenes/npc_panel.tscn"
 const RecruitServiceScript := preload("res://src/core/recruit_service.gd")
+## 观察点（设计 20 §3.2）：最薄的一张表，一个位点一句话
+const FlavorPointScript := preload("res://src/data/tables/flavor_point_row.gd")
+## 观察点的可见标记（设计 15 §一「可交互物暖色提亮」）：视觉只有一处出处
+const FlavorMarkerScript := preload("res://src/world/flavor_marker.gd")
+## 对话容器（设计 20 §十一）：客栈那一次招募就是燕小七的幕一对话
+const DialogueServiceScript := preload("res://src/core/dialogue_service.gd")
 const GuardServiceScript := preload("res://src/core/guard_service.gd")
 const PracticeServiceScript := preload("res://src/core/practice_service.gd")
 const SfxScript := preload("res://src/audio/sfx.gd")
@@ -42,6 +58,12 @@ const DUNGEON_SCENE := "res://scenes/dungeon_screen.tscn"
 const SaveServiceScript := preload("res://src/core/save_service.gd")
 const OVERWORLD_RUN := "res://scenes/world_run.tscn"
 const EXIT_DISTANCE := 28.0
+
+## 条件地表层的名字（设计 16 §3.2 的第 5 层，0.32.0 新增）。地编摆这一层，代码按条件整层显隐。
+const CONDITIONAL_LAYER := "Conditional"
+## 玩家位于遮挡瓦片（TileSet 的 `covering`）下方时，`Overlay` 层压到这个透明度
+## （设计 07 §节点结构「玩家走到下面时半透明」／16 §3.2）。
+const OVERLAY_COVER_ALPHA := 0.35
 ## 站多近才能跟 NPC 说话（格 = 32px，这里约 1 格）
 const NPC_DISTANCE := 30.0
 ## NPC 的**占位称呼**：07 §8.2 把镇上的非功能角色写成「平民 NPC／若干路人」，
@@ -67,10 +89,37 @@ const FACILITY_LABELS := {
 	"facility_inn": "客栈",
 	"facility_pawnshop": "当铺",
 	"facility_bounty_board": "悬赏板",
+	# 0.31.0：书铺（陆文昭「本命机遇·书箱底」的落点，07 §4.1 新增的无表信息点）。
+	"facility_bookshop": "书铺",
 }
 ## 引导第一步的旗标（09 §3.1「去清风驿的告示板看看」）。表里 `guide_step.condition` 写的就是这个名字，
 ## 这里只负责在玩家真的读了告示板时点亮它——**引导推进本身归 `GuideService`**。
 const FLAG_BOARD_READ := "flag_board_read"
+
+## 打赢某支队伍之后、回到图上要摆出来的那段对话（20 号 §七 的终局难题：打完大寨主，
+## 账册到手，沈雁回问你打算怎么办）。value 是 `dialogue_node.node_id`——
+## 「还没选过」「对质打过了」这些**条件写在表里**（`dialogue_node.condition`），
+## 代码只做「上一场打赢的是哪支队伍 → 翻哪张对话」这一层换算。
+##
+## 与 `battle_screen.TEAM_WIN_FLAGS` 同一套触发点（都是「打赢某队」的后果），
+## 但那两张表分在各自的场景层：旗标是战斗结算的事，对话要等回到图上才摆得出来。
+const TEAM_WIN_DIALOGUES := {"team_boss": "dl_ledger_choice"}
+
+## 判定**通过**之后要接着说的那句话（20 号 §四 幕四：地牢那次判定过了，铁栏后的人才开口）。
+## value 是 `dialogue_node.node_id`——「现在该不该说」写在表的 `condition` 里
+## （她一开口就是「你是来领那三十两的？」，打过大寨主之后换问账册那件事）。
+const EVENT_DIALOGUES := {"ev_shen_rescue": "dl_shen_cell"}
+
+## 序幕·择念（设计 20 号 §3.1）：读告示板那一下的**第一个决定**。
+##
+## 设计 0.29.1 v2 第 4 条把它定在「悬赏板交互里，与引子同框、零新增位点」——
+## 「玩家的第一个决定要和他的第一个动作在一起」。台词与三个选项都在表里，
+## 这里只负责什么时候摆出来；**条件写在表里**（三个心性旗标一个都没点亮过），
+## 选过之后同一条条件不再成立，所以不会反复问。
+##
+## 节点 id 的唯一出处是 `DialogueService.OPENING_NODE`（`choose()` 要在同一处顺带置
+## `flag_open_*`，见那里的注释），这里只引用，不另立一份。
+const OPENING_CHOICE_NODE := DialogueServiceScript.OPENING_NODE
 
 var battle_switch_handler := Callable()
 var return_handler := Callable()
@@ -98,6 +147,7 @@ var cultivate_panel: Node = null
 var clue_panel: Node = null
 ## 完成度界面（M 打开：四项完成度 + 楼层与扫荡按钮）
 var dungeon_panel: Node = null
+var npc_panel: Node = null
 var _save_service = null
 
 var _status: Label
@@ -114,9 +164,20 @@ var _progress_label: Label
 var _hud: CanvasLayer = null
 ## 事件判定位点：{check_id, node, position}
 var events: Array = []
+## 观察点位点：{point_id, node, position}（设计 20 §3.2；只在这张图里收）
+var flavor_points: Array = []
 var _event_service = null
+## 浮层栈（设计 18.1）：商店／打坐／角色／线索本／完成度都压在它上面
+var _overlays = null
 var _was_sneaking := false
 var _dungeon
+## 遮挡层（`Overlay`）与它当前是不是压在玩家身上（0.32.0：石隙死路的岩檐）
+var _overlay_layer: TileMapLayer = null
+var _overlay_covering := false
+## 这一层的 TileSet 认不认 `covering` 自定义数据（老资产没有这一层 → 不做半透明，不报错）
+var _covering_supported := false
+## 条件地表层（`Conditional`）：拿到藏宝图才显示石隙那条细径
+var _conditional_layer: TileMapLayer = null
 var _last_room_id := ""
 var _exit_position := Vector2.ZERO
 var _has_exit := false
@@ -154,6 +215,8 @@ func setup() -> void:
 	var ysort: Node2D = world.get_node_or_null("YSort")
 	if ysort != null:
 		ysort.y_sort_enabled = true
+	_prepare_conditional_layer()
+	_prepare_overlay_cover()
 	_spawn_player()
 	_spawn_teams()
 	_spawn_chests()
@@ -161,6 +224,7 @@ func setup() -> void:
 	_collect_npc_slots()
 	_build_place_labels()
 	_collect_events()
+	_collect_flavor_points()
 	# 战败处理（08）要「回最近到过的出生点或城镇」——**进城镇时在这里登记**。
 	# 只有这一处：大地图进图与驿站传送都走 `pending_local_scene` → 这条 setup，不会漏记也不会重复。
 	_note_shelter_if_town(session_node)
@@ -173,8 +237,211 @@ func setup() -> void:
 	# （见 `interact()` 的 facility_inn 分支）——进图自动收人会跳过玩家该走的那一步。
 	if not _is_town():
 		_join_pending_recruits(false)
+	# 剧情节点（0.22.0）：条件旗标已点亮 + 到了这张图 → 发武学；
+	# `chapter_end` 节点同时置章节完成条件。**进图与换房间都要判**（人是走进去的）。
+	_claim_story_nodes()
+	# 剧情抉择（20 §七）：上一场打赢大寨主之后，终局难题就在这张图上等人回答。
+	# 条件（没选过 ＋ 对质打过了）全在表的 `dialogue_node.condition` 里，这里只负责摆出来。
+	_open_pending_choice_dialogue()
+	# 备货旗标这类「口径写在表里、但没人去置」的条件，进图时算一次
+	GuideServiceScript.refresh_derived_flags(db, current_state())
 	if _clear_team_overlap():
 		_contact_grace = CONTACT_GRACE
+
+
+# ---------------------------------------------------------------- 地表分层（0.32.0）
+
+## 条件地表（设计 16 §3.2 第 5 层 `Conditional`）：**整层**显隐，不是逐格擦。
+##
+## 唯一在用的地方是**大地图**上那条「落雁坡西 → 石隙迷窟」的碎石细径（22 格，藏在藏宝图里）。
+## 小地图这边留着同一套接口：判据与大地图**共用一份**
+## （`WorldMapService.conditional_layer_rule`），这里只是把「本图的地标」缩成母地标那一个
+## （`map_local.parent_node`）——谁都不许再抄一份条件语言。
+##
+## 返回 {apply, items}：apply=false 表示这层没有条件可依（保持地编摆的样子，不擅自隐藏）。
+func conditional_layer_rule() -> Dictionary:
+	var node_ids := PackedStringArray()
+	var local_row: Resource = db.get_row("map_local", scene_id) if db != null else null
+	if local_row != null and not str(local_row.parent_node).is_empty():
+		node_ids.append(str(local_row.parent_node))
+	return WorldMapServiceScript.conditional_layer_rule(db, node_ids)
+
+
+## 这层现在该不该显示（按上一条的规则问背包）
+func conditional_layer_visible() -> bool:
+	var node_ids := PackedStringArray()
+	var local_row: Resource = db.get_row("map_local", scene_id) if db != null else null
+	if local_row != null and not str(local_row.parent_node).is_empty():
+		node_ids.append(str(local_row.parent_node))
+	return WorldMapServiceScript.conditional_layer_visible(db, current_state(), node_ids)
+
+
+func _prepare_conditional_layer() -> void:
+	_conditional_layer = world.get_node_or_null(CONDITIONAL_LAYER) as TileMapLayer
+	_apply_conditional_layer()
+
+
+## 把条件地表的显隐刷成当前状态。**每帧便宜**（一次背包查询），随掉图／用图立刻跟上：
+## 藏宝图可能是在这张图里开箱拿到的，不能等下次进图才显示。
+func _apply_conditional_layer() -> void:
+	if _conditional_layer == null:
+		return
+	_conditional_layer.visible = conditional_layer_visible()
+
+
+func _prepare_overlay_cover() -> void:
+	_overlay_layer = world.get_node_or_null("Overlay") as TileMapLayer
+	if _overlay_layer == null or _overlay_layer.tile_set == null:
+		return
+	_covering_supported = tile_set_has_covering(_overlay_layer.tile_set)
+	_refresh_overlay_cover()
+
+
+## TileSet 里有没有 `covering` 这一层自定义数据（由 `tools/mapgen/map_kit.gd` 生成）。
+## 老资产没有它时静默退化：不做半透明，也不报错——「量不出来 ≠ 塞不下」那套口径同样适用。
+static func tile_set_has_covering(tile_set: TileSet) -> bool:
+	if tile_set == null:
+		return false
+	for index in tile_set.get_custom_data_layers_count():
+		if tile_set.get_custom_data_layer_name(index) == "covering":
+			return true
+	return false
+
+
+## 玩家（脚下一格 ＋ 头顶半格）有没有被「遮挡类」`Overlay` 瓦片盖住。
+## 静态：用例可以直接喂一层验判据，不必先造出「地编还没交付的那种图」。
+static func overlay_covering_at(layer: TileMapLayer, position: Vector2) -> bool:
+	if layer == null or not tile_set_has_covering(layer.tile_set):
+		return false
+	for probe: Vector2 in [Vector2.ZERO, Vector2(0, -16)]:
+		var cell: Vector2i = layer.local_to_map(layer.to_local(position + probe))
+		var data: TileData = layer.get_cell_tile_data(cell)
+		if data != null and bool(data.get_custom_data("covering")):
+			return true
+	return false
+
+
+## 玩家走到遮挡瓦片下面 → `Overlay` 整层半透明（走开恢复）。
+## 为什么整层而不是只削那一格：TileMapLayer 没有逐格透明度，而岩檐本来就只压在死路内段，
+## 整层压暗在观感上正是「钻到岩檐下面，眼前让开」；**不是**把瓦片删掉（那是 Conditional 的事）。
+func _refresh_overlay_cover() -> void:
+	if _overlay_layer == null or not _covering_supported:
+		return
+	var under := player != null and overlay_covering_at(_overlay_layer, player.global_position)
+	if under == _overlay_covering:
+		return
+	_overlay_covering = under
+	_overlay_layer.modulate.a = OVERLAY_COVER_ALPHA if under else 1.0
+
+
+## 领取这张图上能领的剧情节点（设计 18 §3.1）。返回领到的节点名，供状态栏播报。
+func _claim_story_nodes() -> Array:
+	var state = current_state()
+	if state == null or db == null:
+		return []
+	var claimed: Array = StoryServiceScript.claim_for(db, state, scene_id)
+	if claimed.is_empty():
+		return []
+	var names := PackedStringArray()
+	for entry: Dictionary in claimed:
+		names.append(str(entry.get("text_cn", entry.get("node_id", ""))))
+	# 章节完成条件满足 → 推进章节（`chapter_def`，设计 18 §3.1）
+	var advance: Dictionary = ChapterServiceScript.try_advance(db, state)
+	if bool(advance.get("advanced", false)):
+		names.append("章节推进：%s" % str(advance.get("name", "")))
+	if not str(advance.get("text", "")).is_empty():
+		names.append(str(advance.get("text")))
+	if _status != null and not names.is_empty():
+		_status.text = "；".join(names)
+	_refresh_guide()
+	return claimed
+
+
+## 判定通过之后接的那段对话（配在 `EVENT_DIALOGUES` 里的判定才有）。
+##
+## 摆一段「旁白／自白」式的对话（**没有「这个人」**）：序幕择念（20 §3.1）用它——
+## 数据仍是 `dialogue_node`／`dialogue_option`，只是面板按 `MODE_STORY` 渲染，
+## 不摆头像、好感条与交往段（那一段是给 NPC 用的）。
+func _open_story_dialogue(node_id: String) -> bool:
+	var state = current_state()
+	if db == null or state == null:
+		return false
+	var node: Resource = DialogueServiceScript.node_of(db, node_id)
+	if node == null:
+		push_error("[LocalMap] 要摆的旁白 %s 不在表里" % node_id)
+		return false
+	if not DialogueServiceScript.condition_ok(state, str(node.condition)):
+		return false
+	open_npc(str(node.speaker_id), NpcPanelMode.MODE_STORY, node_id)
+	return true
+
+
+## 判定通过之后接的那段对话（配在 `EVENT_DIALOGUES` 里的判定才有）。
+##
+## 为什么挂在判定后面而不是另摆一个 NPC 位点：设计 20 号 §四 幕四写的就是
+## 「铁栏后的人**听过你的话之后**才回头」——台词接在同一个位点的判定之后，
+## 而「她现在说哪一句」仍然由表的 `condition` 决定（本文件不替她编话）。
+func _open_event_dialogue(check_id: String) -> bool:
+	if db == null or not EVENT_DIALOGUES.has(check_id):
+		return false
+	var node_id := str(EVENT_DIALOGUES[check_id])
+	var node: Resource = DialogueServiceScript.node_of(db, node_id)
+	if node == null:
+		push_error("[LocalMap] 判定 %s 之后要说的对话 %s 不在表里" % [check_id, node_id])
+		return false
+	var state = current_state()
+	if state == null or not DialogueServiceScript.condition_ok(state, str(node.condition)):
+		return false
+	var speaker := str(node.speaker_id)
+	if speaker.is_empty():
+		push_error("[LocalMap] 对话 %s 没写说话人" % node_id)
+		return false
+	open_npc(speaker, NpcPanelMode.MODE_INTERACT, node_id)
+	return true
+
+
+## 上一场打赢的队伍有没有「回图就该摆出来的那段对话」（20 §七 的终局难题）。
+##
+## 触发链：`battle_screen._settle()` 把这一场的 `team_id` 写进 `GameSession.last_battle`
+## → 回到小地图时这里翻 `TEAM_WIN_DIALOGUES` → 取那张 `dialogue_node` →
+## **条件是表里写的**（`flag_heifeng_confront&!flag_ledger_*`）：没打过对质不会弹，
+## 已经选过也不会再弹（选完那条条件就不成立了）。对话没配、说话人认不出来都**不静默**：出声到日志。
+func _open_pending_choice_dialogue() -> bool:
+	var session_node := _session_node()
+	if session_node == null or db == null:
+		return false
+	var state = current_state()
+	if state == null:
+		return false
+	# 候选从哪来分两种情况：
+	#   ① 会话里认得出「上一场打赢的是哪支队」→ **只**摆那一支队配的那张对话；
+	#   ② 认不出（读档／重开一局，`last_battle` 是空的）→ 把配置里所有候选都问一遍。
+	# ② 不是可有可无：主菜单读档进来时 `last_battle` 已经不在会话里，而**那本账还在背包里**
+	# ——只认①的话，玩家一读档就再也回答不了那道题，三样永久增益永远拿不到。
+	var candidates := PackedStringArray()
+	var last: Variant = session_node.last_battle
+	var known_team := str(Dictionary(last).get("team_id", "")) if last is Dictionary else ""
+	if known_team.is_empty():
+		for key: String in TEAM_WIN_DIALOGUES.keys():
+			candidates.append(str(TEAM_WIN_DIALOGUES[key]))
+	elif TEAM_WIN_DIALOGUES.has(known_team):
+		candidates.append(str(TEAM_WIN_DIALOGUES[known_team]))
+	for node_id: String in candidates:
+		var node: Resource = DialogueServiceScript.node_of(db, node_id)
+		if node == null:
+			push_error("[LocalMap] 要摆的对话 %s 不在表里" % node_id)
+			continue
+		if not DialogueServiceScript.condition_ok(state, str(node.condition)):
+			continue
+		var speaker := str(node.speaker_id)
+		if speaker.is_empty():
+			push_error("[LocalMap] 对话 %s 没写说话人" % node_id)
+			continue
+		# 有意**不记「摆过了」**：条件在表里——没选过就还会摆出来（玩家关掉面板走了，
+		# 下次回到这张图它照样在等人回答）；选过之后同一条件不成立，自然就不再弹。
+		open_npc(speaker, NpcPanelMode.MODE_INTERACT, node_id)
+		return true
+	return false
 
 
 func current_state():
@@ -305,7 +572,7 @@ func _build_place_labels() -> void:
 			# 店名本身就说明「这儿能进」——HUD 已经写了「交互 E」，这里不再重复
 			label.text = text
 			label.position = Vector2(-28, -48)
-			label.add_theme_font_size_override("font_size", 13)
+			label.add_theme_font_size_override("font_size", 12)
 			label.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
 			label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
 			(child as Node2D).add_child(label)
@@ -316,7 +583,7 @@ func _build_place_labels() -> void:
 		exit_label.name = "PlaceLabel_Exit"
 		exit_label.text = "出口"
 		exit_label.position = Vector2(-18, -40)
-		exit_label.add_theme_font_size_override("font_size", 13)
+		exit_label.add_theme_font_size_override("font_size", 12)
 		exit_label.add_theme_color_override("font_color", Color(0.98, 0.9, 0.6, 0.95))
 		exit_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
 		marker.add_child(exit_label)
@@ -590,6 +857,60 @@ func event_near_player() -> String:
 	return best
 
 
+## 收集观察点位点（`Observe_<point_id>`，与判定位点一样可能挂在房间下）。
+##
+## 只收**这张图**的行（`scene_id` 命中）；`region_id` 那几条在大地图上，由
+## `overworld_controller` 收——同一行不会两边都生效（表里二选一）。
+func _collect_flavor_points() -> void:
+	flavor_points = []
+	if world == null:
+		return
+	for row: Resource in db.rows("flavor_point"):
+		if str(row.scene_id) != scene_id:
+			continue
+		var point_id := str(row.point_id)
+		for node in _find_markers(
+			world.get_node_or_null("Markers"), FlavorPointScript.marker_name_of(point_id)
+		):
+			# **看得见**：观察点本身只是一根 Marker2D，挂一枚小暖色菱形（决策 337）。
+			# 幂等——重复 setup() 不会挂第二枚（名字撞了 Godot 会自动改名，用例按名字找会出错）。
+			if node.get_node_or_null(FlavorMarkerScript.NODE_NAME) == null:
+				node.add_child(FlavorMarkerScript.new())
+			flavor_points.append({"point_id": point_id, "node": node, "position": node.global_position})
+
+
+## 玩家身边的观察点（最近的那个 point_id；没有就空串）
+func flavor_near_player() -> String:
+	if player == null:
+		return ""
+	var best := ""
+	var best_distance := EVENT_DISTANCE
+	for entry: Dictionary in flavor_points:
+		var distance: float = player.global_position.distance_to(entry["position"])
+		if distance <= best_distance:
+			best = str(entry["point_id"])
+			best_distance = distance
+	return best
+
+
+## 看一个观察点：**只出一句碎句**——不发奖励、不锁任何路（设计 20 §3.2），也不进线索本与副本完成度。
+##
+## **0.32.0 补**：读过顺手记一枚 `flag_obs_<point_id>`——幕二那条「免战」选项的前置
+## 就写 `flag_obs_ob_luoyanpo_cart_01`（「看过的观察点」由此能被别的判定引用）。
+## 之前全项目 0 处 `flag_obs_*`，那条前置是死的。旗标名按 `point_id` 拼，不逐条抄。
+func read_flavor_point(point_id: String) -> Dictionary:
+	var row: Resource = db.get_row("flavor_point", point_id)
+	if row == null:
+		return {"ok": false, "error": "没有这个观察点"}
+	var text := str(row.text_cn)
+	_set_status(text)
+	var state = current_state()
+	if state != null:
+		state.set_flag("flag_obs_%s" % point_id)
+		autosave("观察点")
+	return {"ok": true, "point_id": point_id, "text": text}
+
+
 ## 走一次事件判定（E 交互）：判定 → 奖励／失败说明，结果写存档
 func resolve_event(check_id: String) -> Dictionary:
 	var result: Dictionary = event_service().resolve(check_id)
@@ -608,6 +929,10 @@ func resolve_event(check_id: String) -> Dictionary:
 		var boss_encounter = _boss_encounter(str(reward.get("id", "")), check_id)
 		if boss_encounter != null:
 			_start_battle(boss_encounter)
+	elif bool(result["success"]):
+		# 判定过了接一段对话（设计 20 §四 幕四）：配在 `EVENT_DIALOGUES` 里的才有，
+		# 开不开得出还得看表里那条 `condition`（同一个判定位点在不同阶段说不同的话）。
+		_open_event_dialogue(check_id)
 	return result
 
 
@@ -631,13 +956,16 @@ func _collect_trigger_markers(node: Node, out: Array) -> void:
 ## 收集城镇 NPC 站位（`Characters/npc_slot_0N`）。地编交付的是 Marker2D + 一张占位贴图；
 ## 代码这边只记引用：交互入口是 `npc_near_player()`，摆放校验入口是
 ## `verify_maps._check_npc_slots()`（命名 / 没卡墙 / 从出生点走得到）。
+##
+## 命名**两种都收**（07 §九 第 12 条）：占位 `npc_slot_0N` 与按 id 绑的 `npc_<npc_id>`
+## ——地编改名之后这里不用跟着改（见 `框架说明.md` 决策 332）。
 func _collect_npc_slots() -> void:
 	npcs = []
 	var box: Node = world.get_node_or_null("Characters") if world != null else null
 	if box == null:
 		return
 	for child in box.get_children():
-		if child is Node2D and str(child.name).begins_with("npc_slot_"):
+		if child is Node2D and str(child.name).begins_with(NpcServiceScript.SLOT_PREFIX):
 			npcs.append(child)
 
 
@@ -655,24 +983,156 @@ func _add(parent: Node, node: Node) -> void:
 # ------------------------------------------------------------------ 交互
 
 func _unhandled_input(event: InputEvent) -> void:
-	# 商店／打坐界面开着的时候，输入归界面（E 不该再触发一遍交互，Esc 先关界面）
-	if _panel_open(shop_panel) or _panel_open(cultivate_panel) \
-			or _panel_open(clue_panel) or _panel_open(dungeon_panel):
+	# 浮层栈（设计 18.1）：**全局快捷键在任何浮层里都可用**——
+	# 所以这里先认快捷键与 Esc，只有它们都不吃这一下时，才轮到场景层的交互。
+	if event.is_action_pressed("ui_cancel"):
+		# Esc 弹一层；栈空才回场景（回大地图）
+		if close_top_overlay():
+			return
+		leave_to_overworld()
+		return
+	if event.is_action_pressed("open_character"):
+		open_character_overlay(0)
+		return
+	if event.is_action_pressed("open_bag"):
+		open_character_overlay(2)
+		return
+	if event.is_action_pressed("show_progress"):
+		open_dungeon_panel()
+		return
+	if event.is_action_pressed("show_clues"):
+		open_clues()
+		return
+	# 看 NPC 信息（设计 0.28.0 的 Q62）：**E 是交互菜单，Q 才是只读信息**——
+	# 「我只是想看看这人是谁」不该经过一次会改变世界状态的交互。
+	if event.is_action_pressed("npc_info"):
+		var who := npc_near_player()
+		# **失败也要出声**（2026-10-04 实测反馈：玩家按 Q 觉得"没反应"）——
+		# 以前这两条失败路径都是静默 `return`：附近没人、或这个位点还没绑到 `npc_def` 行。
+		if who == null:
+			_set_status("这附近没有可以看的人（Q 是看人，E 才是搭话）")
+			return
+		var info_id := _npc_for_slot(str(who.name))
+		if info_id.is_empty():
+			_set_status("这个人还没配信息（位点 %s 没绑到表里）" % str(who.name))
+			return
+		open_npc(info_id, NpcPanelMode.MODE_INFO)
+		return
+	# 下面这些是**场景层**的：有浮层开着就不许透传（E 不该在商店里再触发一次交互）
+	if overlays().depth() > 0:
 		return
 	if event.is_action_pressed("interact"):
 		interact()
-	elif event.is_action_pressed("ui_cancel"):
-		leave_to_overworld()
-	elif event.is_action_pressed("open_character"):
-		_change_scene("res://scenes/character_screen.tscn")
-	elif event.is_action_pressed("show_progress"):
-		open_dungeon_panel()
 	elif event.is_action_pressed("sweep"):
 		sweep_floor(-1)
-	elif event.is_action_pressed("show_clues"):
-		open_clues()
 	elif event.is_action_pressed("save_game"):
 		press_save()
+
+
+# ------------------------------------------------------------------ 浮层栈
+
+func overlays():
+	if _overlays == null:
+		_overlays = OverlayStackScript.new()
+	return _overlays
+
+
+## 压栈并关掉「被挤出栈」的那些浮层（弹回已有的 / 挤掉栈底）。
+func _push_overlay(id: String) -> Array:
+	var closed: Array = overlays().push(id)
+	for closed_id: String in closed:
+		_free_overlay(closed_id)
+	return closed
+
+
+## Esc：弹掉栈顶那一层。栈空返回 false（由调用方做场景层的事）。
+func close_top_overlay() -> bool:
+	var top_id: String = overlays().pop()
+	if top_id.is_empty():
+		return false
+	_free_overlay(top_id)
+	return true
+
+
+## 程序化关一个浮层（界面自己的「返回」按钮走这里）。
+func _close_overlay(id: String) -> void:
+	# 关掉它时压在它上面的也要跟着走，否则栈里会留下已经不在屏幕上的幽灵
+	for extra: String in overlays().remove(id):
+		_free_overlay(extra)
+	_free_overlay(id)
+	# **关掉浮层后重算一次引导**（2026-10-04，决策 347）：浮层里的动作会改状态——最典型的是
+	# 「在店里买齐回血道具」：`flag_supplies_ready` 的口径是「等级 ≥ 5 ＋ 背包里有消耗品」，
+	# 而它原本只在**换图／换房间**时算。玩家正站在药铺里把药买齐，HUD 却还停在「把家伙和药备齐」，
+	# 要出镇再进来才推进。挂在关浮层这一下，正好落在「刚做完那件事」的时刻。
+	GuideServiceScript.refresh_derived_flags(db, current_state())
+	_refresh_guide()
+
+
+## 按 id 释放界面节点。**只碰界面**，不碰栈——栈的账在调用方那几行里。
+func _free_overlay(id: String) -> void:
+	match id:
+		"shop":
+			if _panel_open(shop_panel):
+				shop_panel.queue_free()
+			shop_panel = null
+		"cultivate":
+			if _panel_open(cultivate_panel):
+				cultivate_panel.queue_free()
+			cultivate_panel = null
+		"clue":
+			if _panel_open(clue_panel):
+				clue_panel.queue_free()
+			clue_panel = null
+		"dungeon":
+			if _panel_open(dungeon_panel):
+				dungeon_panel.queue_free()
+			dungeon_panel = null
+		"character":
+			var panel := _overlay_node("character")
+			if panel != null:
+				panel.queue_free()
+		"npc":
+			if _panel_open(npc_panel):
+				npc_panel.queue_free()
+			npc_panel = null
+		_:
+			pass
+
+
+## 浮层节点（角色面板不在专用字段里，按节点名找）。
+func _overlay_node(id: String) -> Node:
+	match id:
+		"character":
+			return find_child("CharacterPanel", true, false)
+		_:
+			return null
+
+
+## 角色与行囊（设计 18.1：`Tab` 开角色、`I` 直达行囊页签）。
+##
+## 它本身是**浮层**（压在场景上），不再是切场景——这样「商店 → 角色 → Esc 回商店」
+## 这条链才成立（切场景会把商店那一层丢掉）。
+func open_character_overlay(tab_index: int = 0) -> Dictionary:
+	if overlays().has("character"):
+		# 已在栈里 → 弹回它 + **重读状态**（设计 18.1：不复用上次快照）
+		_push_overlay("character")
+		var existing := _overlay_node("character")
+		if existing != null:
+			existing.state_override = current_state()
+			existing.refresh()
+			existing.select_tab(tab_index)
+		return {"ok": true, "error": "", "reopened": true}
+	var panel = load(CHARACTER_SCENE).instantiate()
+	if panel == null:
+		return {"ok": false, "error": "角色界面场景加载失败"}
+	panel.name = "CharacterPanel"
+	panel.state_override = current_state()
+	panel.back_handler = func() -> void: _close_overlay("character")
+	add_child(panel)
+	panel.setup()
+	panel.select_tab(tab_index)
+	_push_overlay("character")
+	return {"ok": true, "error": "", "reopened": false}
 
 
 ## 开完成度界面（M）：四项完成度 + 楼层列表，已通关的层可以在界面里直接扫荡
@@ -681,6 +1141,9 @@ func open_dungeon_panel() -> Dictionary:
 		_set_status("这里不是副本（城镇没有完成度）")
 		return {"ok": false, "error": "not_dungeon"}
 	if _panel_open(dungeon_panel):
+		# 已在栈里 → 弹回它（关掉压在它上面的）并按设计重读状态
+		_push_overlay("dungeon")
+		dungeon_panel.state_override = current_state()
 		dungeon_panel.refresh()
 		return {"ok": true, "error": "", "reopened": true}
 	var panel = load(DUNGEON_SCENE).instantiate()
@@ -695,18 +1158,19 @@ func open_dungeon_panel() -> Dictionary:
 	add_child(panel)
 	panel.setup()
 	dungeon_panel = panel
+	_push_overlay("dungeon")
 	return {"ok": true, "error": "", "reopened": false}
 
 
 func close_dungeon_panel() -> void:
-	if _panel_open(dungeon_panel):
-		dungeon_panel.queue_free()
-	dungeon_panel = null
+	_close_overlay("dungeon")
 
 
 ## 开线索本：本图的隐藏内容与事件判定，每条都带线索来源与完成状态
 func open_clues() -> Dictionary:
 	if _panel_open(clue_panel):
+		_push_overlay("clue")
+		clue_panel.state_override = current_state()
 		clue_panel.refresh()
 		return {"ok": true, "error": "", "reopened": true}
 	var panel = load(CLUE_SCENE).instantiate()
@@ -720,13 +1184,12 @@ func open_clues() -> Dictionary:
 	add_child(panel)
 	panel.setup()
 	clue_panel = panel
+	_push_overlay("clue")
 	return {"ok": true, "error": "", "reopened": false}
 
 
 func close_clues() -> void:
-	if _panel_open(clue_panel):
-		clue_panel.queue_free()
-	clue_panel = null
+	_close_overlay("clue")
 
 
 ## 扫荡已通关的层。floor_number 传 -1 表示「玩家所在层，拿不到就挑第一个可扫荡的层」。
@@ -792,6 +1255,11 @@ func interact() -> Dictionary:
 		# 设计 09 §3.2：城镇里的同伴是在**客栈**这一次交互上入队的（现例：燕小七）。
 		var joined_at_inn := _join_pending_recruits(true)
 		if not joined_at_inn.is_empty():
+			# 设计 20 §四 幕一「客栈里的绿林客」：这一次对话就是她的招募对话，
+			# 入队之后把对话摆出来（台词与选项都在表里；没配对话的人只报入队）。
+			var speaker := _first_joined_with_dialogue(joined_at_inn)
+			if not speaker.is_empty():
+				open_npc(speaker)
 			return {"ok": true, "recruited": joined_at_inn}
 		return open_cultivate()
 	# 当铺与悬赏板在 07 文档里是「无表的信息源」：按 E 读一段对话/告示，不开功能界面。
@@ -805,11 +1273,29 @@ func interact() -> Dictionary:
 		if state != null and not state.has_flag(FLAG_BOARD_READ):
 			state.set_flag(FLAG_BOARD_READ)
 		_refresh_guide()
-		return _read_facility_notice(
+		var posted: Dictionary = _read_facility_notice(
 			facility, "悬赏板", "沈家小姐在驿外被掳，黑风寨脱不了干系。告示只指了方向，没有坐标。"
 		)
+		# 序幕·择念（20 §3.1／0.29.1 v2 第 4 条）：**与引子同框**——第一次读到告示，
+		# 主角心里那个问题就摆出来（条件在表里，选过就不再问）。
+		if _open_story_dialogue(OPENING_CHOICE_NODE):
+			posted["story"] = OPENING_CHOICE_NODE
+		return posted
+	if facility == "facility_bookshop":
+		# 07 §4.1（0.31.0 加）：书铺是**无表信息点**，21 §九 陆文昭的「本命机遇·书箱底」落在这里。
+		# 台词只描述设计原文点名的三样陈设（书架／账桌／抄书的纸笔）＋那只书箱，不编新剧情——
+		# 机遇本身由 `story_node(opp_scholar)` 按「地点 ＋ 出身」发，不靠这一按。
+		var notice: Dictionary = _read_facility_notice(
+			facility, "书铺掌柜", "架上的旧书摞到房梁，抄书的纸笔摊了一桌；书架底下还塞着只旧书箱。"
+		)
+		# **这一按顺手再判一次剧情节点**：机遇的条件是「看过悬赏板 ＋ 主角是书生」，而那条旗标
+		# 就是在**同一个城镇里**读悬赏板时点亮的——只在进图／换房间时判，玩家读完板走到书铺会扑空，
+		# 得先出镇再进来才发（21 §九 的机遇地点写的就是「清风驿·书铺」）。判在书铺这一按上，
+		# 拿到手的那一刻正好站在它写的地方（决策 345 的续：把「领取点」钉到设计写的那件事上）。
+		_claim_story_nodes()
+		return notice
 	if not facility.is_empty():
-		# 07 只定义了三个无表设施（客栈／当铺／悬赏板）；认不出来的位点 = 地图／数据错。
+		# 07 §4.1 的无表设施都在上面各有一支（客栈／当铺／悬赏板／书铺）；认不出来的位点 = 地图／数据错。
 		# **别把位点名（facility_xxx）印给玩家**：出声到日志，界面上说人话。
 		push_error("[LocalMap] 认不出的设施位点：%s（07 只定义了 %s）" % [
 			facility, "、".join(FACILITY_LABELS.keys())])
@@ -819,9 +1305,26 @@ func interact() -> Dictionary:
 	var npc := npc_near_player()
 	if npc != null:
 		return _talk_to_npc(npc)
+	# 观察点排在 NPC 之后：它是「看一眼」的物，不该抢掉「跟人说话」。
+	var point_id := flavor_near_player()
+	if not point_id.is_empty():
+		return read_flavor_point(point_id)
 	# 别说「走 Exit 位点」——那是条看不见的坐标；玩家能按的键写清楚
 	_set_status("这里没有可交互的东西（按 Esc 回大地图）")
 	return {"ok": false, "error": "无可交互目标"}
+
+
+## 无表设施的信息点：把设计文档里的那两句对话/告示落到状态栏。
+## 这次刚入队的人里，谁配了对话（设计 20 §四 的幕一就是「客栈里那一次」）。
+## 没有就返回空串——调用方只报入队，不硬凑一段对话。
+func _first_joined_with_dialogue(results: Array) -> String:
+	for entry: Dictionary in results:
+		if not bool(entry.get("ok", false)):
+			continue
+		var char_id := str(entry.get("char_id", ""))
+		if DialogueServiceScript.has_dialogue(db, char_id):
+			return char_id
+	return ""
 
 
 ## 无表设施的信息点：把设计文档里的那两句对话/告示落到状态栏。
@@ -834,9 +1337,95 @@ func _read_facility_notice(facility_id: String, speaker: String, text: String) -
 ## 等 `dialogue_tree.csv` 到了，把这里换成「按 NPC id 取台词／对话树」，调用方（`interact()`）不用动。
 func _talk_to_npc(slot: Node2D) -> Dictionary:
 	var slot_id := str(slot.name)
-	var text := "眼下没什么可说的（对话内容还没到；站位与交互已经接上）"
-	_set_status("%s：%s" % [NPC_SPEAKER, text])
-	return {"ok": true, "npc": slot_id, "speaker": NPC_SPEAKER, "text": text}
+	# 设计 19：城镇 NPC 从「按 E 一句占位台词」升级成**可以交往的人**。
+	# 位点与人的对应：**按 id 绑的 `npc_<npc_id>` 优先，占位命名 `npc_slot_0N` 按编号顺序**
+	# （判定只有一处：`NpcService.npc_for_slot`）。07 §九 第 12 条那句「等 NPC／对话表出来后再按 id
+	# 绑定」的前置条件已经满足——地编改名当天代码不用动（`框架说明.md` 决策 332）。
+	var npc_id := _npc_for_slot(slot_id)
+	if npc_id.is_empty():
+		# **别把表名甩给玩家**：这句以前写「（这个人还没有配 npc_def 行）」，而 `npc_def` 正是
+		# `CopyGuard` 盯的表内 id 形态（AGENTS 硬规矩）。表名只进日志，玩家看一句人话（决策 329）。
+		push_error("[local_map] NPC 站位 %s 绑不到人（按 id 认不出来／按编号顺序越界；本场景只有 %d 个人）"
+				% [slot_id, NpcServiceScript.npcs_at(db, scene_id).size()])
+		var text := "眼下没什么可说的（这个人还没配台词）"
+		_set_status("%s：%s" % [NPC_SPEAKER, text])
+		return {"ok": true, "npc": slot_id, "speaker": NPC_SPEAKER, "text": text}
+	var opened := open_npc(npc_id)
+	var def: Resource = NpcServiceScript.def_of(db, npc_id)
+	return {
+		"ok": bool(opened.get("ok", false)), "npc": slot_id, "npc_id": npc_id,
+		"speaker": str(def.name_cn) if def != null else npc_id,
+		"text": str(def.greet_text_cn) if def != null else "",
+	}
+
+
+## 位点 → 人：**两种命名都认**，判定只有一处（`NpcService.npc_for_slot`）——
+## 按 id 绑的 `npc_<npc_id>` 优先（认不出来就**不绑**，不退回按顺序），
+## 占位命名 `npc_slot_0N` 按编号顺序对上本场景 `npc_def` 的行序。
+func _npc_for_slot(slot_id: String) -> String:
+	return NpcServiceScript.npc_for_slot(db, slot_id, scene_id)
+
+
+## 开 NPC 交往面板（设计 19 §三）：信息在最上面，交互项在下面。
+## `mode`：E 打开的是交互菜单、Q 打开的是只读信息（设计 0.28.0 的 Q62）。
+## `entry_node_id`：**直接从某一句说起**（剧情抉择用，见 `_open_pending_choice_dialogue`）——
+## 空值走 `entry_node` 的默认入口（按 `sort_order` 取第一条条件满足的台词）。
+func open_npc(npc_id: String, mode: String = NpcPanelMode.MODE_INTERACT,
+		entry_node_id: String = "") -> Dictionary:
+	if _panel_open(npc_panel):
+		_push_overlay("npc")
+		npc_panel.state_override = current_state()
+		npc_panel.npc_id = npc_id
+		npc_panel.mode = mode
+		npc_panel.dialogue_node_id = entry_node_id
+		npc_panel.refresh()
+		return {"ok": true, "error": "", "reopened": true}
+	var panel = load(NPC_SCENE).instantiate()
+	if panel == null:
+		return {"ok": false, "error": "NPC 面板加载失败"}
+	panel.name = "NpcPanel"
+	panel.state_override = current_state()
+	panel.npc_id = npc_id
+	panel.mode = mode
+	panel.dialogue_node_id = entry_node_id
+	panel.kill_styles = _last_kill_styles()
+	panel.return_handler = func() -> void: close_npc()
+	panel.spar_handler = func(who: String, team: String) -> void: _start_spar(who, team)
+	add_child(panel)
+	panel.setup()
+	npc_panel = panel
+	_push_overlay("npc")
+	return {"ok": true, "error": "", "reopened": false}
+
+
+func close_npc() -> void:
+	_close_overlay("npc")
+
+
+## 切磋：组一场「和这个人打」的遭遇交给战斗场景；赢了由战斗结算加好感
+## （`encounter.spar_npc` 就是干这个的——切过场景之后会话里的临时标记早没了）。
+func _start_spar(npc_id: String, team_id: String) -> Dictionary:
+	var team: Resource = db.get_row("enemy_team", team_id)
+	if team == null:
+		# 数据错：id 只进日志，玩家看一句人话（AGENTS：玩家可见文案不许出现表内 id，见决策 242／329）
+		push_error("[local_map] 切磋队伍不存在：enemy_team 缺少 %s（npc %s 的 spar_team_id）" % [team_id, npc_id])
+		_set_status("切磋对手的配置对不上（数据错，已记进日志）")
+		return {"ok": false, "error": "no_team"}
+	var encounter = EncounterScript.build(db, {
+		"spawn_id": "spar_%s" % npc_id,
+		"source_scene": scene_id,
+		"source_key": "spar_%s" % npc_id,   # 不写房间名：切磋不进副本完成度
+		"team_id": team_id,
+		"is_elite": false,
+	}, team, EncounterScript.CONTACT_FRONT, str(current_state().difficulty_id))
+	encounter.spar_npc = npc_id
+	close_npc()
+	if battle_switch_handler.is_valid():
+		battle_switch_handler.call(encounter)
+	else:
+		_set_status("这里不能切磋（没有战斗入口）")
+		return {"ok": false, "error": "no_handler"}
+	return {"ok": true, "team_id": team_id, "npc_id": npc_id}
 
 
 ## 剧情招募（设计 09 §3.2）：`recruit_def` 里条件旗标已点亮、人在这张图、又还没入队的同伴 → 入队。
@@ -852,14 +1441,21 @@ func _join_pending_recruits(announce: bool) -> Array:
 		return results
 	var names := PackedStringArray()
 	var notes := PackedStringArray()
+	var rewards := PackedStringArray()
 	for entry: Dictionary in results:
 		names.append(str(entry["name_cn"]))
 		if not str(entry["note"]).is_empty():
 			notes.append(str(entry["note"]))
+		# 入队奖励（设计 20 号 §九：四条招募支线各写「入队 ＋ 某物」＋ 好感）——
+		# 玩家得看见自己拿到了什么，不然「入队给的东西」等于没发生。
+		for reward: String in Array(entry.get("rewards", [])):
+			rewards.append(reward)
 	_refresh_guide()
 	if not announce:
 		return results
 	var suffix := "（%s）" % "；".join(notes) if not notes.is_empty() else ""
+	if not rewards.is_empty():
+		suffix += "　得到：%s" % "、".join(rewards)
 	# 先存档再写状态：`autosave` 失败时会把状态栏写成「自动存档失败」，
 	# 而「谁加入了队伍」是玩家更该看到的那条——所以把存档结果并进同一行，别让它被盖掉。
 	var saved: Dictionary = autosave("剧情招募")
@@ -938,6 +1534,7 @@ func open_shop(building_id: String) -> Dictionary:
 	add_child(panel)
 	panel.setup()
 	shop_panel = panel
+	_push_overlay("shop")
 	var welcome := "进店：%s（买入／卖出／回购，Esc 或点「离开」出来）" % panel.building_name()
 	panel.show_message(welcome)
 	_set_status(welcome)
@@ -945,15 +1542,15 @@ func open_shop(building_id: String) -> Dictionary:
 
 
 func close_shop() -> void:
-	if _panel_open(shop_panel):
-		shop_panel.queue_free()
-	shop_panel = null
+	_close_overlay("shop")
 	_set_status("离开店铺")
 
 
 ## 打坐（客栈）：{ok, error, facility}
 func open_cultivate() -> Dictionary:
 	if _panel_open(cultivate_panel):
+		_push_overlay("cultivate")
+		cultivate_panel.state_override = current_state()
 		cultivate_panel.refresh()
 		return {"ok": true, "error": "", "reopened": true}
 	var panel = load(CULTIVATE_SCENE).instantiate()
@@ -965,6 +1562,7 @@ func open_cultivate() -> Dictionary:
 	add_child(panel)
 	panel.setup()
 	cultivate_panel = panel
+	_push_overlay("cultivate")
 	var welcome := "客栈打坐：一次 +1 熟练度，费用随熟练度递增（Esc 或点「离开」出来）"
 	panel.show_message(welcome)
 	_set_status(welcome)
@@ -972,9 +1570,7 @@ func open_cultivate() -> Dictionary:
 
 
 func close_cultivate() -> void:
-	if _panel_open(cultivate_panel):
-		cultivate_panel.queue_free()
-	cultivate_panel = null
+	_close_overlay("cultivate")
 	_set_status("离开客栈")
 
 
@@ -1183,7 +1779,9 @@ func _activate_trigger(point) -> Dictionary:
 func _advance_sequence(row: Resource, point) -> Dictionary:
 	var expected := _sequence_steps(row)
 	if expected.is_empty():
-		return {"ok": false, "complete": false, "error": "这条谜题没写次序（hidden_trigger.sequence）"}
+		# 数据错：列名只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[LocalMap] hidden_trigger %s 没写 sequence" % str(row.trigger_id))
+		return {"ok": false, "complete": false, "error": "这条谜题的次序没配（数据错，已记进日志）"}
 	var index := int(point.sequence_index)
 	if index <= 0:
 		return {"ok": false, "complete": false, "error": "这个火盆没有编号（位点要按 _1／_2／_3 命名）"}
@@ -1569,7 +2167,8 @@ func _clear_team_overlap() -> bool:
 ## 所以现在只有一段演出、学不到东西——这是设计侧的数据缺口（reward_id=event_sword_resonance 没有落点），
 ## 记在交接表的 hidden_content 备注里，等设计补 skill_base 行后这里的 grant 通道自动生效。
 func _trigger_carry(row: Resource) -> String:
-	return "剑气共鸣：%s 震了一下，但对应的武学还没进 skill_base（等设计补）" % db.display_name(str(row.trigger_id))
+	# 玩家可见：不许出现表名（AGENTS 硬规矩）；这里的确是设计侧的数据缺口，如实说一句人话。
+	return "剑气共鸣：%s 震了一下——对应的武学还没落表，先记一段缘（等设计补）" % db.display_name(str(row.trigger_id))
 
 
 # ------------------------------------------------------------------ 战斗与出口
@@ -1647,8 +2246,13 @@ func _process(_delta: float) -> void:
 	if _field_refresh_timer <= 0.0:
 		_field_refresh_timer = 1.0
 		_refresh_field_buffs()
+		# 备货这类派生旗标一秒算一次：升级／买东西／打完仗回来都会让条件变真
+		GuideServiceScript.refresh_derived_flags(db, current_state())
 	if camera != null and player != null:
 		camera.global_position = player.global_position
+	# 条件地表与遮挡层：跟背包／走位走（两种都可能在这张图里当场变化——开箱拿到藏宝图、钻进岩檐）
+	_apply_conditional_layer()
+	_refresh_overlay_cover()
 	_track_room()
 	_track_sneak()
 	if not _has_exit and player != null:
@@ -1677,6 +2281,10 @@ func _track_room() -> void:
 	# 换房间就把操作提示刷回来：「潜行中…」「刚从遭遇里脱身…」这类临时文案
 	# 不该一直盖着「交互 E／完成度 M／扫荡 J」——那才是玩家要一直看到的东西
 	_refresh_status()
+	# 走进房间时把「只能在场景里判」的引导旗标点亮（0.22.0：首次进入黑风寨前寨）
+	GuideServiceScript.note_room_entered(db, current_state(), scene_id, room_id)
+	# 剧情节点也可能挂在"走进某个房间"上（条件旗标是别的系统点的）
+	_claim_story_nodes()
 	if not has_completion():
 		return
 	var state = current_state()
@@ -1807,6 +2415,30 @@ func guide_text() -> String:
 	return _guide_label.text if _guide_label != null else ""
 
 
+## 引导 HUD 现在**应该**显示的那句（表里「条件已满足的最靠后一行」的文案）。
+## 自检拿它当期望值——这样步号与分母都跟着表走，扩表不会再假红。
+func _expected_guide_text() -> String:
+	var state = current_state()
+	var text := ""
+	for row: Resource in GuideServiceScript.steps(db):
+		if GuideServiceScript.condition_met(state, str(row.condition)):
+			text = str(row.text_cn)
+	return text
+
+
+## 从 HUD 那行里取步号（`当前目标：…（3/6）` → 3）。取不到给 -1。
+func _guide_step_index(line: String) -> int:
+	var start := line.rfind("（")
+	if start < 0:
+		return -1
+	var tail := line.substr(start + 1)
+	var slash := tail.find("/")
+	if slash <= 0:
+		return -1
+	var digits := tail.substr(0, slash)
+	return int(digits) if digits.is_valid_int() else -1
+
+
 ## 战斗外增益（08）：城镇／副本里也看得见，剩余分钟随时间走（每秒刷一次够用）
 func _refresh_field_buffs() -> void:
 	if _field_label == null:
@@ -1833,7 +2465,7 @@ func _refresh_status() -> void:
 	# 线索 K 与存档 F5 都要写出来：设计 03 要求「线索必须能被找到」；
 	# 手动存档按设计 02 只在城镇生效，所以括号里注明——副本里按 F5 会得到「城镇才是存档点」的提示。
 	var floor_text := _floor_label()
-	var hint := "%s%s%s　交互 E　角色 Tab　线索 K　存档 F5（城镇）　回大地图 Esc" % [
+	var hint := "%s%s%s　交互 E　看人 Q　角色 Tab　行囊 I　线索 K　存档 F5（城镇）　回大地图 Esc" % [
 		str(row.name_cn) if row != null else scene_id,
 		"　·　" if not floor_text.is_empty() else "",
 		floor_text,
@@ -2045,10 +2677,15 @@ func _run_local_selftest() -> void:
 			ok = ok and shelter_ok
 			lines.append("城镇已登记为战败回城点=%s（%s）" % [shelter_ok, str(session_for_hud.last_shelter_name)])
 
-		# 开局引导 HUD（09 §3.1）：新档还没点旗标 → 停在第一步；这一行也要与上面三行错开
+		# 开局引导 HUD（09 §3.1）：这一行必须与表里「条件已满足的最靠后一行」**一致**。
+		#
+		# **不写死步号**：步数会随设计扩表（0.22.0 由 4 步扩到 6 步），而且副本自检
+		# 一进来就把玩家摆在寨门 → 「进寨」旗标已点亮，绝对步号本来就不是 1
+		# （写死 1/4 的那版在扩表当天假红过一次，见 `框架说明.md` 决策 273）。
 		_refresh_guide()
 		var guide_line := guide_text()
-		var guide_ok: bool = guide_line.contains("当前目标") and guide_line.contains("1/4")
+		var expect_line := _expected_guide_text()
+		var guide_ok: bool = guide_line.contains("当前目标") and guide_line.contains(expect_line)
 		ok = ok and guide_ok
 		lines.append("引导 HUD ok=%s（%s）" % [guide_ok, guide_line])
 		var guide_no_overlap: bool = (
@@ -2061,9 +2698,30 @@ func _run_local_selftest() -> void:
 		# 旗标点亮后这一行要跟着推进（09 §3.1「完成自动推进」）
 		current_state().set_flag(FLAG_BOARD_READ)
 		_refresh_guide()
-		var advanced: bool = guide_text().contains("2/4")
+		var guide_after := guide_text()
+		# 推进的判据：① 行的内容仍与表一致 ② 步号**不倒退**（旗标只会往前走）
+		var advanced: bool = guide_after.contains(_expected_guide_text()) \
+			and _guide_step_index(guide_after) >= _guide_step_index(guide_line)
 		ok = ok and advanced
-		lines.append("引导会自动推进（点亮告示板旗标 → 第 2 步）=%s（%s）" % [advanced, guide_text()])
+		lines.append("引导会自动推进（点亮告示板旗标）=%s（%s）" % [advanced, guide_after])
+
+	# 玩家可见文案守卫：整页控件文字里不许出现表内 id 形态（决策 244）
+	# 浮层栈（设计 18.1）：商店 → 角色（Tab）→ Esc 回商店 → Esc 关商店。
+	# 这条链是 0.18.1 的核心——**全局快捷键在任何浮层里都可用**，而且 Esc 一次只弹一层。
+	var stack_ok := true
+	open_shop("bld_grocery")
+	var shop_alive := _panel_open(shop_panel)
+	stack_ok = stack_ok and overlays().depth() == 1 and shop_alive
+	open_character_overlay(0)
+	stack_ok = stack_ok and overlays().depth() == 2 and _panel_open(shop_panel)
+	# 已在栈里 → 弹回它（不重复压），并切到指定页签
+	open_character_overlay(2)
+	var char_panel := _overlay_node("character")
+	stack_ok = stack_ok and overlays().depth() == 2 and char_panel != null and char_panel.current_tab() == 2
+	stack_ok = stack_ok and close_top_overlay() and overlays().depth() == 1 and _panel_open(shop_panel)
+	stack_ok = stack_ok and close_top_overlay() and overlays().is_empty() and not _panel_open(shop_panel)
+	ok = ok and stack_ok
+	lines.append("浮层栈（商店→角色→Esc 回商店→Esc 关商店）=%s" % stack_ok)
 
 	# 玩家可见文案守卫：整页控件文字里不许出现表内 id 形态（决策 244）
 	var copy_hits: PackedStringArray = CopyGuardScript.id_tokens(self)
@@ -2071,6 +2729,46 @@ func _run_local_selftest() -> void:
 	lines.append(CopyGuardScript.ascii_line(self))
 	if not copy_hits.is_empty():
 		lines.append("COPY 命中：%s" % "；".join(copy_hits))
+	# 观察点**看得见**（设计 15 §一「可交互物暖色提亮」，决策 337）：本图的每一条都要有那枚标记。
+	# 放在自检里是因为它量的是**真节点**（用例那边量的是同一条，但自检会在带窗口的冒烟里也跑一遍）。
+	var highlight_ok := not flavor_points.is_empty()
+	for point: Dictionary in flavor_points:
+		var mark = (point["node"] as Node2D).get_node_or_null(FlavorMarkerScript.NODE_NAME)
+		highlight_ok = highlight_ok and FlavorMarkerScript.is_visible_highlight(mark)
+	ok = ok and highlight_ok
+	lines.append("观察点可见标记 %d 个 ok=%s" % [flavor_points.size(), highlight_ok])
+
+	# NPC：**按 Q 真的把信息面板压进浮层栈**，而且**失败也要出声**（2026-10-04 实机反馈"按 Q 没反应"）。
+	# 两条路径以前都没有断言：两个 runner 一直打印 `SELF-TEST: OK`，可没人碰过这两条路。
+	# 这里走**真处理器**（合成一个 `npc_info` 动作喂 `_unhandled_input`），不是直接调 `open_npc()`——
+	# 坏在"按键没接上"或"位点绑不到人"时会红。
+	if not npcs.is_empty():
+		var npc_ok := true
+		var probe = npcs[0]
+		var camera_before: Vector2 = player.global_position
+		player.global_position = (probe as Node2D).global_position
+		var info_event := InputEventAction.new()
+		info_event.action = "npc_info"
+		info_event.pressed = true
+		_unhandled_input(info_event)
+		var slot_id := str((probe as Node2D).name)
+		var bound := not _npc_for_slot(slot_id).is_empty()
+		npc_ok = npc_ok and (overlays().depth() > 0 if bound else true)
+		if bound:
+			npc_ok = npc_ok and _panel_open(npc_panel)
+			close_top_overlay()
+		# 失败路径：走远一点再按 Q —— 必须给一句可见提示（不许静默 return）
+		player.global_position = camera_before
+		_set_status("")
+		var far_event := InputEventAction.new()
+		far_event.action = "npc_info"
+		far_event.pressed = true
+		_unhandled_input(far_event)
+		npc_ok = npc_ok and not (_status == null or _status.text.is_empty())
+		ok = ok and npc_ok
+		lines.append("按 Q 看人（位点 %s 绑到人=%s；走远后提示「%s」）=%s"
+			% [slot_id, bound, str(_status.text) if _status != null else "", npc_ok])
+
 	for line: String in lines:
 		print("  " + line)
 	print("LOCAL SELF-TEST: %s" % ("OK" if ok else "FAILED"))

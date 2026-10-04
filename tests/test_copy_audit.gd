@@ -30,6 +30,14 @@ const BANNED_COPY := [
 	"架势系统未实现",  # 架势与拆招在 0.6.x 已经实现
 ]
 
+## 表名静态扫描的**白名单**：这里出现的表名**只进日志或只做内部判断**，玩家看不到。
+## 每条都要写清「为什么玩家看不到」；**补上了就要删掉那一行**（双向维护，见 `_check_no_table_names_in_player_text`）。
+const TABLE_NAME_IN_TEXT_ALLOWED := {
+	"res://src/core/practice_service.gd":
+		"data_ready() 的 error 串只进 push_error 与返回值；界面上玩家看到的是调用方自己那句"
+		+ "「木桩还没准备好（缺一条配置，已记进日志）」（local_map_controller.start_practice）",
+}
+
 
 func suite_name() -> String:
 	return "玩家可见文案审计"
@@ -44,6 +52,7 @@ func run() -> void:
 	_check_stale_save_labels()
 	_check_unsupported_damage_reason()
 	_check_surprise_pending_rule()
+	_check_no_table_names_in_player_text()
 
 
 ## 1.2) HUD 必须把**可用的按键**说清楚：控制器源码里 `is_action_pressed("xxx")` 用到的动作，
@@ -285,6 +294,110 @@ func _check_surprise_pending_rule() -> void:
 	check_true(rule.contains("无防备"), "规则文案点名「无防备」：%s" % rule)
 	check_true(rule.contains("设计"), "规则文案说明是设计侧没定效果：%s" % rule)
 	check_false(rule.contains("架势"), "不再把责任推给已经实现的架势系统：%s" % rule)
+
+
+## 6) **玩家可见文案里不许出现表名**——场景自检量不到的那一半，用静态扫描兜住。
+##
+## 由来（2026-10-04，决策 330）：上一轮抓到 NPC 兜底那句把表名 `npc_def` 甩给玩家，靠的是**逐个交互路径**
+## （五个站位逐个按一遍）。可这类泄漏散在**没人走到的分支**里——数据错路径、道具列表的说明、世界事件的提示……
+## 场景自检是「跑到哪儿扫哪儿」：跑不到的分支它永远报 0。所以这里换成**按对象扫**：
+## 把 `data/tables/*.csv` 的表名当词表（唯一真相是数据目录本身，不手抄一份），扫 `src/` 里的**字符串字面量**，
+## 只要一句**中文**里夹着表名就报出来。
+##
+## 三条排除（都写死在判据里，不靠人记）：
+##   · `table_validator.gd`：构建期校验器的消息**天生是给开发看的**（跑在编辑器／命令行里，不进游戏界面）；
+##   · 同一行有 `push_error／push_warning／printerr／print(` 的（单行日志）；
+##   · 以 `"[` 开头的句子：这个工程的日志一律带 `[模块]` 前缀，多行 `push_warning(` 也能被这条抓住。
+## 剩下的若确实是内部用途，写进 `TABLE_NAME_IN_TEXT_ALLOWED` 并写明理由；**补上就要删行**（双向维护）。
+func _check_no_table_names_in_player_text() -> void:
+	var table_names := _table_names()
+	check_gt(float(table_names.size()), 30.0, "从 data/tables 读到足够多的表名（%d 个）" % table_names.size())
+	var alt := ""
+	for name: String in table_names:
+		alt += ("|" if alt != "" else "") + name
+	var tok_re := RegEx.new()
+	tok_re.compile("\\b(%s)\\b" % alt)
+	var lit_re := RegEx.new()
+	lit_re.compile("\"([^\"]*)\"|'([^']*)'")
+	var hits: Dictionary = {}     # 文件名 → 命中行
+	for path: String in _gd_files("res://src"):
+		if path.ends_with("table_validator.gd"):
+			continue
+		var text := FileAccess.get_file_as_string(path)
+		if text.is_empty():
+			continue
+		var line_no := 0
+		for raw: String in text.split("\n"):
+			line_no += 1
+			if raw.contains("push_error") or raw.contains("push_warning") \
+					or raw.contains("printerr") or raw.contains("print("):
+				continue
+			var code := raw
+			var hash := code.find("#")
+			if hash >= 0:
+				code = code.substr(0, hash)
+			for m: RegExMatch in lit_re.search_all(code):
+				var lit := m.get_string(0)
+				if not _has_cjk(lit) or tok_re.search(lit) == null:
+					continue
+				if lit.begins_with("\"["):
+					continue     # `"[模块] …"` 是日志句
+				var key := path.get_file()
+				if not hits.has(key):
+					hits[key] = PackedStringArray()
+				# PackedStringArray 是**值类型**：`Array(hits[key])` 只是拷一份，改了不会回到字典里
+				# （第一版就是这么写的，报出来的命中明细是空的）。取出来、追加、再放回去。
+				var bucket: PackedStringArray = hits[key]
+				bucket.append("%d ← %s" % [line_no, lit])
+				hits[key] = bucket
+	var bad := PackedStringArray()
+	for file_name: String in hits.keys():
+		if _allowed_file(file_name):
+			continue
+		bad.append("%s:%s" % [file_name, ", ".join(Array(hits[file_name]))])
+	check_eq(
+		bad.size(), 0,
+		"这些中文文案里夹着表名（玩家看得到吗？真看得到就改人话＋表名进日志；内部用途就写进 TABLE_NAME_IN_TEXT_ALLOWED 并写明理由）：%s"
+			% "；".join(bad)
+	)
+	# 白名单**双向**维护：修好了／删了那段代码就要把那行删掉（过期白名单 = 下一个人照着它白找）
+	var stale := PackedStringArray()
+	for allowed_path: String in TABLE_NAME_IN_TEXT_ALLOWED.keys():
+		if not hits.has(allowed_path.get_file()):
+			stale.append(allowed_path.get_file())
+	check_eq(stale.size(), 0, "白名单里这些文件已经没有夹表名的文案了，请删掉对应行：%s" % "、".join(stale))
+
+
+func _has_cjk(text: String) -> bool:
+	for index in text.length():
+		var code := text.unicode_at(index)
+		if code >= 0x4E00 and code <= 0x9FFF:
+			return true
+	return false
+
+
+## 从数据目录本身读表名——**别在用例里手抄一份**（加一张表就漏一个词）。
+func _table_names() -> PackedStringArray:
+	var out := PackedStringArray()
+	var dir := DirAccess.open("res://data/tables")
+	if dir == null:
+		return out
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		if not dir.current_is_dir() and entry.ends_with(".csv"):
+			out.append(entry.get_basename())
+		entry = dir.get_next()
+	dir.list_dir_end()
+	return out
+
+
+## 白名单里记的是完整路径；命中表里只留文件名，这里把两边对上。
+func _allowed_file(file_name: String) -> bool:
+	for allowed_path: String in TABLE_NAME_IN_TEXT_ALLOWED.keys():
+		if allowed_path.get_file() == file_name:
+			return true
+	return false
 
 
 ## 递归收集 res:// 下的 .gd（不靠 .godot 缓存，纯文件系统遍历）

@@ -1,4 +1,4 @@
-## 游戏内的枢纽场景（占位美术）。
+﻿## 游戏内的枢纽场景（占位美术）。
 ##
 ## 它是「新建／读取存档之后落地的第一站」：在这里能查看当前会话状态、手动存档、
 ## 进大地图探索（明雷／副本／战斗都从那里开始）、开角色与行囊，也能退回主菜单。
@@ -12,6 +12,7 @@ const CHARACTER_SCENE := "res://scenes/character_screen.tscn"
 const SaveServiceScript := preload("res://src/core/save_service.gd")
 const WORLD_SCENE := "res://scenes/world_run.tscn"
 const SfxScript := preload("res://src/audio/sfx.gd")
+const SettingsStoreScript := preload("res://src/core/settings_store.gd")
 
 var back_handler := Callable()
 ## 存档设施（用例可注入临时目录）
@@ -20,6 +21,9 @@ var save_store_override = null
 var _lines: VBoxContainer
 var _notice: Label
 var _volume_button: Button
+## 自动战斗开关（设计 11 §四）：持久设置，落 settings.cfg，与音量同一处入口。
+var _auto_battle_button: Button
+var _settings_override = null
 
 
 func _ready() -> void:
@@ -106,6 +110,35 @@ func press_volume() -> float:
 	return value
 
 
+## 自动战斗开关：按一下开／关，写进设置文件；**下次进战斗就按它自动打**。
+## 「玩家点任意指令立刻接管」这条在战斗界面里实现（点一下指令就退出自动），
+## 这里只管持久设置本身——省事，不夺权。
+func press_auto_battle() -> bool:
+	var store = settings()
+	var current: bool = bool(store.load_auto_battle().get("enabled", false))
+	var wanted := not current
+	var result: Dictionary = store.save_auto_battle(wanted)
+	if _auto_battle_button != null:
+		_auto_battle_button.text = auto_battle_text(wanted)
+	if bool(result.get("ok", false)):
+		_set_headline("自动战斗：%s（已写入设置）" % ("开" if wanted else "关"))
+	else:
+		_set_headline("自动战斗：%s（设置写不进去：%s）" % ["开" if wanted else "关", str(result.get("error", ""))])
+	return wanted
+
+
+static func auto_battle_text(enabled: bool) -> String:
+	return "自动战斗：%s（点指令即接管）" % ("开" if enabled else "关")
+
+
+## 设置存储：自检用 `_settings_override` 指到临时目录，正常运行落默认存档目录旁。
+func settings():
+	if _settings_override != null:
+		return _settings_override
+	_settings_override = SettingsStoreScript.new()
+	return _settings_override
+
+
 func state_lines() -> PackedStringArray:
 	var session := _session_node("GameSession")
 	if session == null or session.state == null:
@@ -129,7 +162,7 @@ func _build_ui() -> void:
 	var title := Label.new()
 	title.name = "Title"
 	title.text = "游戏内（占位场景）"
-	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_font_size_override("font_size", 24)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(title)
 
@@ -180,6 +213,14 @@ func _build_ui() -> void:
 	_volume_button.custom_minimum_size = Vector2(460, 40)
 	_volume_button.pressed.connect(press_volume)
 	column.add_child(_volume_button)
+
+	# 自动战斗开关（设计 11 §四）：与音量同处，持久设置
+	_auto_battle_button = Button.new()
+	_auto_battle_button.name = "AutoBattleButton"
+	_auto_battle_button.text = auto_battle_text(bool(settings().load_auto_battle().get("enabled", false)))
+	_auto_battle_button.custom_minimum_size = Vector2(460, 40)
+	_auto_battle_button.pressed.connect(press_auto_battle)
+	column.add_child(_auto_battle_button)
 
 	# 上一场战斗的结果（从战斗回来时给一句交代）
 	var session := _tree().root.get_node_or_null("GameSession") if _tree() != null else null

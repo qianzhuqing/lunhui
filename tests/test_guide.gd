@@ -1,4 +1,4 @@
-## 开局引导（设计 09 §3.1）：`guide_step` 的 4 步按剧情旗标自动推进。
+## 开局引导（设计 09 §3.1 → 0.22.0 设计 18 §3.2）：`guide_step` 的 6 步按剧情旗标自动推进。
 ##
 ## 这里**不写死**每一步的旗标名：直接从表里读 `condition` 再逐个点亮，
 ## 这样设计改旗标名／加一步都不会让用例变成"永远真"的空壳。
@@ -18,10 +18,11 @@ func run() -> void:
 	_check_hud_text(db)
 
 
-## 表本身：4 步、sort_order 从 1 连续、每步有文案、第一步是 `start` 哨兵
+## 表本身：6 步（0.22.0 由 4 步扩到 6 步，补上「进寨」与「救人复命」）、
+## sort_order 从 1 连续、每步有文案与 condition_spec、第一步是 `start` 哨兵
 func _check_steps_table(db) -> void:
 	var rows: Array = GuideServiceScript.steps(db)
-	check_eq(rows.size(), 4, "引导 4 步（guide_step 的行数）")
+	check_eq(rows.size(), 6, "引导 6 步（guide_step 的行数；0.22.0 由 4 步扩到 6 步）")
 	for index in range(rows.size()):
 		var row: Resource = rows[index]
 		check_eq(int(row.sort_order), index + 1, "第 %d 步的 sort_order 从 1 连续" % (index + 1))

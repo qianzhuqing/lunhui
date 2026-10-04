@@ -11,6 +11,9 @@ extends RefCounted
 const AttributeCalculatorScript := preload("res://src/core/attribute_calculator.gd")
 const GrowthCalculatorScript := preload("res://src/core/growth_calculator.gd")
 const SkillLoadoutScript := preload("res://src/core/skill_loadout.gd")
+const TalentServiceScript := preload("res://src/core/talent_service.gd")
+## 抉择的永久增益（设计 20 §八）：`story_node(kind=choice)` 的贡献
+const StoryServiceScript := preload("res://src/core/story_service.gd")
 const AffixRollerScript := preload("res://src/core/affix_roller.gd")
 ## 套装档位与装备特效都是 buff（08）：贡献的换算只写在 BuffService／SetService 里
 const SetServiceScript := preload("res://src/core/set_service.gd")
@@ -105,7 +108,14 @@ func allocations() -> Dictionary:
 ##   · 进判定值（`naked_attrs()` 也算它——判定只排除「装备」，收集成长不是装备）
 ##   · 进门槛与槽位（`loadout_attrs()` 也算它——上限只有 +10，不像内功那样自我循环）
 func codex_bonus() -> Dictionary:
-	return _growth.codex_bonus(collected_skill_count())
+	return _growth.codex_bonus(collected_skill_count(), _codex_multiplier())
+
+
+## 天赋「藏书癖」（`rule:codex_bonus_multiplier`）：把图鉴每一档的奖励翻倍。
+## 表里那一条写的是**倍数**（2 = 翻倍），不是增量——所以缺行（0）时按 1 倍算。
+func _codex_multiplier() -> float:
+	var raw := TalentServiceScript.rule_value(db, state, char_id, "codex_bonus_multiplier", 0.0)
+	return raw if raw > 0.0 else 1.0
 
 
 func collected_skill_count() -> int:
@@ -114,12 +124,28 @@ func collected_skill_count() -> int:
 
 ## 图鉴奖励转成属性点层贡献；换算在 `GrowthCalculator.codex_contributions()` 里只写一份
 func codex_contributions() -> Array:
-	return _growth.codex_contributions(collected_skill_count())
+	return _growth.codex_contributions(collected_skill_count(), _codex_multiplier())
+
+
+## 抉择的永久增益（设计 20 §八，0.29.1）：`kind=choice` 的剧情节点发的资质／派生上限。
+## 与图鉴奖励**同一条路**（属性点层／固定值层），也进判定与门槛——它是"永久成长"，
+## 不是装备（装备会被换掉、还能卖，"永久"就没了）。
+func story_contributions() -> Array:
+	return StoryServiceScript.permanent_contributions(db, state, char_id)
 
 
 ## 裸属性：模板 + 加点 + 图鉴奖励，**不含装备**（事件判定与面板上的「裸值」都用它）。
 func naked_attrs() -> Dictionary:
-	return _calculator.attr_totals_of(base_attrs(), allocations(), codex_contributions())
+	return _calculator.attr_totals_of(
+		base_attrs(), allocations(), _permanent_growth_contributions()
+	)
+
+
+## 「永久成长」那一类贡献：图鉴奖励 ＋ 抉择增益。两样都不是装备，判定与门槛都算它们。
+func _permanent_growth_contributions() -> Array:
+	var out: Array = codex_contributions()
+	out.append_array(story_contributions())
+	return out
 
 
 ## 含装备属性点的五维合计（面板五维显示用）。
@@ -134,7 +160,10 @@ func loadout_attrs() -> Dictionary:
 	var equipment_only: Array = []
 	if state != null and state.inventory != null:
 		equipment_only = state.inventory.contributions_for(db, char_id)
-	equipment_only.append_array(codex_contributions())
+	equipment_only.append_array(_permanent_growth_contributions())
+	# 天赋是**创建时就定死的**（不像内功／套装那样能反复穿脱），所以放进门槛与槽位这一份，
+	# 「悟性 +3」「内功容量 +1」这类天赋才真的抬得动招式槽与内功容量。
+	equipment_only.append_array(TalentServiceScript.contributions(db, state, char_id))
 	return _calculator.attr_totals_of(base_attrs(), allocations(), equipment_only)
 
 
@@ -148,6 +177,10 @@ func contributions() -> Array:
 	out.append_array(set_contributions())
 	# 图鉴奖励也走同一条通道（属性点层）
 	out.append_array(codex_contributions())
+	# 抉择的永久增益（设计 20 §八）：与图鉴同一条通道
+	out.append_array(story_contributions())
+	# 天赋（0.16.0）：`attr:`／`stat:` 两类效果走同一条贡献通道
+	out.append_array(TalentServiceScript.contributions(db, state, char_id))
 	return out
 
 
@@ -274,14 +307,22 @@ func event_check_value(source: String) -> Dictionary:
 	var naked := naked_attrs()
 	match kind:
 		"attr":
-			return {"kind": kind, "target_id": target_id, "value": int(floor(float(naked.get(target_id, 0.0)))), "naked": true}
+			return {
+				"kind": kind, "target_id": target_id, "naked": true,
+				# 判定 +1 那类天赋（见多识广）对**所有**判定都算，属性判定也在内
+				"value": int(floor(float(naked.get(target_id, 0.0)))) \
+					+ TalentServiceScript.check_bonus(db, state, char_id, ""),
+			}
 		"skill":
 			var skill: Resource = db.get_row("event_skill_def", target_id)
 			var related := str(skill.related_attr) if skill != null else ""
 			var bonus := int(floor(float(naked.get(related, 0.0)) / float(EVENT_SKILL_ATTR_DIVISOR)))
 			return {
 				"kind": kind, "target_id": target_id,
-				"value": event_skill_level(target_id) + bonus, "naked": true,
+				# 天赋的判定加成（12 §六）：通用 +1 与「只加这一门」（文学／医术各 +2）
+				"value": event_skill_level(target_id) + bonus \
+					+ TalentServiceScript.check_bonus(db, state, char_id, target_id),
+				"naked": true,
 			}
 	return {"kind": kind, "target_id": target_id, "value": 0, "naked": true}
 

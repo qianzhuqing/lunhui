@@ -24,11 +24,12 @@ func run() -> void:
 
 
 func _check_tables(db) -> void:
-	check_eq(db.rows("skill_base").size(), 59, "第一章 59 部武学")
+	check_eq(db.rows("skill_base").size(), 65, "第一章 65 部武学（0.31.0 的 5 部本命内功）")
 	check_eq(db.rows("skill_active").size(), 35, "35 部招式")
-	check_eq(db.rows("skill_passive").size(), 24, "24 部内功")
+	check_eq(db.rows("skill_passive").size(), 30, "30 部内功（0.31.0 的 5 部本命内功）")
 	check_eq(db.rows("skill_star_def").size(), 5, "五档星级")
-	check_eq(db.rows("growth_const").size(), 16, "16 条成长常数（0.10.0 加了木桩的两条上限）")
+	check_eq(db.rows("growth_const").size(), 20,
+		"20 条成长常数（0.10.0 加木桩两条上限；0.16.0／0.17.0 加天赋 1 条与创建 3 条）")
 
 	var actives := 0
 	var passives := 0
@@ -40,7 +41,7 @@ func _check_tables(db) -> void:
 			passives += 1
 			check_not_null(db.get_row("skill_passive", row.skill_id), "%s 有内功明细" % row.skill_id)
 	check_eq(actives, 35, "skill_kind 与明细表一致：35 部招式")
-	check_eq(passives, 24, "skill_kind 与明细表一致：24 部内功")
+	check_eq(passives, 30, "skill_kind 与明细表一致：30 部内功")
 
 	# 通用招式（any）与绑定招式都在
 	check_true(bool(db.get_row("skill_base", "sk_common_01").accepts_any_weapon()), "连环腿是通用招式")

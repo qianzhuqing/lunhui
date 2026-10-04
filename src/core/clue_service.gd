@@ -8,6 +8,9 @@
 class_name ClueService
 extends RefCounted
 
+## 「这条线索我确实听人说过」的旗标由 `WorldEventService` 写（0.28.0 Q64 的 hint 类效果）
+const WorldEventServiceScript := preload("res://src/core/world_event_service.gd")
+
 var db
 var state
 
@@ -31,6 +34,7 @@ func clues_for_scene(scene_id: String) -> Array:
 			"clues": Array(row.clues()),
 			"note": str(row.note),
 			"done": done_triggers.has(str(row.trigger_id)),
+			"hint_known": state.has_flag(WorldEventServiceScript.hint_flag(str(row.trigger_id))) if state != null else false,
 			"unsupported": str(row.trigger_type) == "sequence",
 			"condition": str(row.required_condition),
 		})
@@ -110,7 +114,8 @@ func describe(entry: Dictionary) -> String:
 	lines.append("%s（%s）" % [str(entry["name"]), status])
 	var clues: Array = entry.get("clues", [])
 	if not clues.is_empty():
-		lines.append("　线索：%s" % "；".join(PackedStringArray(clues)))
+		var suffix := "　（已从传闻中听说）" if bool(entry.get("hint_known", false)) else ""
+		lines.append("　线索：%s%s" % ["；".join(PackedStringArray(clues)), suffix])
 	if str(entry.get("source_label", "")).is_empty():
 		if not str(entry.get("note", "")).is_empty():
 			lines.append("　%s" % str(entry["note"]))

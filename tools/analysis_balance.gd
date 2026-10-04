@@ -22,10 +22,32 @@ const PARTY_SIZES := [1, 4]
 const TEAMS := [
 	"team_wolf_pack", "team_boar_pair", "team_bandit_patrol", "team_lone_wolf",
 	"team_gate_sentry", "team_elite_blade", "team_poison_hand", "team_boss_guards",
-	"team_heifeng_elite", "team_boss",
+	"team_heifeng_elite", "team_boss", "team_butcher", "team_shixi_hound",
+	# 隐藏 Boss（酔刀客）**没有 `enemy_team` 行**：小地图是拿 `team_hidden_<enemy_id>`
+	# 这个合成 id 现拉一支单人队（`local_map_controller._boss_encounter`）。平衡表要看得见它
+	# ——它是三条 ★5 内功路线之一，设计 10 §七 明写「必须可胜，10 级险胜」。
+	"team_hidden_en_hidden_drunk",
 ]
+## 合成队伍的前缀（见 TEAMS 里那条注释）
+const HIDDEN_TEAM_PREFIX := "team_hidden_"
 ## 落雁坡明雷一次全清的收益按这个区算（报告里的「一次全清」）。
 const SWEEP_REGION := "n_luoyanpo"
+
+
+## 天赋 id → 中文名（表里的名字，报告头直接用，别在打印里出现 id）
+func _talent_names(db, talents: Array) -> PackedStringArray:
+	var out := PackedStringArray()
+	for talent_id: Variant in talents:
+		var row: Resource = db.get_row("talent_def", str(talent_id))
+		out.append(str(row.name_cn) if row != null else str(talent_id))
+	return out
+
+## 「含天赋」那一档用的**代表 build**（2026-10-04 补，共 5 点、全是**已经接上**的效果）：
+##   天生武胆（3 点：招式伤害 +15%、内伤抗性 −20%）＋ 眼疾手快（2 点：暴击率 +5%、命中 +5%）
+## 为什么用这一套：① 与武器类型无关（剑／拳／刀／枪的队伍都能吃）；② 两条效果都已实现；
+## ③ 它**不是最优解**，只是一套"玩家真可能选、而且偏战斗向"的 build——设计要换一套，
+## 改这一个常量即可（`待策划确认.md` Q76 问的就是"这套代表 build 行不行"）。
+const REPRESENTATIVE_TALENTS := ["tal_dan_shi", "tal_yan_ji"]
 
 
 ## 注意：下面几个 helper 的参数**故意不写类型**——`TableDb` 是 `RefCounted`，
@@ -41,10 +63,17 @@ func _initialize() -> void:
 	var RngScript := load("res://src/core/rng_service.gd")
 
 	_dump_win_rates(db, GameStateScript, PartyBuilderScript, EnemyFactoryScript, SimScript, RngScript)
+	_dump_win_rates(db, GameStateScript, PartyBuilderScript, EnemyFactoryScript, SimScript, RngScript, true)
+	# 第三档（2026-10-04）：**含加点 ＋ 一套代表天赋**——玩家开局一定会花那 5 点，
+	# 前两档量的都是"没选天赋"的队伍。build 见 REPRESENTATIVE_TALENTS 的注释。
+	_dump_win_rates(
+		db, GameStateScript, PartyBuilderScript, EnemyFactoryScript, SimScript, RngScript,
+		true, REPRESENTATIVE_TALENTS
+	)
 	_dump_team_rewards(db)
 	_dump_level_gates(db)
 	_dump_sweep_reward(db)
-	_dump_enemy_attr_floor(db)
+	_dump_enemy_attrs(db, EnemyFactoryScript)
 	# 收尾标记 + 主动退出。**放在最后一段之后**：它的意思是「整张表都打完了」。
 	# 为什么必须有个标记：光靠 `--quit-after` 的退出码分不出"跑到最后"和"半路被运行期错误掐断"，
 	# 而这个脚本打的**是一张表**——半截表和完整表长得一模一样，读的人只会以为"就这么多"。
@@ -54,32 +83,58 @@ func _initialize() -> void:
 
 
 ## 胜率／平均回合／平均剩余气血：等级 × 敌人队伍。
+##
+## `with_points` 是**队伍模型**这一维（2026-10-04 补）：
+##   false = 只把等级设过去、**升级点数一分不花**（老口径，留着做对照）；
+##   true  = **把点数花掉**的真实队伍（口径见 `_spend_all_points`）。
+## 为什么必须补这一档：`level_growth` 的基础列很平，裸队从 1 级到 12 级只涨约 40%，
+## 于是设计 10 §七 的目标曲线（「精英 5～7 级有压力／8 级稳过」「大寨主 8 级险胜、10 级稳过」）
+## **在裸队口径下数学上不可同时成立**——1 级都能过的敌人，10 级不可能只是险胜。
+## 设计说的是**玩到那一步的队伍**，不是「把等级设成 10、点数没花」的队伍。
 func _dump_win_rates(
 	db, game_state_script, party_builder_script,
-	enemy_factory_script, sim_script, rng_script
+	enemy_factory_script, sim_script, rng_script,
+	with_points: bool = false,
+	talents: Array = []
 ) -> void:
 	# 队伍用测试夹具 `party_state(db, N)` **显式点名**：0.10.0 起 `new_game()` 只给
 	# `recruit_def` 的初始成员（开局一人），拿它当「4 人队」会静默量成单人
 	# （性能工具踩过同一个坑，见框架说明决策 261）。
 	var helper = load("res://tests/test_case.gd").new()
 	for party_size: int in PARTY_SIZES:
+		if with_points and party_size < 4:
+			continue   # 单人真实开局本来就没有点数可花（1 级 0 点），不必重复出表
 		var sample = helper.party_state(db, party_size)
 		var names := PackedStringArray()
 		for char_id: String in sample.char_ids:
 			var row: Resource = db.get_row("character_base", char_id)
 			names.append(str(row.name_cn) if row != null else char_id)
-		print("---- 胜率（%d 人队：%s；每档 %d 个固定种子） ----" % [party_size, "、".join(names), TRIES])
+		print("---- 胜率（%d 人队：%s%s；每档 %d 个固定种子） ----" % [
+			party_size, "、".join(names),
+			(
+				"；**含加点 ＋ 代表天赋 %s**" % "＋".join(_talent_names(db, talents))
+				if with_points and not talents.is_empty()
+				else ("；**含加点**" if with_points else "；不含加点（只设等级）")
+			),
+			TRIES,
+		])
 		print("等级\t队伍\t敌人等级\t胜\t负\t打不完\t平均回合\t平均剩余气血%")
 		for level: int in LEVELS:
 			for team_id: String in TEAMS:
 				var team: Resource = db.get_row("enemy_team", team_id)
-				if team == null:
+				if team == null and not team_id.begins_with(HIDDEN_TEAM_PREFIX):
 					continue
 				var enemy_levels := PackedStringArray()
-				for member: Dictionary in team.parsed_members():
-					var enemy: Resource = db.get_row("enemy_base", str(member.get("enemy_id", "")))
-					if enemy != null:
-						enemy_levels.append(str(int(enemy.level)))
+				if team == null:
+					var solo: Resource = db.get_row("enemy_base", team_id.trim_prefix(HIDDEN_TEAM_PREFIX))
+					if solo == null:
+						continue
+					enemy_levels.append(str(int(solo.level)))
+				else:
+					for member: Dictionary in team.parsed_members():
+						var enemy: Resource = db.get_row("enemy_base", str(member.get("enemy_id", "")))
+						if enemy != null:
+							enemy_levels.append(str(int(enemy.level)))
 				var wins := 0
 				var losses := 0
 				var draws := 0
@@ -90,8 +145,14 @@ func _dump_win_rates(
 					for char_id: String in state.char_ids:
 						state.char_levels[char_id] = level
 						state.char_hp.erase(char_id)
+					if with_points:
+						_spend_all_points(db, state)
+					# 天赋：同一套代表 build 发给队里每个人（天赋是**每个角色**各选各的）
+					if not talents.is_empty():
+						for char_id: String in state.char_ids:
+							state.talent_picks[char_id] = talents.duplicate()
 					var allies: Array = party_builder_script.build_actors(db, state)
-					var enemies: Array = enemy_factory_script.new(db).create_team(team_id, "normal")
+					var enemies: Array = _team_enemies(db, enemy_factory_script, team_id)
 					var sim = sim_script.new(db, rng_script.new(SEED_BASE + i))
 					var result: Dictionary = sim.simulate(allies, enemies)
 					var winner := str(result["winner"])
@@ -112,6 +173,44 @@ func _dump_win_rates(
 					level, team_id, ",".join(enemy_levels), wins, losses, draws,
 					float(rounds_total) / float(TRIES), hp_ratio_total / float(TRIES),
 				])
+
+
+## 取一支队伍的打手：普通队伍查 `enemy_team`；`team_hidden_<enemy_id>` 按单人现拉
+## （与 `local_map_controller._boss_encounter` 同一个约定）。
+## 把「1 级到当前等级」的升级点数**全花掉**（真实玩家不会攒着不用）。
+##
+## 口径（开发侧定的，写在唯一的这一处）：**一半进体质（con，保命）、一半进伤害属性**——
+## 伤害属性看角色**起始武学的系别**：`external`（外功）→ 力 `str`；其余（内伤／毒／火…）→ 智 `int`。
+## 只投 `attribute_def.allocatable=1` 的那五项（悟性／根骨是资质，本来就投不了——
+## 具体由 `GameState.spend_point` 自己拦，这里不重写规则）。
+func _spend_all_points(db, state) -> void:
+	for char_id: String in state.char_ids:
+		var row: Resource = db.get_row("character_base", char_id)
+		if row == null:
+			continue
+		var damage_attr := "str"
+		for skill_id: String in row.skill_ids():
+			var active: Resource = db.get_row("skill_active", skill_id)
+			if active != null:
+				damage_attr = "str" if str(active.element) == "external" else "int"
+				break
+		var guard := 0
+		while state.available_points(db, char_id) > 0 and guard < 1000:
+			guard += 1
+			var target := "con" if state.available_points(db, char_id) % 2 == 0 else damage_attr
+			if not bool(state.spend_point(db, char_id, target).get("ok", false)):
+				break
+
+
+func _team_enemies(db, enemy_factory_script, team_id: String) -> Array:
+	var factory = enemy_factory_script.new(db)
+	if db.get_row("enemy_team", team_id) != null:
+		return factory.create_team(team_id, "normal")
+	var enemy_id := team_id.trim_prefix(HIDDEN_TEAM_PREFIX)
+	if enemy_id == team_id:
+		return []
+	var actor = factory.create(enemy_id, "normal")
+	return [actor] if actor != null else []
 
 
 ## 每支队伍的经验／铜钱（按 members 展开，普通难度无加成）。
@@ -168,171 +267,44 @@ func _dump_sweep_reward(db) -> void:
 	print("经验合计 %d　铜钱合计 %d" % [exp_sum, money_sum])
 
 
-## 敌人七维配置的算术约束（只读试算，给设计定档用）。
+## 敌人七维的**正式口径**（设计 10 §七，0.28.0 答 Q57）：敌人**不吃** `level_growth` 的基础列，
+## 强度 = 七维 → `attr_to_stat` ＋ 装备／内功固定值（＋百分比），难度倍率照旧最后乘。
 ##
-## 为什么单列这一节：0.14.0 把 `enemy_base` 换成了七维模板，但 14 行的 `attr_*` 还空着。
-## 七维配上去之后敌人的派生数值 = `level_growth` 的基础值 ＋ Σ `attr_to_stat`(七维) ＋ 装备/内功固定值，
-## 而 `level_growth` 的基础值是按**角色**定的——于是很多敌人**光靠等级地板就已经超过现在的派生列**
-## （例：2 级基础气血 108，而野狼现值只有 60）。所以「把现值原样翻译成七维」在数学上不存在：
-## 要么接受敌人整体变强（再调别的），要么改敌人的 `level`，要么不动这张基础表。
-## 这一节把「现值 / 地板 / 按主要派生项反解出的建议七维」一起打出来，让设计看着定，
-## 开发侧不自己拍板（设计 10 §三：数值不盲配，用平衡观测工具配）。
-func _dump_enemy_attr_floor(db) -> void:
-	var AttributeCalculatorScript := load("res://src/core/attribute_calculator.gd")
-	var EnemyFactoryScript := load("res://src/core/enemy_factory.gd")
-	var factory = EnemyFactoryScript.new(db)
-	var calculator = AttributeCalculatorScript.new(db)
-	var difficulty: Resource = db.get_row("difficulty_config", "normal")
-	print("---- 敌人七维试算：现口径 / 地板（七维全 0）/ 建议（按主要派生项反解） ----")
-	print("口径：三列都含装备与内功固定值、难度按 normal(1.0)。现口径＝过渡回退 `_stats_from_derived`（派生列＋固定值）；")
-	print("      地板＝七维全 0 走 `AttributeCalculator`；建议＝把「现口径 − 地板」按主要派生项反解成七维后再算一遍。")
-	print("      建议七维的 wu/gen 没有对应派生项（只影响招式槽／内功容量／内力上限），先按 5。")
-	print("敌人\t等级\thp 现/地/建\tatk_phys 现/地/建\tdef_phys 现/地/建\tspeed 现/地/建\thit 现/地/建\tdodge 现/地/建\tcrit 现/地/建\t建议 str/con/agi/int/luk/wu/gen\t地板已超现值项")
-	var overshoot_totals: Dictionary = {}
+## 这一节把每一行**表里真实配着的**七维与它算出来的派生数值并排打出来——它就是线上
+## `EnemyFactory.create()` 走的那条路（同一个 `AttributeCalculator`，只差
+## `include_level_base=false` 这一个开关），所以这里**不需要第二份算式**。
+## 还空着的行会被点名：那意味着它仍在走过渡回退（`_stats_from_derived`）。
+##
+## 为什么不再打「地板／反解」那一套：那是 Q57 的题干（「把现值翻译成七维」），
+## 设计已明确**取消这个目标**——复刻旧数字从来不是设计目标，只是开发侧自己设的自检口径。
+## 现在要看的是「按定位配出来的七维打起来是什么样」，那是上面那张胜率表的活。
+func _dump_enemy_attrs(db, enemy_factory_script) -> void:
+	var factory = enemy_factory_script.new(db)
+	print("---- 敌人七维（正式口径：不吃等级基础；强度＝七维 ＋ 装备／内功固定值） ----")
+	print("敌人	等级	str/con/agi/int/luk/wu/gen	hp/atk_phys/atk_qi/def_phys/def_qi/speed	hit/dodge/crit	qi_max	破架势	drop/威胁色")
+	var pending := PackedStringArray()
 	for row: Resource in db.rows("enemy_base"):
-		var level := int(row.level)
-		var contributions: Array = factory._enemy_contributions(str(row.enemy_id))
-		var current: Dictionary = factory._stats_from_derived(row, difficulty)
-		var floor: Dictionary = calculator.compute(level, {}, {}, contributions)
-		var need_str := maxf(0.0, (float(current.get("atk_phys", 0.0)) - float(floor.get("atk_phys", 0.0))) / 2.0)
-		var need_con := maxf(0.0, (float(current.get("hp_max", 0.0)) - float(floor.get("hp_max", 0.0))) / 12.0)
-		var need_agi := maxf(0.0, (float(current.get("speed", 0.0)) - float(floor.get("speed", 0.0))) / 1.5)
-		var need_int := maxf(0.0, (float(current.get("atk_qi", 0.0)) - float(floor.get("atk_qi", 0.0))) / 1.8)
-		var need_luk := _invert_diminishing(float(current.get("crit_rate", 0.0)), 0.75, 100.0)
-		var suggest := {
-			"str": int(round(need_str)), "con": int(round(need_con)), "agi": int(round(need_agi)),
-			"int": int(round(need_int)), "luk": int(round(need_luk)), "wu": 5, "gen": 5,
-		}
-		var suggested: Dictionary = calculator.compute(level, suggest, {}, contributions)
-		var overshoot := PackedStringArray()
-		for stat_id: String in current:
-			if float(floor.get(stat_id, 0.0)) > float(current[stat_id]) + 0.001:
-				overshoot.append(stat_id)
-				overshoot_totals[stat_id] = int(overshoot_totals.get(stat_id, 0)) + 1
-		print("%s\t%d\t%.0f/%.0f/%.0f\t%.0f/%.0f/%.0f\t%.0f/%.0f/%.0f\t%.0f/%.0f/%.0f\t%.2f/%.2f/%.2f\t%.2f/%.2f/%.2f\t%.2f/%.2f/%.2f\t%d/%d/%d/%d/%d/%d/%d\t%s" % [
-			row.enemy_id, level,
-			float(current.get("hp_max", 0.0)), float(floor.get("hp_max", 0.0)), float(suggested.get("hp_max", 0.0)),
-			float(current.get("atk_phys", 0.0)), float(floor.get("atk_phys", 0.0)), float(suggested.get("atk_phys", 0.0)),
-			float(current.get("def_phys", 0.0)), float(floor.get("def_phys", 0.0)), float(suggested.get("def_phys", 0.0)),
-			float(current.get("speed", 0.0)), float(floor.get("speed", 0.0)), float(suggested.get("speed", 0.0)),
-			float(current.get("hit_rate", 0.0)), float(floor.get("hit_rate", 0.0)), float(suggested.get("hit_rate", 0.0)),
-			float(current.get("dodge_rate", 0.0)), float(floor.get("dodge_rate", 0.0)), float(suggested.get("dodge_rate", 0.0)),
-			float(current.get("crit_rate", 0.0)), float(floor.get("crit_rate", 0.0)), float(suggested.get("crit_rate", 0.0)),
-			suggest["str"], suggest["con"], suggest["agi"], suggest["int"],
-			suggest["luk"], suggest["wu"], suggest["gen"],
-			("无" if overshoot.is_empty() else "、".join(overshoot)),
+		var attrs: Dictionary = row.attr_map()
+		if attrs.is_empty():
+			pending.append(str(row.enemy_id))
+		var actor = factory.create(str(row.enemy_id), "normal")
+		if actor == null:
+			continue
+		print("%s	%d	%d/%d/%d/%d/%d/%d/%d	%.0f/%.0f/%.0f/%.0f/%.0f/%.1f	%.2f/%.2f/%.2f	%.0f	%.0f	%s/%s" % [
+			row.enemy_id, int(row.level),
+			int(attrs.get("str", 0)), int(attrs.get("con", 0)), int(attrs.get("agi", 0)),
+			int(attrs.get("int", 0)), int(attrs.get("luk", 0)), int(attrs.get("wu", 0)),
+			int(attrs.get("gen", 0)),
+			actor.stat("hp_max"), actor.stat("atk_phys"), actor.stat("atk_qi"),
+			actor.stat("def_phys"), actor.stat("def_qi"), actor.stat("speed"),
+			actor.stat("hit_rate"), actor.stat("dodge_rate"), actor.stat("crit_rate"),
+			actor.stat("qi_max"), actor.stat("poise_break"),
+			("—" if str(row.drop_group).is_empty() else str(row.drop_group)), str(row.threat_tag),
 		])
-	print("地板已超现值的项统计（按敌人数）：%s" % _format_counts(overshoot_totals))
-	print("注：七维配齐后敌人还会多出现在没有的项——qi_max（等级基础＋智/根骨）、破架势（力）、")
-	print("    穿透率（力，diminishing）、格挡率（根骨，diminishing）、暴击伤害（运）、气血/内力回复。")
-	_dump_enemy_attr_fit_without_level_base(db, calculator)
-
-
-## 备选口径：**敌人不吃 `level_growth` 的基础列**，强度 = 七维 → `attr_to_stat` ＋ 装备/内功固定值。
-## 这一节把「按现口径反解出的七维」与「这样算出来的派生值」并排打出来，看能不能原样搬过去。
-## 如果能（残差 ≤ 取整误差），那 10 §二的「敌人与角色同管线」只需去掉等级基础这一层；
-## 如果不能（残差很大），说明必须由设计重新定 14 行的数值目标。
-func _dump_enemy_attr_fit_without_level_base(db, calculator) -> void:
-	var CurveEvaluatorScript := load("res://src/core/curve_evaluator.gd")
-	var EnemyFactoryScript := load("res://src/core/enemy_factory.gd")
-	var factory = EnemyFactoryScript.new(db)
-	var difficulty: Resource = db.get_row("difficulty_config", "normal")
-	print("---- 备选口径：敌人不吃等级基础（强度＝七维＋装备固定值），按现口径反解的七维 ----")
-	print("敌人\t建议 str/con/agi/int/luk/wu/gen\t按此算出的 hp/atk_phys/atk_qi/def_phys/def_qi/speed/hit/dodge/crit\t最大残差")
-	var worst := 0.0
-	var worst_id := ""
-	for row: Resource in db.rows("enemy_base"):
-		var contributions: Array = factory._enemy_contributions(str(row.enemy_id))
-		var current: Dictionary = factory._stats_from_derived(row, difficulty)
-		var flats := _flat_totals(contributions)
-		# 反解：把「现口径 − 装备/内功固定值」按系数除回去（七维不从等级基础起步，故没有地板问题）。
-		var attrs := {
-			"str": int(round(maxf(0.0, (float(current.get("atk_phys", 0.0)) - float(flats.get("atk_phys", 0.0))) / 2.0))),
-			"con": int(round(maxf(0.0, (float(current.get("hp_max", 0.0)) - float(flats.get("hp_max", 0.0))) / 12.0))),
-			"agi": int(round(maxf(0.0, (float(current.get("speed", 0.0)) - float(flats.get("speed", 0.0))) / 1.5))),
-			"int": int(round(maxf(0.0, (float(current.get("atk_qi", 0.0)) - float(flats.get("atk_qi", 0.0))) / 1.8))),
-			"luk": int(round(_invert_diminishing(
-				maxf(0.0, float(current.get("crit_rate", 0.0)) - float(flats.get("crit_rate", 0.0))), 0.75, 100.0))),
-			"wu": 5, "gen": 5,
-		}
-		var got: Dictionary = _attr_only_stats(db, CurveEvaluatorScript, calculator, attrs, contributions)
-		var residuals: Dictionary = {}
-		var local_worst := 0.0
-		for stat_id: String in ["hp_max", "atk_phys", "atk_qi", "def_phys", "def_qi", "speed", "hit_rate", "dodge_rate", "crit_rate"]:
-			var diff: float = absf(float(got.get(stat_id, 0.0)) - float(current.get(stat_id, 0.0)))
-			residuals[stat_id] = diff
-			local_worst = maxf(local_worst, diff)
-		if local_worst > worst:
-			worst = local_worst
-			worst_id = str(row.enemy_id)
-		print("%s\t%d/%d/%d/%d/%d/%d/%d\t%.0f/%.0f/%.0f/%.0f/%.0f/%.2f/%.2f/%.2f/%.2f\t%s" % [
-			row.enemy_id, attrs["str"], attrs["con"], attrs["agi"], attrs["int"], attrs["luk"], attrs["wu"], attrs["gen"],
-			float(got.get("hp_max", 0.0)), float(got.get("atk_phys", 0.0)), float(got.get("atk_qi", 0.0)),
-			float(got.get("def_phys", 0.0)), float(got.get("def_qi", 0.0)), float(got.get("speed", 0.0)),
-			float(got.get("hit_rate", 0.0)), float(got.get("dodge_rate", 0.0)), float(got.get("crit_rate", 0.0)),
-			_format_residuals(residuals),
-		])
-	print("最大残差 %.2f（%s）；其余只剩取整误差（≤0.5）说明这条路能把现值原样搬过去。" % [worst, worst_id])
-
-
-## 只算「七维 → attr_to_stat ＋ 装备/内功固定值」，**不含** level_growth 的基础列，也不含百分比层。
-func _attr_only_stats(db, curve_evaluator_script, calculator, attrs: Dictionary, contributions: Array) -> Dictionary:
-	var totals: Dictionary = {}
-	for row: Resource in db.rows("attr_to_stat"):
-		var value: float = curve_evaluator_script.evaluate(
-			row.curve, row.rate, float(attrs.get(row.attr_id, 0)), row.cap, row.param
-		)
-		totals[row.stat_id] = float(totals.get(row.stat_id, 0.0)) + value
-	for contribution: Dictionary in contributions:
-		if str(contribution.get("kind", "")) != "stat_flat":
-			continue
-		var target := str(contribution.get("target", ""))
-		if target.is_empty():
-			continue
-		totals[target] = float(totals.get(target, 0.0)) + float(contribution.get("value", 0.0))
-	var out: Dictionary = {}
-	for stat_id: String in totals:
-		out[stat_id] = calculator.apply_stat_def(stat_id, float(totals[stat_id]))
-	return out
-
-
-func _flat_totals(contributions: Array) -> Dictionary:
-	var totals: Dictionary = {}
-	for contribution: Dictionary in contributions:
-		if str(contribution.get("kind", "")) != "stat_flat":
-			continue
-		var target := str(contribution.get("target", ""))
-		if target.is_empty():
-			continue
-		totals[target] = float(totals.get(target, 0.0)) + float(contribution.get("value", 0.0))
-	return totals
-
-
-func _format_residuals(residuals: Dictionary) -> String:
-	var parts := PackedStringArray()
-	for stat_id: String in residuals:
-		var diff := float(residuals[stat_id])
-		if diff > 0.6:
-			parts.append("%s±%.1f" % [stat_id, diff])
-	return "无" if parts.is_empty() else "、".join(parts)
-
-
-## 反解 diminishing 曲线 `value = cap × x / (x + param)`：x = param × value / (cap − value)。
-## 目标已经贴到上限时返回一个足够大的整数（曲线永远到不了 cap，只能逼近）。
-func _invert_diminishing(value: float, cap: float, param: float) -> float:
-	if value <= 0.0:
-		return 0.0
-	if value >= cap:
-		return 100.0
-	return param * value / (cap - value)
-
-
-func _format_counts(counts: Dictionary) -> String:
-	if counts.is_empty():
-		return "无"
-	var keys: Array = counts.keys()
-	keys.sort()
-	var parts := PackedStringArray()
-	for key: String in keys:
-		parts.append("%s×%d" % [key, int(counts[key])])
-	return "、".join(parts)
+	if pending.is_empty():
+		print("七维配齐：全部 %d 行走正式口径（过渡回退只剩代码里的兜底，没有数据用它）" % db.rows("enemy_base").size())
+	else:
+		print("**还没配七维的行（仍在走过渡回退）**：%s" % "、".join(pending))
+	print("注：`hit` 是敏经 diminishing 曲线给的**加成**（cap 0.95／param 80），敌我命中基准都是 1.0；")
+	print("    真正决定打不打得中的是对方的 `dodge_rate`（10 §五：想让敌人「血厚防薄」用敏表达）。")
+	print("    `qi_max` 由智／根骨派生（每点 6.0／4.0）——不再写死 0，配了高星招式才有内力可放。")

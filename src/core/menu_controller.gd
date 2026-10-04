@@ -6,6 +6,7 @@ class_name MenuController
 extends RefCounted
 
 const GameStateScript := preload("res://src/core/game_state.gd")
+const CreationServiceScript := preload("res://src/core/creation_service.gd")
 const SaveStoreScript := preload("res://src/core/save_store.gd")
 
 const ACTION_PLAY := "play"
@@ -77,16 +78,26 @@ func can_start_new_game() -> bool:
 
 ## 新建游戏：挑槽位 → 造状态 → 立刻落盘（新游戏自动存档）。
 ## 返回 {ok, action, slot, state, overwrite, message}
-func new_game() -> Dictionary:
+## 新建游戏。`spec` 是创建角色那两步的结果（设计 13）；
+## 不传时用**默认出身**（`origin_def` 里 sort_order 最小的那张卡、不选天赋）——
+## 菜单自检与「快速开局」走的就是这条，正式流程由 `creation_screen` 传 spec 进来。
+func new_game(spec: Dictionary = {}) -> Dictionary:
 	if not can_start_new_game():
 		return _result(false, ACTION_NONE, 0, null, false, "配置表未就绪，先运行 tools\\run_tests.bat 生成配置表")
 	var placement: Dictionary = _store.slot_for_new_game()
 	if not placement["ok"]:
 		return _result(false, ACTION_NONE, 0, null, false, str(placement["error"]))
 	var slot := int(placement["slot"])
-	var state = GameStateScript.new_game(_db, _difficulty_id, _party_ids, slot)
+	var creation := CreationServiceScript.build(_db, _with_defaults(spec))
+	if not bool(creation["ok"]):
+		return _result(false, ACTION_NONE, slot, null, false, str(creation["error"]))
+	var state = creation["state"]
+	state.slot = slot
+	state.difficulty_id = _difficulty_id
 	if state == null or state.party_size() == 0:
-		return _result(false, ACTION_NONE, slot, null, false, "开局队伍为空，检查 character_base.csv")
+		# 数据错：表名只进日志（AGENTS：玩家可见文案不许出现表内 id，见框架说明决策 330）
+		push_error("[MenuController] 开局队伍为空：character_base.csv 里没有可用的初始成员（看 recruit_def.is_initial）")
+		return _result(false, ACTION_NONE, slot, null, false, "开局队伍为空（数据错，已记进日志）")
 	var save_result: Dictionary = _store.save_slot(slot, state)
 	var notice := ""
 	if not save_result["ok"]:
@@ -95,6 +106,25 @@ func new_game() -> Dictionary:
 		notice = "（存档位已满，已覆盖最旧的存档）"
 	var out := _result(true, ACTION_PLAY, slot, state, bool(placement["overwrite"]), notice)
 	out["start_scene"] = START_HUB
+	return out
+
+
+## 补齐创建方案里没给的字段：默认用第一张出身卡当模板。
+func _with_defaults(spec: Dictionary) -> Dictionary:
+	var out := spec.duplicate(true)
+	if out.is_empty():
+		out["route"] = "origin"
+	if str(out.get("route", "origin")) == "origin" and str(out.get("origin_id", "")).is_empty():
+		var cards: Array = CreationServiceScript.origins(_db)
+		if not cards.is_empty():
+			out["origin_id"] = str(cards[0]["origin_id"])
+			out["name_cn"] = CreationServiceScript.default_name_of(_db, str(cards[0]["origin_id"]))
+	if not out.has("talents"):
+		out["talents"] = []
+	if str(out.get("name_cn", "")).strip_edges().is_empty():
+		var card: Resource = _db.get_row("origin_def", str(out.get("origin_id", "")))
+		out["name_cn"] = CreationServiceScript.default_name_of(_db, str(out.get("origin_id", ""))) \
+			if card != null else "无名"
 	return out
 
 

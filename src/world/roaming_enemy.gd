@@ -55,9 +55,14 @@ var _encounter_latched := false
 ## 接触判定「武装」与否：重生那一刻如果玩家就站在位点上，先不武装——
 ## 否则明雷凭空出现在脚下、同一帧就开战，玩家连看都没看见（和地图出口「先走出去一次」同一套做法）。
 var _contact_armed := true
-## 精英光晕（每帧做一点点呼吸感的明暗，证明「发光」是活的）
-var _elite_glow: Polygon2D = null
+## 精英标识（每帧做一点点呼吸感的明暗，证明「发光」是活的）。
+## 类型是 Node2D 而不是 Polygon2D：美术交付贴图后换成 Sprite2D，程序化八边形只作兜底。
+var _elite_glow: Node2D = null
 var _glow_time := 0.0
+
+## 精英贴图目录。`roaming_spawn.elite_marker` 存的是**贴图 id**（如 `marker_elite_red`），
+## 路径按 id 拼——表里换一张图只改一处（与 `map_region.icon`、`item_base.icon` 同一套约定）。
+const ELITE_MARKER_DIR := "res://assets/sprites/icons/"
 
 
 ## spawn_row 既可以是 roaming_spawn 的行，也可以是房间敌人用的字典（房间没用明雷表）
@@ -101,20 +106,9 @@ func _build_placeholder() -> void:
 
 	# 精英发光（设计 07：发光精英外观）。光晕先加、身体后加，这样光晕在身体**后面**；
 	# 不用 z_index = -1：那会被地图的地面图层盖掉（试过，画面上什么也看不见）。
-	# 地编的 `elite_marker`（marker_elite_red）贴图还没进项目，先用程序化光晕顶上，等美术到位换贴图。
 	if is_elite:
-		var glow := Polygon2D.new()
+		var glow := _make_elite_glow()
 		glow.name = "EliteGlow"
-		glow.color = Color(1.0, 0.84, 0.35, 0.5)
-		var gx := 13.0 + 7.0
-		var cut := gx * 0.45
-		# 八边形而不是矩形：占位阶段也要看得出是「光晕」，不是给方块描了个边
-		glow.polygon = PackedVector2Array([
-			Vector2(-gx + cut, -gx * 2 - 2), Vector2(gx - cut, -gx * 2 - 2),
-			Vector2(gx, -gx * 2 - 2 + cut), Vector2(gx, 6 - cut),
-			Vector2(gx - cut, 6), Vector2(-gx + cut, 6),
-			Vector2(-gx, 6 - cut), Vector2(-gx, -gx * 2 - 2 + cut),
-		])
 		add_child(glow)
 		_elite_glow = glow
 
@@ -148,6 +142,38 @@ func _build_placeholder() -> void:
 	])
 	nose.position = facing * 15.0 + Vector2(0, -10)
 	add_child(nose)
+
+
+## 精英标识用哪张图：`elite_marker` 是贴图 id，按同一套约定拼路径（空 id = 不拼）。
+static func elite_marker_texture_path(marker_id: String) -> String:
+	if marker_id.strip_edges().is_empty():
+		return ""
+	return ELITE_MARKER_DIR + marker_id.strip_edges() + ".png"
+
+
+## 贴图到位就用贴图（2026-10-04：美术已交付 `marker_elite_red`，32×32 的环）；
+## **贴图缺失才退回程序化八边形**——资产没到不该变成「精英看不出是精英」，这条兜底原来就在，
+## 换成贴图之后留着（新主题换图、表里写错 id 时，玩家至少还看得见一个光晕）。
+func _make_elite_glow() -> Node2D:
+	var path := elite_marker_texture_path(elite_marker_id())
+	if not path.is_empty() and ResourceLoader.exists(path):
+		var sprite := Sprite2D.new()
+		sprite.texture = ResourceLoader.load(path) as Texture2D
+		# 身体的占位块是 26×26（y 从 -26 到 0），贴图 32×32 → 居中套住它
+		sprite.position = Vector2(0.0, -13.0)
+		return sprite
+	var fallback := Polygon2D.new()
+	fallback.color = Color(1.0, 0.84, 0.35, 0.5)
+	var gx := 13.0 + 7.0
+	var cut := gx * 0.45
+	# 八边形而不是矩形：连兜底也要看得出是「光晕」，不是给方块描了个边
+	fallback.polygon = PackedVector2Array([
+		Vector2(-gx + cut, -gx * 2 - 2), Vector2(gx - cut, -gx * 2 - 2),
+		Vector2(gx, -gx * 2 - 2 + cut), Vector2(gx, 6 - cut),
+		Vector2(gx - cut, 6), Vector2(-gx + cut, 6),
+		Vector2(-gx, 6 - cut), Vector2(-gx, -gx * 2 - 2 + cut),
+	])
+	return fallback
 
 
 func _physics_process(delta: float) -> void:

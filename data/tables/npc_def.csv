@@ -1,0 +1,10 @@
+﻿npc_id,name_cn,title_cn,place_id,level,faction,spar_team_id,greet_text_cn,info_text_cn
+npc_wang_tie,王铁,清风驿铁匠,scene_qingfengyi,5,civilian,,客官要打点什么？,清风驿的老铁匠，打了三十年铁。据说年轻时在镖局走过镖，手上有一道刀疤
+npc_zhang_gui,张贵,酒楼掌柜,scene_qingfengyi,3,civilian,,客官，来点什么？,清风驿酒楼的掌柜。消息灵通，酒量一般，最爱听江湖传闻
+npc_qian_dafu,钱大夫,医馆大夫,scene_qingfengyi,6,civilian,,哪里不舒服？,清风驿医馆的大夫。医术不错，脾气古怪，不肯给不肯说实话的人看病
+npc_sun_zhanggui,孙掌柜,客栈掌柜,scene_qingfengyi,3,civilian,,住店还是打尖？,清风驿客栈的掌柜。与燕小七是旧识，嘴上不饶人，心里热
+npc_caiyao,老周,采药人,n_luoyanpo,4,civilian,,（捂着腿）嘶……,常年在落雁坡采药的老汉。山里哪条路通哪、哪里塌过方，他全知道
+npc_huangcun,陈氏,荒村遗孀,scene_huangcun,2,civilian,,（眼神躲闪）你……你是什么人？,荒村唯一活下来的人。不肯说那天夜里发生了什么，一提就发抖
+npc_qiutu,阿福,被囚村民,scene_heifengzhai,2,civilian,,救我出去！求你了！,被黑风寨掳来的村民，关在地牢里。已经饿了三天
+npc_shen_yanhui,沈雁回,沈家小姐,scene_heifengzhai,4,civilian,,你是来领那三十两的？,沈家的小姐，被掳进黑风寨后没掉过一滴泪，只提一个条件：把当年的事查清楚
+npc_pei_wujiu,裴无咎,黑风寨大寨主,scene_heifengzhai,12,bandit,,账册，在你手上？,黑风寨大寨主。十年前漕帮的少舵主，绰号黑风刀。他不抢，不骂，也不诉苦——只认兄弟的名字

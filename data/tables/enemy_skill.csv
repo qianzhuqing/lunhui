@@ -4,11 +4,11 @@ en_wolf,sk_chensha_01,2,蛮冲
 en_boar,sk_common_01,1,顶撞
 en_boar,sk_chensha_01,2,蛮冲
 en_bd_thug,sk_bandit_slash,1,杂兵起手
-en_bd_thug,sk_chensha_01,2,替补招，避免一招到底
+en_bd_thug,sk_bandit_scout,2,替补招；必须与主武器同系，否则会被静默挡掉
 en_bd_scout,sk_bandit_scout,1,
 en_bd_scout,sk_bandit_slash,2,
 en_bd_archer,sk_bandit_arrow,1,远程
-en_bd_archer,sk_bandit_slash,2,被近身时的自卫
+en_bd_archer,sk_common_01,2,被近身时的自卫；通用招式不受武器限制
 en_bd_sleep_drunk,sk_common_01,1,
 en_bd_sleep_drunk,sk_bandit_slash,2,被打醒后的还手
 en_bd_lone_wolf,sk_common_01,1,
@@ -27,3 +27,7 @@ en_bd_boss,sk_heifeng_01,3,血线压低后的杀招
 en_hidden_drunk,sk_drunk_jiuzhongdao,1,
 en_hidden_drunk,sk_drunk_01,2,二阶段变招
 en_hidden_drunk,sk_drunk_zuibu,3,增益形态
+en_shixi_hound,sk_common_01,1,扑咬
+en_wanderer_disciple,sk_common_01,1,切磋起手；通用招式不受武器限制
+en_wanderer_disciple,sk_common_02,2,别派弟子的杀招
+en_shixi_hound,sk_chensha_02,2,冲撞

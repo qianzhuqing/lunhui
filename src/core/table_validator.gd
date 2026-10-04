@@ -19,6 +19,9 @@ const AttributeCalculatorScript := preload("res://src/core/attribute_calculator.
 ## 「伤害类型代码支不支持」的唯一出处是 BattleSimulator 的静态判断（这里**不另写一份名单**，
 ## 抄一份就迟早分家——2026-10-03 的 DoT 事故正是「代码过滤」与「数据」悄悄不一致，见决策 229）。
 const BattleSimulatorScript := preload("res://src/core/battle_simulator.gd")
+## 对话说话人里的特殊记号（`player` = 主角自己）：构建期要认它，否则本命机遇／序幕那类
+## 「主角自己说的话」在落表当天就会红
+const NpcServiceScript := preload("res://src/core/npc_service.gd")
 
 const ELEMENTS := ["external", "internal", "odd"]
 const ITEM_TYPES := ["currency", "material", "consumable", "key", "tool", "skillbook"]
@@ -45,7 +48,9 @@ const ENUMS := {
 	},
 	"skill_base": {
 		"skill_kind": ["active", "passive"],
-		"source_type": ["start", "npc", "drop", "story", "hidden", "item", "shop"],
+		# `origin`＝出身本命机遇（设计 21 §九，0.31.0）：与 `story` 同一条发放通道，
+		# 只是条件写成 `origin:<char_id>`（谁是主角谁才拿得到）
+		"source_type": ["start", "npc", "drop", "story", "hidden", "item", "shop", "origin"],
 	},
 	"skill_active": {
 		"element": ["", "external", "internal", "odd"],
@@ -68,7 +73,8 @@ const ENUMS := {
 	"map_local": {"scene_type": ["town", "dungeon", "poi"]},
 	"roaming_spawn": {"behavior": ["idle", "patrol", "wander", "chase", "sleep"]},
 	"dungeon_room": {
-		"room_type": ["entrance", "battle", "treasure", "trap", "secret", "elite", "story", "boss"],
+		# `side`：设计 0.26.0 给「石隙迷窟」加的**死路房**（空室这种，走进去只能回头）
+		"room_type": ["entrance", "battle", "treasure", "trap", "secret", "elite", "story", "boss", "side"],
 		"branch_group": ["", "main", "side", "hidden"],
 	},
 	"hidden_trigger": {
@@ -90,6 +96,14 @@ const ENUMS := {
 	},
 	"set_def": {"set_kind": ["equip", "skill_active", "skill_passive"]},
 	"feature_toggle": {"value": ["0", "1"]},
+	# 创建角色（0.16.0／0.17.0）：天赋六个方向（设计 12 的 category 一列）。
+	# `origin_def` 没有枚举列——它的合法性全在「char_id 指向真实的 character_base 行」上。
+	"talent_def": {"category": ["combat", "body", "agile", "mind", "social", "fortune"]},
+	# 主线与章节（0.22.0）：`chapter_end` = 章节收束节点（同时置章节完成旗标）／`faction` = 门派支线
+	"story_node": {"kind": ["chapter_end", "faction", "choice", "origin_gift"]},
+	# NPC 与大地图事件（设计 19）
+	"npc_offer": {"kind": ["offer", "steal"]},
+	"world_event": {"effect_kind": ["trade", "spar", "hint", "gift", "check"]},
 }
 
 ## 单值 / 多值引用规则：{table, column, target, target_column?, split?, allow_empty?}
@@ -166,6 +180,35 @@ const REFERENCES := [
 	{"table": "recruit_def", "column": "char_id", "target": "character_base"},
 	{"table": "npc_guard", "column": "room_id", "target": "dungeon_room"},
 	{"table": "npc_guard", "column": "fight_team", "target": "enemy_team", "allow_empty": true},
+	# 创建角色（0.16.0／0.17.0）：出身卡必须指向一行真实模板；天赋效果必须挂在真实天赋上
+	{"table": "origin_def", "column": "char_id", "target": "character_base"},
+	{"table": "talent_effect", "column": "talent_id", "target": "talent_def"},
+	# 主线与章节（0.22.0）：门派／结束节点挂在真实章节上；地点留空表示"不限地点"
+	{"table": "story_node", "column": "chapter_id", "target": "chapter_def"},
+	# `story_node.place_id` 可以是**小地图也可以是大地图节点**（`StoryService.place_matches` 就是
+	# 这么认的：落雁坡没有小地图，本命机遇在那儿触发），所以它不进这张单值引用表，
+	# 由 `_check_story_and_guides` 单独查两处。
+	# 抉择增益的四列（0.29.1）：属性点层引 attribute_def、固定值层引 stat_def
+	{"table": "story_node", "column": "bonus_attr_id", "target": "attribute_def", "allow_empty": true},
+	{"table": "story_node", "column": "bonus_stat_id", "target": "stat_def", "allow_empty": true},
+	# 观察点（0.29.1）：小地图／房间／大地图节点三选一，三列各自要指向真东西
+	{"table": "flavor_point", "column": "scene_id", "target": "map_local", "allow_empty": true},
+	{"table": "flavor_point", "column": "room_id", "target": "dungeon_room", "allow_empty": true},
+	{"table": "flavor_point", "column": "region_id", "target": "map_region", "allow_empty": true},
+	# 对话容器（0.31.0）：跳转目标只能是对话节点；说话人与给的东西都是"两处任一命中"，
+	# 所以那两样不进这张单值表，由 `_check_dialogue` 单独查。
+	{"table": "dialogue_node", "column": "next_node_id", "target": "dialogue_node", "allow_empty": true},
+	{"table": "dialogue_option", "column": "node_id", "target": "dialogue_node"},
+	{"table": "dialogue_option", "column": "next_node_id", "target": "dialogue_node", "allow_empty": true},
+	{"table": "guide_step", "column": "chapter_id", "target": "chapter_def", "allow_empty": true},
+	{"table": "chapter_def", "column": "next_chapter_id", "target": "chapter_def", "allow_empty": true},
+	# NPC 与大地图事件（设计 19）：人、货、事三张表要互相认得出
+	# `npc_favor`／`npc_quest` 的 `npc_id` **可以是 NPC 也可以是同伴**（设计 20 §十：
+	# 「同伴与城镇 NPC 共用一套好感规则」，四位同伴的好感行与支线就该写在这儿）——
+	# 两处任一命中，所以不进这张单值表，由 `_check_npc_people` 单独查。
+	# `npc_offer`（兑换货架）仍只认 `npc_def`：设计写明同伴「好感解锁的是同伴内容，不是兑换货架」。
+	{"table": "npc_offer", "column": "npc_id", "target": "npc_def"},
+	{"table": "npc_def", "column": "spar_team_id", "target": "enemy_team", "allow_empty": true},
 ]
 
 ## 数值区间规则。
@@ -227,6 +270,20 @@ const RANGES := [
 	{"table": "enemy_base", "column": "def_qi", "min": 0.0},
 	{"table": "enemy_base", "column": "speed", "min": 0.0},
 	{"table": "enemy_base", "column": "poise", "min": 0.0},
+	# 创建角色（0.16.0／0.17.0）：天赋点花费 1~3（设计 12 的池子），出身卡排序从 1 起
+	{"table": "talent_def", "column": "cost", "min": 1.0, "max": 3.0},
+	{"table": "origin_def", "column": "sort_order", "min": 1.0},
+	{"table": "chapter_def", "column": "sort_order", "min": 1.0},
+	{"table": "npc_def", "column": "level", "min": 1.0},
+	{"table": "npc_favor", "column": "favor_max", "min": 1.0},
+	{"table": "npc_favor", "column": "gift_favor", "min": 0.0},
+	{"table": "npc_favor", "column": "spar_favor", "min": 0.0},
+	{"table": "npc_favor", "column": "steal_difficulty", "min": 0.0},
+	{"table": "npc_offer", "column": "favor_required", "min": 0.0},
+	{"table": "npc_offer", "column": "price", "min": 0.0},
+	{"table": "npc_quest", "column": "sort_order", "min": 1.0},
+	{"table": "npc_quest", "column": "reward_favor", "min": 0.0},
+	{"table": "world_event", "column": "weight", "min": 0.0},
 	{"table": "enemy_base", "column": "hit_rate", "min": 0.0, "max": 1.0},
 	{"table": "enemy_base", "column": "dodge_rate", "min": 0.0, "max": 1.0},
 	{"table": "enemy_base", "column": "crit_rate", "min": 0.0, "max": 1.0},
@@ -304,6 +361,7 @@ static func validate(db) -> PackedStringArray:
 	_check_enemy_team_members(db, errors)
 	_check_training_faction(db, errors)
 	_check_enemy_skill_slots(db, errors)
+	_check_enemy_passive_capacity(db, errors)
 	_check_character_attr_total(db, errors)
 	_check_attribute_allocatable(db, errors)
 	_check_level_growth_rows(db, errors)
@@ -317,6 +375,8 @@ static func validate(db) -> PackedStringArray:
 	_check_building_rows(db, errors)
 	_check_guide_and_recruit(db, errors)
 	_check_npc_guards(db, errors)
+	_check_dialogue(db, errors)
+	_check_npc_people(db, errors)
 	_check_weapon_slot_consistency(db, errors)
 	_check_skill_details(db, errors)
 	_check_skill_weapon_types(db, errors)
@@ -339,7 +399,328 @@ static func validate(db) -> PackedStringArray:
 	_check_buff_tables(db, errors)
 	_check_character_event_skills(db, errors)
 	_check_skill_damage_types_supported(db, errors)
+	_check_creation_tables(db, errors)
+	_check_story_and_guides(db, errors)
+	_check_enemy_weapon_matches_skills(db, errors)
+	_check_icon_self_reference(db, errors)
+	_check_map_region_rules(db, errors)
 	return errors
+
+
+## 大地图探索口径（0.32.0，设计 CHANGELOG 与 16 §3.3）：**默认公开的只有城镇与驿站**。
+##
+## 规则按**类型**判，不逐行清点——以后新加城镇／驿站自动跟着公开，不会再漂。
+## 这条以前没有任何地方管：`reveal_on_map=1` 是手填的，谁把某个野外／兴趣点顺手写成 1，
+## 地图上就会「开局白送一处没探索过的地方」，玩家看不出来、自检也不会红
+## （`tests/test_world_map.gd` 那次「开局揭开 3 个 → 2 个」正是它漂出来的一半）。
+##
+## 同一条函数里还有第二半：**兴趣点不给图标**（16 §3.5），
+## 唯一例外是「持有类解锁」的那一个（19 §5.6：藏宝图上有位置，所以石隙迷窟留 `icon_shixi`）。
+## 「哪个条件算持有类」不在这里手抄——问 `WorldMapService.held_item_id`（唯一出处）。
+static func _check_map_region_rules(db, errors: PackedStringArray) -> void:
+	const DEFAULT_PUBLIC_TYPES := ["town", "fast_travel"]
+	for row: Resource in db.rows("map_region"):
+		var node_id := str(row.node_id)
+		var node_type := str(row.node_type)
+		# ① 默认公开只能给城镇／驿站
+		if bool(row.reveal_on_map) and not DEFAULT_PUBLIC_TYPES.has(node_type):
+			errors.append(
+				"map_region[%s].reveal_on_map=1，但 node_type=%s——设计 0.32.0 只许城镇（town）"
+					% [node_id, node_type]
+				+ "与驿站（fast_travel）开局公开，其余要玩家自己走到跟前才揭开"
+			)
+		# ② 兴趣点不给图标（例外：藏宝图那类「持有类解锁」的兴趣点）
+		if node_type != "poi":
+			continue
+		if str(row.icon).strip_edges().is_empty():
+			continue
+		if not WorldMapServiceScript.held_item_id(db, str(row.unlock_condition)).is_empty():
+			continue
+		errors.append(
+			"map_region[%s].icon='%s'，但它是兴趣点——设计 16 §3.5：兴趣点靠地形认"
+				% [node_id, str(row.icon)]
+			+ "（山洞＝山体上的洞口、荒村＝焦黑屋舍群、渡口＝水岸），不给图标；"
+			+ "唯一例外是「持有类解锁」的兴趣点（藏宝图上有位置）"
+		)
+
+
+## 图标列**必须是这一行自己的 id**（`equip_base.icon`／`item_base.icon`，设计 15 §六＋A14 0.31.1）。
+##
+## 为什么这条值得单独有：界面取图是「优先 `icon` 列、空则退回行 id」——**值写错了不会报错，
+## 只会画出别人家的图标**（`eq_sword_02` 的 icon 写成 `eq_sword_01` → 面板上就显示铁剑的图）。
+## 行 id 与图标名本来就是同一个东西（`assets/icons/equip/<equip_id>.png`），所以"非空就必须相等"
+## 正是设计的口径；留空也合法（等于退回 id，出图前后都不用改数据）。
+static func _check_icon_self_reference(db, errors: PackedStringArray) -> void:
+	for spec: Array in [["equip_base", "equip_id"], ["item_base", "item_id"]]:
+		var table_name := str(spec[0])
+		var id_column := str(spec[1])
+		for row: Resource in db.rows(table_name):
+			var icon := str(row.icon).strip_edges()
+			if icon.is_empty():
+				continue
+			var row_id := str(row.get(id_column))
+			if icon != row_id:
+				errors.append(
+					"%s[%s].icon='%s' 必须等于它自己的 %s（界面按 icon 取图——写错不会报错，"
+						% [table_name, row_id, icon, id_column]
+					+ "只会画出别人家的图标；空着也合法，等于退回行 id）"
+				)
+
+
+## 剧情节点与引导链（0.22.0，设计 18）。
+##
+## 这张网补的是设计侧那七个断点里**能机械核的四个**：
+##   ① `source_type=story` 的武学必须指到一个真实 `story_node`——
+##      断点 4／6 就是「6 部 story 武学一部都没落地处」，以前没有任何检查会红；
+##   ② 「章节结束」节点必须真的置上本章的 `complete_condition`，
+##      否则章节永远完不成（断点 5 的 `chapter_01` 硬编码就是这一类）；
+##   ③ 引导链的 `condition` 必须是 `start` 或 `flag_*` 形状——
+##      原来是裸字符串，拼错一个字母引导链就静默断掉（断点 7）；
+##   ④ 每一步都要有 `condition_spec`：那一列是**给程序看的判定口径**，
+##      少了它「什么时候算备齐了」就只能猜（断点 1 的 `flag_supplies_ready`）。
+static func _check_story_and_guides(db, errors: PackedStringArray) -> void:
+	var nodes: Dictionary = {}
+	for row: Resource in db.rows("story_node"):
+		nodes[str(row.node_id)] = row
+		# `place_id`：小地图或大地图节点，二选一命中即可（留空 = 地点不限）
+		var place := str(row.place_id)
+		if not place.is_empty():
+			var in_local := db.get_row("map_local", place) != null
+			var in_region := db.get_row("map_region", place) != null
+			if not in_local and not in_region:
+				errors.append(
+					"story_node[%s].place_id=%s 既不是小地图场景也不是大地图节点" % [row.node_id, place]
+				)
+		# `trigger_condition`：条件语言目前两种写法——`flag_*` 与 `origin:<char_id>`
+		var trigger := str(row.trigger_condition)
+		if not trigger.is_empty() and not trigger.begins_with("flag_") \
+				and not trigger.begins_with("origin:"):
+			errors.append(
+				"story_node[%s].trigger_condition=%s 既不是 flag_* 也不是 origin:<char_id>"
+					% [row.node_id, trigger]
+			)
+		if trigger.begins_with("origin:"):
+			var origin_id := trigger.substr("origin:".length())
+			if db.get_row("character_base", origin_id) == null:
+				errors.append(
+					"story_node[%s] 的出身条件 origin:%s 不是 character_base 里的角色"
+						% [row.node_id, origin_id]
+				)
+		for skill_id: String in str(row.grant_skill_ids).split(";", false):
+			if db.get_row("skill_base", skill_id) == null:
+				errors.append("story_node[%s] 要发的武学 %s 不在 skill_base 里" % [row.id, skill_id])
+		# `kind=choice`（设计 20 §八）：它存在的意义就是发永久增益——一条都不填等于配了个空节点
+		if str(row.kind) == "choice" and row.bonus_contributions().is_empty():
+			errors.append(
+				"story_node[%s] 是 kind=choice，但四列增益全空——玩家选完什么也得不到" % row.node_id
+			)
+
+	# ①b `source_type=origin`（设计 21 §九）：与 `story` 同一条通道，也要指到真实节点
+	for row: Resource in db.rows("skill_base"):
+		if str(row.source_type) != "origin":
+			continue
+		var origin_source := str(row.source_id)
+		if not nodes.has(origin_source):
+			errors.append(
+				"skill_base[%s] 标着 source_type=origin，但 source_id=%s 不在 story_node 里"
+					% [row.id, origin_source]
+				+ "——这条本命机遇玩家永远拿不到"
+			)
+
+	# ①c 观察点（设计 20 §3.2）：**小地图与大地图二选一**，且必须落在一个真地方
+	for row: Resource in db.rows("flavor_point"):
+		var point_scene := str(row.scene_id)
+		var point_region := str(row.region_id)
+		if point_scene.is_empty() and point_region.is_empty():
+			errors.append(
+				"flavor_point[%s] 既没有 scene_id 也没有 region_id——这一句碎句玩家永远看不到"
+					% row.point_id
+			)
+		elif not point_scene.is_empty() and not point_region.is_empty():
+			errors.append(
+				"flavor_point[%s] 同时填了 scene_id 与 region_id——两边都会收它，位点只该有一个"
+					% row.point_id
+			)
+		if str(row.text_cn).is_empty():
+			errors.append("flavor_point[%s] 没有 text_cn：观察点就是那一句话" % row.point_id)
+
+	# ① story 武学必须有落地节点（设计侧新加的同一道门限）
+	for row: Resource in db.rows("skill_base"):
+		if str(row.source_type) != "story":
+			continue
+		var source_id := str(row.source_id)
+		if not nodes.has(source_id):
+			errors.append(
+				"skill_base[%s] 标着 source_type=story，但 source_id=%s 不在 story_node 里"
+					% [row.id, source_id]
+				+ "——这部武学玩家永远拿不到"
+			)
+
+	# ② 章节完成条件要有节点去置它
+	var granted_flags: Dictionary = {}
+	for row: Resource in db.rows("story_node"):
+		if str(row.kind) == "chapter_end":
+			granted_flags[str(row.chapter_id)] = str(row.trigger_condition)
+	for row: Resource in db.rows("chapter_def"):
+		var chapter_id := str(row.chapter_id)
+		var complete := str(row.complete_condition)
+		# 「最后一章」允许没有完成条件：设计把第二章当占位（`next_chapter_id` 空），
+		# 它本来就还没内容——只有**声明了下一章**的章节才必须能结束。
+		if complete.is_empty():
+			if not str(row.next_chapter_id).is_empty():
+				errors.append("chapter_def[%s] 声明了下一章，却没有 complete_condition：这一章永远不会结束" % chapter_id)
+			continue
+		if granted_flags.is_empty():
+			errors.append("chapter_def[%s] 要靠 %s 完成，但没有任何 chapter_end 剧情节点" % [chapter_id, complete])
+
+	# ③④ 引导链：条件形状 + 判定口径
+	for row: Resource in db.rows("guide_step"):
+		var condition := str(row.condition)
+		if condition != "start" and not condition.begins_with("flag_"):
+			errors.append("guide_step[%s].condition=%s 既不是 start 也不是 flag_*（拼错就会静默断链）"
+				% [row.id, condition])
+		if str(row.condition_spec).is_empty():
+			errors.append("guide_step[%s] 缺 condition_spec：程序没法知道这一步什么时候算满足" % row.id)
+
+
+## 敌人装备的武器类型必须能匹配它的每一招（设计 0.23.0 的新门限 5.20）。
+##
+## 这条踩过真坑：`enemy_equip` 给敌人配了刀，而它的第二招是掌法——
+## `BattleSimulator._weapon_allows` 会**静默挡掉**那一招，配了等于没配；
+## 荒村屠夫两招都是掌法却挂刀，**一招都出不了**，站在那儿挨打。
+## 运行期不报错、招式表也「看着齐全」，所以只能由构建期点名。
+static func _check_enemy_weapon_matches_skills(db, errors: PackedStringArray) -> void:
+	var weapon_of_enemy: Dictionary = {}
+	for row: Resource in db.rows("enemy_equip"):
+		if str(row.slot_id) == "weapon":
+			weapon_of_enemy[str(row.enemy_id)] = str(row.equip_id)
+	for row: Resource in db.rows("enemy_skill"):
+		var enemy_id := str(row.enemy_id)
+		if not weapon_of_enemy.has(enemy_id):
+			continue
+		var equip: Resource = db.get_row("equip_base", str(weapon_of_enemy[enemy_id]))
+		var skill: Resource = db.get_row("skill_base", str(row.skill_id))
+		if equip == null or skill == null:
+			continue
+		var have := str(equip.weapon_type)
+		var need := str(skill.weapon_type)
+		if need.is_empty() or need == "any":
+			continue
+		if have != need:
+			errors.append(
+				"enemy_skill[%s] 的 %s 要求武器「%s」，而它装备的是「%s」——这一招会被静默挡掉"
+					% [enemy_id, row.skill_id, need, have]
+			)
+
+
+## `rule:` 类的效果目标**代码真的认得的**那批（设计 12：新增一个目标 = 改一处代码 + 加一行表）。
+##
+## 这里先放着：天赋的运行期（`TalentService`）还没落地，落地后这份名单要**搬过去当唯一出处**，
+## 校验器改成读它——别留成两份（同 `BattleActor.KNOWN_STATUS_RULES` 的写法）。
+const KNOWN_TALENT_RULES := [
+	"bonus_skill", "mastery_gain", "learn_req_reduce", "skill_damage", "defeat_heal_bonus",
+	"first_round_priority", "event_check_bonus", "event_check_bonus_wenxue",
+	"event_check_bonus_yishu", "event_check_difficulty", "start_money",
+	"shop_buy_price", "codex_bonus_multiplier",
+]
+
+
+## 创建角色那两张表（`origin_def`／`talent_def`＋`talent_effect`，设计 12／13）。
+##
+## 三条设计纪律里，能机械核的都在这里；剩下那两条（`rule:` 目标必须真实现、
+## 「创建没走完不写存档」）属于运行期，落地时由用例钉。
+static func _check_creation_tables(db, errors: PackedStringArray) -> void:
+	var origins: Array = db.rows("origin_def")
+	if origins.is_empty():
+		errors.append("origin_def 一行都没有：创建角色「使用模板」那条路会空着")
+	var seen_chars: Dictionary = {}
+	var seen_order: Dictionary = {}
+	for row: Resource in origins:
+		var char_id := str(row.char_id)
+		if seen_chars.has(char_id):
+			errors.append("origin_def 有两张卡指向同一个模板 %s（出身卡必须一一对应）" % char_id)
+		seen_chars[char_id] = true
+		var order := int(row.sort_order)
+		if seen_order.has(order):
+			errors.append("origin_def 的 sort_order=%d 重复（两行的展示顺序会不稳定）" % order)
+		seen_order[order] = true
+		# 默认名（设计 21 §七 第 5 条）：**每一张卡都要有真名**——空着就会退回卡标题，
+		# 而书生那张的标题是「家道失落的书生」这种类名，主角默认名叫这个就是当初那条 wart。
+		# 新加一位预设时忘了填这一列 → 这里当场报错（不靠"打开游戏才发现名字不对"）。
+		if str(row.default_name_cn).strip_edges().is_empty():
+			errors.append(
+				"origin_def[%s] 没有 default_name_cn：默认名会退回卡标题（%s）——给个真名（设计 21 §七 第 5 条）"
+					% [row.origin_id, str(row.name_cn)]
+			)
+
+	var talents: Dictionary = {}
+	for row: Resource in db.rows("talent_def"):
+		talents[str(row.talent_id)] = row
+	var effects_by_talent: Dictionary = {}
+	for row: Resource in db.rows("talent_effect"):
+		var talent_id := str(row.talent_id)
+		var target := str(row.target)
+		var parts := target.split(":", true, 1)
+		if parts.size() != 2 or parts[1].is_empty():
+			errors.append("talent_effect[%s].target=%s 不是 `<前缀>:<目标>` 的写法" % [row.id, target])
+			continue
+		var prefix := parts[0]
+		var target_id := parts[1]
+		match prefix:
+			"attr":
+				if db.get_row("attribute_def", target_id) == null:
+					errors.append("talent_effect[%s] 的属性目标 %s 不在 attribute_def 里" % [row.id, target_id])
+			"stat":
+				if db.get_row("stat_def", target_id) == null:
+					errors.append("talent_effect[%s] 的派生数值目标 %s 不在 stat_def 里" % [row.id, target_id])
+			"rule":
+				if not KNOWN_TALENT_RULES.has(target_id):
+					errors.append(
+						"talent_effect[%s] 的规则目标 %s 代码里没有实现——"
+						% [row.id, target_id]
+						+ "新增一个 rule: 目标要同时改代码（TalentService）与加一行表"
+					)
+			_:
+				errors.append("talent_effect[%s] 的前缀 %s 不是 attr:/stat:/rule: 三者之一" % [row.id, prefix])
+		if not effects_by_talent.has(talent_id):
+			effects_by_talent[talent_id] = []
+		effects_by_talent[talent_id].append(row)
+
+	# 设计 12 第一条纪律：**动七维的天赋总和必须为零**——
+	# 否则玩家会去算「哪个天赋白送点数」，模板总 49 那条就不再是硬约束。
+	#
+	# **这条先只报警告、不当错误**：0.16.0 交付的数据本身就和这句话对不上——
+	# `tal_shen_li`／`tal_tie_gu`／`tal_qing_yan`／`tal_guo_mu` 都是「+4／−2」＝净 +2
+	# （而设计在正文里举的例子正是「天生神力＝力 +4、敏 −2」），`tal_hui_gen`／`tal_dao_ti`
+	# 是净 +3（悟性／根骨是资质，可能是有意允许）。数据与设计原文的矛盾无从替设计裁决，
+	# 已记进 `待策划确认.md` **Q58**；等设计回话再把这条挪回硬错误（决策 270）。
+	var budget := 0.0
+	for g_row: Resource in db.rows("growth_const"):
+		if str(g_row.const_id) == "talent_points":
+			budget = float(g_row.value)
+	if budget <= 0.0:
+		errors.append("growth_const 缺少 talent_points（没有它创建界面的天赋预算没有出处）")
+	for talent_id: String in talents:
+		var talent: Resource = talents[talent_id]
+		if float(talent.cost) > budget:
+			errors.append("talent_def[%s].cost=%s 超过天赋总点数 %s（这个天赋永远买不起）"
+				% [talent_id, talent.cost, budget])
+		var effects: Array = effects_by_talent.get(talent_id, [])
+		if effects.is_empty():
+			errors.append("talent_def[%s] 一条 talent_effect 都没有（选了没有任何效果）" % talent_id)
+		var attr_sum := 0.0
+		var attr_detail := PackedStringArray()
+		for effect: Resource in effects:
+			if str(effect.target).begins_with("attr:"):
+				attr_sum += float(effect.value)
+				attr_detail.append("%s %s" % [str(effect.target).substr(5), str(effect.value)])
+		if absf(attr_sum) > 0.001:
+			var sign_str := "+" if attr_sum >= 0.0 else "-"
+			push_warning(
+				"[TableValidator] talent_def[%s] 动七维（%s）净 %s%.1f，不是 0——设计 12 说偏移类必须自平，"
+					% [talent_id, "／".join(attr_detail), sign_str, absf(attr_sum)]
+				+ "但 0.16.0 的发行数据就是这样（`待策划确认.md` Q58 已问设计）"
+			)
 
 
 ## 非战斗技能（01 文档的「每个模板给出全部非战斗技能的初始等级」）：
@@ -986,15 +1367,96 @@ static func _check_enemy_skill_slots(db, errors: PackedStringArray) -> void:
 			)
 
 
+## 敌人配的内功**占格 ≤ 容量**——设计 10 §二 连带规则①的另一半（「敌人同样受招式槽与**内功容量**限制，
+## 用的是 `growth_const` 里同一组公式」）。招式槽那半边 0.10.0 就接了（`_check_enemy_skill_slots`），
+## 而这句自己注明了「要等 `enemy_base` 换成七维模板才生效」——七维 0.28.0 就配齐了，
+## **前置条件早就满足，只是没人回来接**（2026-10-04 补）。
+##
+## 已知超编的两行写在 `KNOWN_OVER_CAPACITY_ENEMIES`：数据是设计侧配的，
+## 「削内功」还是「提根骨」（根骨同时绑气血与外防）属内容决定，见 `待策划确认.md` Q79。
+## **双向维护**：新出现的超编当场报错；清单里那一行不再超编也报错（提示删掉）——
+## 免得白名单变成「以后可以随便超编」的口子。
+const KNOWN_OVER_CAPACITY_ENEMIES := {
+	"en_bd_boss": "占 5 格 > 容量 4（等级 12／根骨 8）",
+	"en_hidden_drunk": "占 7 格 > 容量 4（等级 15／根骨 8）",
+}
+
+
+static func _check_enemy_passive_capacity(db, errors: PackedStringArray) -> void:
+	var growth = GrowthCalculatorScript.new(db)
+	var calculator = AttributeCalculatorScript.new(db)
+	var checked := 0
+	var over := {}
+	for row: Resource in db.rows("enemy_base"):
+		var enemy_id := str(row.enemy_id)
+		var attrs: Dictionary = row.attr_map()
+		if attrs.is_empty():
+			continue     # 七维没配的行由 `EnemyFactory._warn_derived_path` 点名（不在这里重复报）
+		checked += 1
+		var passives := PackedStringArray()
+		for passive: Resource in db.rows_where("enemy_passive", "enemy_id", enemy_id):
+			var skill_id := str(passive.skill_id)
+			if not skill_id.is_empty():
+				passives.append(skill_id)
+		var contributions: Array = []
+		if not passives.is_empty():
+			contributions = growth.passive_contributions(passives)
+		var totals: Dictionary = calculator.attr_totals_of(attrs, {}, contributions)
+		var fit: Dictionary = growth.passive_fit(passives, int(row.level), totals)
+		if bool(fit["fits"]):
+			continue
+		over[enemy_id] = "占 %d 格 > 容量 %d（等级 %d／根骨 %d）" % [
+			int(fit["used"]), int(fit["capacity"]), int(row.level), int(totals.get("gen", 0.0)),
+		]
+	if checked == 0:
+		errors.append("enemy_base 里没有一行配了七维，敌人内功容量这条规则量不到任何东西（表结构变了吗？）")
+	for enemy_id: String in over:
+		if not KNOWN_OVER_CAPACITY_ENEMIES.has(enemy_id):
+			errors.append(
+				"enemy_base[%s] 配的内功超编：%s——设计 10 §二 要求敌人与角色同一组公式（招式槽／内功容量）"
+					% [enemy_id, str(over[enemy_id])]
+				+ "，要么削内功、要么提根骨（根骨同时绑气血与外防），"
+				+ "或写进 KNOWN_OVER_CAPACITY_ENEMIES 并写明等谁（`待策划确认.md` Q79）"
+			)
+	for enemy_id: String in KNOWN_OVER_CAPACITY_ENEMIES.keys():
+		if over.has(enemy_id):
+			continue
+		errors.append(
+			"enemy_base[%s] 已经不再超编了（白名单记的是「%s」），把 KNOWN_OVER_CAPACITY_ENEMIES 里那一行删掉"
+				% [enemy_id, str(KNOWN_OVER_CAPACITY_ENEMIES[enemy_id])]
+		)
+
+
 ## 练功木桩（设计 0.14.0 的 `faction=training`）是**唯一允许没有掉落组**的敌人——
 ## 09 §3.3 的收益上限表写着「掉落：无」。这条把那个口子收住：别的阵营漏配掉落组照样报错。
 static func _check_training_faction(db, errors: PackedStringArray) -> void:
+	# 能被打到的敌人：明雷（`roaming_spawn.team_id`）与房间（`dungeon_room.enemy_team`）用到的队伍，
+	# 按 `enemy_team.members` 展开。**只有这些漏配掉落组才算真错**（玩家真会打到它）。
+	var reachable_enemies: Dictionary = {}
+	var reachable_teams: Dictionary = {}
+	for row: Resource in db.rows("roaming_spawn"):
+		reachable_teams[str(row.team_id)] = true
+	for row: Resource in db.rows("dungeon_room"):
+		var team_id := str(row.enemy_team)
+		if not team_id.is_empty():
+			reachable_teams[team_id] = true
+	for row: Resource in db.rows("enemy_team"):
+		if not reachable_teams.has(str(row.team_id)):
+			continue
+		for member: Dictionary in row.parsed_members():
+			reachable_enemies[str(member.get("enemy_id", ""))] = true
 	for row: Resource in db.rows("enemy_base"):
 		if str(row.faction) == "training":
 			continue
+		# 0.26.0 起还有一类**够不着的敌人**允许空掉落组：设计先把数据给出来、入口后接
+		#（例：世界事件「门派弟子历练」的 `en_wanderer_disciple`，入口等 `world_event.effect_id`，见 Q64）。
+		# 它们现在没有任何队伍引用，所以「漏掉落」这件事还不成立；等入口接上、被队伍引用，
+		# 这条就会立刻变成硬错误——那时正是该配掉落的时候。
+		if not reachable_enemies.has(str(row.enemy_id)):
+			continue
 		if str(row.drop_group).strip_edges().is_empty():
 			errors.append(
-				"enemy_base[%s] 没有 drop_group（只有 faction=training 的练功木桩允许空，那是「无掉落」的练级靶子）"
+				"enemy_base[%s] 能被明雷或房间打到，却没有 drop_group（练功木桩那种「无掉落」的靶子要写 faction=training）"
 					% str(row.enemy_id)
 			)
 
@@ -1658,3 +2120,86 @@ static func _check_diminishing(db, errors: PackedStringArray) -> void:
 			errors.append("attr_to_stat[%s] 走递减曲线但 param 为空/非正" % row.id)
 		if float(row.cap) <= 0.0:
 			errors.append("attr_to_stat[%s] 走递减曲线但 cap 为空/非正" % row.id)
+
+
+## 对话容器（设计 20 §十一）：说话人、跳转、效果三样都要有落点。
+##
+## 好感与委托的 `npc_id`：**NPC 或同伴**（设计 20 §十）；写错了没人能发现，所以两道网都查。
+static func _check_npc_people(db, errors: PackedStringArray) -> void:
+	for table_name: String in ["npc_favor", "npc_quest"]:
+		for row: Resource in db.rows(table_name):
+			var person_id := str(row.npc_id)
+			if person_id.is_empty():
+				errors.append("%s[%s] 没有 npc_id" % [table_name, row.id])
+				continue
+			if db.get_row("npc_def", person_id) == null and db.get_row("character_base", person_id) == null:
+				errors.append(
+					"%s[%s].npc_id=%s 既不是 npc_def 里的人也不是 character_base 里的同伴"
+						% [table_name, row.id, person_id]
+				)
+	# 给的**东西**也要真的存在：写错一个字母＝玩家交完委托什么也拿不到、而且没有任何提示
+	# （`BattleReward.grant_item` 只在运行期才炸，构建期不发话就太晚了）。
+	for row: Resource in db.rows("npc_offer"):
+		_check_person_item(db, "npc_offer", str(row.offer_id), str(row.item_id), errors)
+	for row: Resource in db.rows("npc_quest"):
+		for item_id: String in str(row.reward_item_ids).split(";", false):
+			_check_person_item(db, "npc_quest", str(row.quest_id), item_id, errors)
+
+
+static func _check_person_item(db, table_name: String, row_id: String, item_id: String, errors: PackedStringArray) -> void:
+	var token := item_id.strip_edges()
+	if token.is_empty():
+		return
+	if db.get_row("item_base", token) == null and db.get_row("equip_base", token) == null:
+		errors.append(
+			"%s[%s] 给的 %s 既不是道具也不是装备——玩家拿不到，而且不会有提示"
+				% [table_name, row_id, token]
+		)
+##
+## 三条最容易写错、且错了不报错的地方：
+##   ① **说话人可以是被交互的 NPC，也可以是同伴**（设计 20 §四 的选项大半发生在同伴身上），
+##      所以两处任一命中即可；
+##   ② 跳转目标必须是真实节点（写错一个字母 = 那句永远接不上）；
+##   ③ 选项给的东西按道具／装备分流查表（`BattleReward.grant_item` 两条路都认）。
+static func _check_dialogue(db, errors: PackedStringArray) -> void:
+	var node_ids: Dictionary = {}
+	for row: Resource in db.rows("dialogue_node"):
+		node_ids[str(row.node_id)] = true
+		var speaker := str(row.speaker_id)
+		if speaker.is_empty():
+			errors.append("dialogue_node[%s] 没有 speaker_id：这句话没人说" % row.node_id)
+		elif speaker != NpcServiceScript.PLAYER_ID \
+				and db.get_row("npc_def", speaker) == null \
+				and db.get_row("character_base", speaker) == null:
+			errors.append(
+				"dialogue_node[%s].speaker_id=%s 既不是 npc_def 里的人／character_base 里的同伴，也不是 %s（主角自己）"
+					% [row.node_id, speaker, NpcServiceScript.PLAYER_ID]
+			)
+		if str(row.text_cn).is_empty():
+			errors.append("dialogue_node[%s] 没有 text_cn：对话节点就是那一句话" % row.node_id)
+	for row: Resource in db.rows("dialogue_node"):
+		var next_id := str(row.next_node_id)
+		if not next_id.is_empty() and not node_ids.has(next_id):
+			errors.append("dialogue_node[%s].next_node_id=%s 不是对话节点" % [row.node_id, next_id])
+	for row: Resource in db.rows("dialogue_option"):
+		var node_id := str(row.node_id)
+		if not node_ids.has(node_id):
+			errors.append("dialogue_option[%s].node_id=%s 不是对话节点" % [row.option_id, node_id])
+		var next_id := str(row.next_node_id)
+		if not next_id.is_empty() and not node_ids.has(next_id):
+			errors.append("dialogue_option[%s].next_node_id=%s 不是对话节点" % [row.option_id, next_id])
+		if str(row.text_cn).is_empty():
+			errors.append("dialogue_option[%s] 没有 text_cn：选项就是玩家要按的那句话" % row.option_id)
+		var flag := str(row.set_flag)
+		if not flag.is_empty() and not flag.begins_with("flag_") and not flag.begins_with("heart_"):
+			errors.append(
+				"dialogue_option[%s].set_flag=%s 既不是 flag_* 也不是心性（heart_*）"
+					% [row.option_id, flag]
+			)
+		var item_id := str(row.grant_item_id)
+		if not item_id.is_empty():
+			if db.get_row("item_base", item_id) == null and db.get_row("equip_base", item_id) == null:
+				errors.append(
+					"dialogue_option[%s].grant_item_id=%s 既不是道具也不是装备"
+						% [row.option_id, item_id]
+				)
