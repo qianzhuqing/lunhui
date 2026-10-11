@@ -40,14 +40,17 @@ public partial class CharacterScreen
             refresh();
         }
 
-        // 1. 切页签
+        // 1. 切页签（2026-10-11 起是四个：属性／装备／武学／行囊——武学从角色页底部搬成自己一页，
+        // 行囊按 Q91 挪到第 4 页，下标见 `UiNav.char_tab_of`）
         select_tab(1);
         bool equip_tab = current_tab() == 1;
-        select_tab(2);
-        bool bag_tab = current_tab() == 2;
+        select_tab(UiNav.char_tab_of(UiNav.SKILL));
+        bool skill_tab = current_tab() == UiNav.char_tab_of(UiNav.SKILL);
+        select_tab(UiNav.char_tab_of(UiNav.BAG));
+        bool bag_tab = current_tab() == UiNav.char_tab_of(UiNav.BAG);
         select_tab(0);
-        ok = ok && equip_tab && bag_tab;
-        lines.Add($"切页签 ok={_bool(equip_tab && bag_tab)}");
+        ok = ok && equip_tab && bag_tab && skill_tab;
+        lines.Add($"切页签 ok={_bool(equip_tab && bag_tab && skill_tab)}");
 
         // 2. 加点
         CharacterSheet panel = sheet();
@@ -188,9 +191,13 @@ public partial class CharacterScreen
         // 顶部「剩余配额」那一行（设计 14 §三条共性要求）：铜钱／经验／难度 ＋ **天赋**
         // （属性点的「未分配」在五维表头那一行）。天赋写「已选 + 花了几点」而不是「剩余」——
         // 它创建时就定死了，写「剩余」会让玩家以为还能加。
-        bool quota_ok = _header.Text.Contains("铜钱") && _header.Text.Contains("天赋：");
+        // 铜钱 2026-10-11 起挂在**顶栏右边**（示意图把常驻数字都摆那一行），页面头留经验／难度／天赋
+        Label money_label = (FindChild("TopBar", true, false)?.FindChild("Right", true, false)) as Label;
+        bool quota_ok = _header.Text.Contains("天赋：") && _header.Text.Contains("队伍经验")
+            && money_label != null && money_label.Text.Contains("铜钱");
         ok = ok && quota_ok;
-        lines.Add($"顶部配额行（铜钱／经验／难度／天赋）={_bool(quota_ok)}（{_header.Text}）");
+        lines.Add($"顶部配额行（顶栏铜钱 ＋ 经验／难度／天赋）={_bool(quota_ok)}"
+            + $"（{(money_label != null ? money_label.Text : "缺")}｜{_header.Text}）");
         // 永久增益那一行（设计 20 §八 第 1 条：「界面要能看见」）：没做过抉择也要如实写「无」，
         // 不能留白——这条通道在面板上必须有位置。
         Label bonus_label = FindChild("PermanentBonus", true, false) as Label;
@@ -297,6 +304,33 @@ public partial class CharacterScreen
             && (empty_slots.Count == 0 || ((Button)empty_slots[0]).Disabled);
         ok = ok && member_tabs_ok;
         lines.Add($"队伍页签：当前项带「▶」＋空位 {empty_slots.Count} 格={_bool(member_tabs_ok)}");
+        // 底栏七入口（UI 清单 §一 ＋ §四-2 要的那条断言）：七个都在、**当前所在那一项高亮**、
+        // 点一个真的切页签、禁用的那一个必须写清原因。
+        var nav_buttons = FindChildren("Nav*", "Button", true, false);
+        Button nav_current = FindChild(UiNav.node_name_of(current_entry()), true, false) as Button;
+        Button nav_other = FindChild(UiNav.node_name_of(UiNav.CLUE), true, false) as Button;
+        bool nav_styles = nav_current != null && nav_other != null
+            && nav_current.GetThemeStylebox("normal") is StyleBoxFlat on_style
+            && nav_other.GetThemeStylebox("normal") is StyleBoxFlat off_style
+            && on_style.BgColor != off_style.BgColor;
+        int nav_disabled = 0;
+        bool nav_reason_ok = true;
+        foreach (Node nav_node in nav_buttons)
+        {
+            if (nav_node is Button nav_button && nav_button.Disabled)
+            {
+                nav_disabled += 1;
+                nav_reason_ok = nav_reason_ok && nav_button.TooltipText.Length > 0;
+            }
+        }
+
+        nav_to(UiNav.BAG);
+        bool nav_jump = current_tab() == UiNav.char_tab_of(UiNav.BAG);
+        nav_to(UiNav.CHAR);
+        bool nav_ok = nav_buttons.Count == UiNav.entries().Count && nav_styles && nav_jump && nav_reason_ok;
+        ok = ok && nav_ok;
+        lines.Add($"底栏七入口={_bool(nav_ok)}（{nav_buttons.Count} 个入口、当前项高亮={_bool(nav_styles)}"
+            + $"、点行囊真的切页签={_bool(nav_jump)}、禁用 {nav_disabled} 个都有理由={_bool(nav_reason_ok)}）");
         // 页签内容宽度：**外层版式量不到滚动区里的内容**（`get_combined_minimum_size()` 到 ScrollContainer
         // 就断了，量到的其实是 `_tabs.custom_minimum_size` 那个写死的常量），而横向滚动是关着的——
         // 内容一宽就被裁掉、代码一声不吭。
@@ -306,6 +340,11 @@ public partial class CharacterScreen
         {
             select_tab(index);
             await ToSignal(_tree(), SceneTree.SignalName.ProcessFrame);
+            // 逐页报一下「这一页内容的最小尺寸」——整屏那行 LAYOUT 只给一个总数，
+            // 顶破预算时看不出是哪一页撑的（TabContainer 取的是各页里最大的那个）。
+            Control page = _tabs.GetChild(index) as Control;
+            Vector2 page_min = page != null ? page.GetCombinedMinimumSize() : Vector2.Zero;
+            lines.Add($"PAGE[{_tabs.GetTabTitle(index)}] min={page_min.X:0}x{page_min.Y:0}");
         }
 
         ok = ok && LayoutBudget.content_fits(this);

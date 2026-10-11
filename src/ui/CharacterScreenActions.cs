@@ -88,14 +88,14 @@ public partial class CharacterScreen
     /// 不是 `item_type == "key"`。05 的钥匙道具清单里就有铁镐，而它的 `item_type` 是 `tool`，
     /// 以前它哪个分类都进不去，玩家只能在「全部」里翻（数据侧要不要把 item_type 并进 key 已记在缺口表）。
     /// </summary>
-    private bool _row_matches_filter(ItemBaseRow row)
+    private bool _row_matches(string kind, ItemBaseRow row)
     {
-        if (_filter == "all")
+        if (kind == "all")
         {
             return true;
         }
 
-        return _filter == "key" ? row.is_key_item : row.item_type == _filter;
+        return kind == "key" ? row.is_key_item : row.item_type == kind;
     }
 
     /// <summary>装／卸一部武学（招式进招式槽，内功占容量格）</summary>

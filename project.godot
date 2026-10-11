@@ -12,7 +12,7 @@ config_version=5
 
 config/name="lunhui"
 run/main_scene="res://scenes/main_menu.tscn"
-config/features=PackedStringArray("4.7", "Mobile")
+config/features=PackedStringArray("4.7", "C#", "Mobile")
 config/icon="res://icon.svg"
 
 [autoload]
@@ -20,18 +20,22 @@ config/icon="res://icon.svg"
 GameData="*res://src/autoload/GameData.cs"
 GameSession="*res://src/autoload/GameSession.cs"
 
-[dotnet]
-
-project/assembly_name="lunhui"
-
 [display]
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[dotnet]
+
+project/assembly_name="lunhui"
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/godot-mcp/plugin.cfg")
+
+[gui]
+
+theme/custom="res://assets/ui/theme_lunhui.tres"
 
 [physics]
 
@@ -41,7 +45,3 @@ enabled=PackedStringArray("res://addons/godot-mcp/plugin.cfg")
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="mobile"
-
-[gui]
-
-theme/custom="res://assets/ui/theme_lunhui.tres"

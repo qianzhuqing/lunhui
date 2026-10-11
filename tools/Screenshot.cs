@@ -20,6 +20,8 @@ public partial class Screenshot : Node
     private int _frames;
     private bool _done;
     private Node _node;
+    /// <summary>第 5 个用户参数：要停在哪一页（空＝不动，面板自己决定）</summary>
+    private string _tab = "";
 
     public override void _Ready()
     {
@@ -39,6 +41,12 @@ public partial class Screenshot : Node
         if (args.Length > 3 && _has_prop(_node, "scene_id"))
         {
             _node.Set("scene_id", args[3]);
+        }
+
+        if (args.Length > 4)
+        {
+            // 第 5 个参数：要停在哪一页（角色面板这种多页签的面板，逐页对观感时用）
+            _tab = args[4];
         }
 
         // `_Ready` 正处在「根节点装配子节点」的窗口里，直接 `AddChild` 会失败——延后一帧。
@@ -68,6 +76,15 @@ public partial class Screenshot : Node
         if (state != null && state.Get("char_ids").AsGodotArray().Count > 0)
         {
             string first = state.Get("char_ids").AsGodotArray()[0].AsString();
+            // 面板的 `setup()` 是幂等的：它在 `_ready` 里已经跑过一遍（那会儿还没有局），
+            // 这里再调也是空转，`_selected_char` 会留在空串上——「角色模板缺失」那种半截图就是这么来的。
+            // 走**公开的** `select_char()` 补选人（私有字段 `_selected_char` 不在 `get_property_list()` 里，
+            // 早先那句 `_has_prop(_node, "_selected_char")` 恒为假）。
+            if (_node != null && _node.HasMethod("select_char"))
+            {
+                _node.Call("select_char", first);
+            }
+
             if (_has_prop(_node, "_selected_char") && _node.Get("_selected_char").AsString().Length == 0)
             {
                 _node.Set("_selected_char", first);
@@ -76,6 +93,12 @@ public partial class Screenshot : Node
             if (_node != null && _node.HasMethod("refresh"))
             {
                 _node.Call("refresh");
+            }
+
+            if (_tab.Length > 0 && _node != null && _node.HasMethod("select_tab")
+                && int.TryParse(_tab, out int tab_index))
+            {
+                _node.Call("select_tab", tab_index);
             }
         }
     }

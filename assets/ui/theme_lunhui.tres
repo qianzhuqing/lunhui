@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=13 format=3]
+[gd_resource type="Theme" load_steps=17 format=3]
 
 ; 「墨色江湖」UI 主题（设计 15 §4.4）。
 ;
@@ -24,8 +24,24 @@
 ; **中段必须「拉伸」而不是「平铺」**（`axis_stretch_* = 0`）：渐变要纵贯整块板，
 ; 沿轴平铺会把 16px 的色阶接成一条条横带。出图方也明确说了别把旧的「颗粒」加回来——
 ; 那层颗粒是**平铺**语义的，拉伸后一颗 1px 会变成几十像素的浅斑。
+;
+; **2026-10-11 修订：字体真接进来了。** `assets/fonts/` 的 `ark-pixel-font` 12px 中文像素字体
+; （15 §3「字体要先落地」的落地物）此前**只有试排工具 `tools/artgen/FontPreview.cs` 在用**，
+; 主题没有 `default_font`——于是整套界面一直退回 Godot 的系统回退字体渲染，
+; 与 15 §4.4「两档字号都从同一份 12px 字集整数倍放大」的前提直接冲突（素像素风变成了系统宋体）。
+; 现在由 `default_font` 收口：主字体简体那份，拉丁与繁体两份走 `FontVariation.fallbacks`；
+; 三份都开了 `allow_system_fallback`（缺字退回系统字体，不出现方块）。
+; **字号仍只许 12／24 两档**（门限 `CheckFontSizeTiers` 盯着）——12px 是这套字集的原生尺寸，
+; 24 是它的整数 2 倍，非整数倍的档（16／18／20）会糊，这条见 15 §4.4。
 
 [ext_resource type="Texture2D" path="res://assets/ui/common/panel_bg.png" id="1_panel"]
+[ext_resource type="FontFile" path="res://assets/fonts/ark-pixel-12px-proportional-zh_hans.ttf.woff2" id="2_font_zh"]
+[ext_resource type="FontFile" path="res://assets/fonts/ark-pixel-12px-proportional-zh_hant.ttf.woff2" id="3_font_hant"]
+[ext_resource type="FontFile" path="res://assets/fonts/ark-pixel-12px-proportional-latin.ttf.woff2" id="4_font_latin"]
+
+[sub_resource type="FontVariation" id="font_main"]
+base_font = ExtResource("2_font_zh")
+fallbacks = Array[Font]([ExtResource("4_font_latin"), ExtResource("3_font_hant")])
 
 [sub_resource type="StyleBoxTexture" id="panel_bg"]
 content_margin_left = 10.0
@@ -164,6 +180,8 @@ corner_radius_top_right = 2
 
 [resource]
 default_font_size = 12
+; 字体：主字体（简体）＋ 两份回退，见文件头的 2026-10-11 那段
+default_font = SubResource("font_main")
 ; —— 观感层的自定义色（`UiKit/colors/<名>`）：卡片、标题条、小节、刻度条都从这儿取。
 ; 15 §4.4 的色值**只写在这一份**里（决策 375）；换一整套皮肤＝换这一个文件。
 UiKit/colors/ink = Color(0.196078, 0.180392, 0.14902, 1)
@@ -171,8 +189,32 @@ UiKit/colors/ink_dim = Color(0.360784, 0.333333, 0.290196, 1)
 UiKit/colors/ink_off = Color(0.541176, 0.501961, 0.439216, 1)
 UiKit/colors/gold = Color(0.784314, 0.635294, 0.290196, 1)
 UiKit/colors/cinnabar = Color(0.658824, 0.196078, 0.164706, 1)
+; 朱红的主按钮／高亮态（示意图 `.lu-btn-main`／`.lu-fn.is-on` 的两端色，`StyleBoxFlat` 画不了渐变，取中值那一档）
+UiKit/colors/cinnabar_hot = Color(0.721569, 0.25098, 0.184314, 1)
+UiKit/colors/cinnabar_deep = Color(0.490196, 0.12549, 0.0980392, 1)
+; 朱红实底上那一档字色（`.lu-fn.is-on` 的 `#F9F1E2`）
+UiKit/colors/on_text = Color(0.976471, 0.945098, 0.886275, 1)
 UiKit/colors/line = Color(0.658824, 0.603922, 0.494118, 1)
+; 面板内的分隔细线（`.lu-panel-h` 的下边线：`rgba(60,55,45,.25)`）
+UiKit/colors/line_soft = Color(0.235294, 0.215686, 0.176471, 0.25)
 UiKit/colors/paper = Color(0.929412, 0.890196, 0.796078, 1)
+; 按钮／格子的亮端（`.lu-btn` 的 `#F7F0DE`）与暗端（`#E2D7BB`）
+UiKit/colors/paper_bright = Color(0.968627, 0.941176, 0.870588, 1)
+UiKit/colors/paper_dark = Color(0.886275, 0.843137, 0.733333, 1)
+; 顶栏：唯一的大块深色（15 §4.4）——`.lu-topbar` 的 `#211F1A → #16140F` 取中值
+UiKit/colors/topbar_bg = Color(0.109804, 0.101961, 0.0862745, 1)
+UiKit/colors/topbar_text = Color(0.94902, 0.901961, 0.768627, 1)
+UiKit/colors/topbar_dim = Color(0.796078, 0.729412, 0.627451, 1)
+UiKit/colors/topbar_money = Color(0.913725, 0.776471, 0.564706, 1)
+; 底栏：宣纸渐变 `#F3EBD7 → #DED2B6` 取中值；比面板亮一点点就够，不许比面板更亮（15 §4.4）
+UiKit/colors/bottombar_bg = Color(0.909804, 0.870588, 0.772549, 1)
+; 三支点色（水墨五行：靛青为水、赭石为木、青碧为玉）——套装／被动／传闻那些小标签用
+UiKit/colors/indigo = Color(0.2, 0.337255, 0.415686, 1)
+UiKit/colors/ochre = Color(0.541176, 0.352941, 0.235294, 1)
+UiKit/colors/jade = Color(0.298039, 0.478431, 0.384314, 1)
+; 状态条三色是**信息色**（15 §4.4：换肤不动它们）：气血／架势（＝gold）／内力
+UiKit/colors/hp = Color(0.545098, 0.180392, 0.180392, 1)
+UiKit/colors/mp = Color(0.243137, 0.431373, 0.541176, 1)
 ; 浮层背板：比面板底再沉一档的旧纸（面板是「一张更亮的纸」，靠这层与 1px 描边分开）。
 ; **它是单一出处**——`UiKit.paint_backdrop()` 按名字找到浮层的 `Backdrop` 刷上去，
 ; 面板的 `.tscn` 里不再各写一份色值。

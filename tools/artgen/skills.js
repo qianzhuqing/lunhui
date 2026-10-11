@@ -181,10 +181,13 @@ function buildAll() {
   for (const [id, school, star, draw] of MOTIFS) {
     out[`icons/skill/${id}.png`] = innerIcon(school, star, draw);
   }
-  // 招式 35 张：内功是「正面居中」，招式是「斜 45°」——两类共用同一块压暗圆底与同一支勾边笔
-  for (const [id, school, star, shape, mark] of ACTIVES) {
-    out[`icons/skill/${id}.png`] = activeIcon(id, school, star, shape, mark);
-  }
+  // ⚠️ **招式 35 张已经不在这里出了**（2026-10-11，用户点头换方底那一族）：它们改由
+  // `tools/artgen/tile.js`（`node tools\artgen\tile.js --all --write`）生成，画法是
+  // 「方格底 ＋ 竖摆兵器 ＋ 描边明暗」，与这里的「压暗圆底 ＋ 斜 45°」是两套。
+  // **这两条线不许同时往同一个文件名写**——留着这一段，下一次谁跑 `skills.js` 都会把
+  // 用户刚拍板的新图整批覆盖回旧语法，而且是静默的。
+  // 下面那批 `sword45`／`palm45`／`aWind`… 暂时留着当"旧口径的存档"，等内功 30 张也搬完
+  // （`pf_*` 也换方底）就整段删掉；在那之前**别删也别再调用**。
   return out;
 }
 

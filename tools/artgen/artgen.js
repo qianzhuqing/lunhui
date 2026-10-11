@@ -26,6 +26,9 @@ const { buildAll: buildUi } = require("./ui");
 const { buildAll: buildSkills } = require("./skills");
 const { buildAll: buildStatus } = require("./status");
 const { buildAll: buildBuff } = require("./buff");
+const { buildAll: buildAttr } = require("./attr");
+const { buildAll: buildStats } = require("./stats");
+const { buildAll: buildSlots } = require("./slots");
 const { buildAll: buildPortraits } = require("./portraits");
 
 const REPO = path.resolve(__dirname, "..", "..");
@@ -119,6 +122,22 @@ for (const [relative, canvas] of Object.entries(buildStatus())) {
 // 增益图标（08 §181／15 §4.3：assets/icons/buff/<buff_def.icon>.png）——同一条 chip 列表，
 // 与异常共用 `badge.js` 那套「亮底＋深记号」骨架，颜色只走增益蓝
 for (const [relative, canvas] of Object.entries(buildBuff())) {
+  writeCanvas(`assets/${relative}`, canvas);
+}
+
+// 七维图标（15 §六：assets/icons/attr/<attr_id>.png）——角色面板属性页中栏那七行
+for (const [relative, canvas] of Object.entries(buildAttr())) {
+  writeCanvas(`assets/${relative}`, canvas);
+}
+
+// 派生数值图标（15 §六：assets/icons/stat/<stat_id>.png）——同页的战斗属性 29 行
+for (const [relative, canvas] of Object.entries(buildStats())) {
+  writeCanvas(`assets/${relative}`, canvas);
+}
+
+// 空槽占位（15 §六：assets/icons/slot/slot_<slot_id>.png）——装备页那七个槽。
+// **故意不落 `icons/equip/`**：那个目录有「每张 png 都必须是 equip_base 的 id」的硬门限
+for (const [relative, canvas] of Object.entries(buildSlots())) {
   writeCanvas(`assets/${relative}`, canvas);
 }
 

@@ -86,6 +86,32 @@ public partial class UiKit : RefCounted
     }
 
     /// <summary>
+    /// 一块**空面板**（不带标题条）：主题里那件九宫格背板（`panel_bg.png`）＋ 1px 描边。
+    /// 浮窗外壳（`UiChrome.window`）与自绘的行卡片都用它当底板——底板只有一个来源，
+    /// 各面板别再自己 `load()` 贴图拼九宫格。
+    /// </summary>
+    public static PanelContainer make_panel(string node_name)
+    {
+        var panel = new PanelContainer { Name = node_name };
+        panel.AddThemeStyleboxOverride("panel", _panel_style());
+        return panel;
+    }
+
+    /// <summary>
+    /// 一块**纯色底**（圆角 2）：计数徽标、分类标签、格子这类比九宫格小得多的色块用它——
+    /// 一张 32px 的格子挂 9-patch 背板会把边缘糊掉。色值仍然只从 `UiKit/colors/*` 取。
+    /// </summary>
+    public static StyleBoxFlat flat(Color color)
+    {
+        var style = new StyleBoxFlat { BgColor = color };
+        style.CornerRadiusTopLeft = 2;
+        style.CornerRadiusTopRight = 2;
+        style.CornerRadiusBottomLeft = 2;
+        style.CornerRadiusBottomRight = 2;
+        return style;
+    }
+
+    /// <summary>
     /// 面板背板：主题里那件九宫格 `StyleBoxTexture`（15 §4.4 的 `panel_bg.png`）。
     /// 主题缺了它也不要红——退回一块同色底的方块，界面还能看。
     /// </summary>

@@ -96,9 +96,9 @@ public partial class TestCharacterUi : TestCase
         CharacterScreen bag = _MakeScreen(bag_state);
         Tree.Root.AddChild(bag);
         bag.setup();
-        bag.select_tab(2);
-        Node row = bag.FindChild("ItemRowitem_bd_ledger", true, false);
-        CheckNotNull(row, "背包里有账册那一行");
+        bag.select_tab(UiNav.char_tab_of(UiNav.BAG));
+        Node row = bag.FindChild("ItemCellitem_bd_ledger", true, false);
+        CheckNotNull(row, "行囊网格里有账册那一格");
         if (row != null)
         {
             CheckNotNull(
@@ -108,8 +108,8 @@ public partial class TestCharacterUi : TestCase
 
         // 「没图的行不摆图标」这条要写成**有图 ⟺ 有图标节点**，别写死"某张现在还没出图"——
         // 美术一交付它就假红。这里拿 item_iron 的实际文件在不在当期望值。
-        Node plain_row = bag.FindChild("ItemRowitem_iron", true, false);
-        CheckNotNull(plain_row, "背包里有铁矿石那一行");
+        Node plain_row = bag.FindChild("ItemCellitem_iron", true, false);
+        CheckNotNull(plain_row, "行囊网格里有铁矿石那一格");
         if (plain_row != null)
         {
             Node iron_icon = plain_row.FindChild("ItemIconitem_iron", true, false);
@@ -231,25 +231,25 @@ public partial class TestCharacterUi : TestCase
             CheckEq(back_bag.money, 123456, "铜钱往返一致");
         }
 
-        // 界面：背包页真的把每一行都建出来了，且整页仍塞得进设计分辨率
+        // 界面：行囊页真的把每一件都摆成格子了，且整页仍塞得进设计分辨率
         CharacterScreen screen = _MakeScreen(state);
         Tree.Root.AddChild(screen);
         screen.setup();
-        screen.select_tab(2);
+        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
         int item_rows = 0;
-        foreach (Node node in screen.FindChildren("ItemRow*", "HBoxContainer", true, false))
+        foreach (Node node in screen.FindChildren("ItemCell*", "Button", true, false))
         {
             item_rows += 1;
         }
 
-        CheckEq(item_rows, 22, "背包页列出 22 种道具");
+        CheckEq(item_rows, 22, "行囊网格列出 22 种道具");
         int equip_rows = 0;
-        foreach (Node node in screen.FindChildren("EquipRow*", "HBoxContainer", true, false))
+        foreach (Node node in screen.FindChildren("EquipCell*", "Button", true, false))
         {
             equip_rows += 1;
         }
 
-        CheckEq(equip_rows, inventory.equipment_count(), "装备区列出每一件实例");
+        CheckEq(equip_rows, inventory.equipment_count(), "装备实例也在同一个网格里（一件一格）");
         CheckTrue(LayoutBudget.fits(screen), "大背包下整页仍塞进设计分辨率");
         _DropScreen(screen);
     }
@@ -263,13 +263,19 @@ public partial class TestCharacterUi : TestCase
             return;
         }
 
-        CheckEq(tabs.GetTabCount(), 3, "三个页签");
-        CheckEq(tabs.GetTabTitle(0), "角色", "第一个页签是角色");
-        CheckEq(tabs.GetTabTitle(1), "装备", "第二个页签是装备");
-        CheckEq(tabs.GetTabTitle(2), "背包", "第三个页签是背包");
-        CheckEq(screen.current_tab(), 0, "默认停在角色页");
-        screen.select_tab(2);
-        CheckEq(screen.current_tab(), 2, "能切到背包页");
+        // 2026-10-11 起是四个，**顺序与名字照 `14 §四`**：属性／装备／武学／行囊
+        //（武学从「属性」页底部搬成自己一页；行囊按 Q91 挪到第 4 页）
+        CheckEq(tabs.GetTabCount(), 4, "四个页签（属性／装备／武学／行囊）");
+        CheckEq(tabs.GetTabTitle(0), "属性", "第一页是属性（14 §四 那张表就是这么列的）");
+        CheckEq(tabs.GetTabTitle(1), "装备", "第二页是装备");
+        CheckEq(tabs.GetTabTitle(2), "武学", "第三页是武学");
+        CheckEq(tabs.GetTabTitle(3), "行囊", "第四页是行囊（Q91：行囊＝角色面板第 4 个页签）");
+        CheckEq(screen.current_tab(), 0, "默认停在属性页");
+        CheckEq(
+            UiNav.char_tab_of(UiNav.BAG), 3,
+            "底栏「行囊」入口映射到第 4 页——与上面那串顺序是同一件事的两个写法");
+        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
+        CheckEq(screen.current_tab(), 3, "能切到行囊页");
         screen.select_tab(0);
     }
 
@@ -279,9 +285,11 @@ public partial class TestCharacterUi : TestCase
         CheckNotNull(header, "有头部信息");
         if (header != null)
         {
-            CheckTrue(header.Text.Contains("铜钱"), "头部显示铜钱");
             CheckTrue(header.Text.Contains("经验"), "头部显示队伍经验");
         }
+
+        // 铜钱 2026-10-11 起挂在**顶栏右边**（示意图把常驻数字都摆那一行）
+        CheckTrue(_MoneyText(screen).Contains("铜钱"), $"顶栏显示铜钱：{_MoneyText(screen)}");
 
         var member = screen.FindChild($"MemberButton{CharId}", true, false) as Button;
         CheckNotNull(member, "成员列表里有当前角色");
@@ -366,13 +374,19 @@ public partial class TestCharacterUi : TestCase
     /// <summary>武学装配：面板上的「装配／卸下」按钮写回存档，卸下后战斗就没这一招了。</summary>
     private void _CheckSkillLoadout(CharacterScreen screen, GodotObject state)
     {
-        screen.select_tab(0);
-        var header = screen.FindChild("SkillHeader", true, false) as Label;
-        CheckNotNull(header, "有武学标题");
-        if (header != null)
+        // 武学现在是第 3 个页签（下标 2）——行囊挪到第 4 页之后它往前挪了一位
+        screen.select_tab(UiNav.char_tab_of(UiNav.SKILL));
+        var skill_section = screen.FindChild("SkillSection", true, false) as Control;
+        CheckNotNull(skill_section, "有武学小节");
+        if (skill_section != null)
         {
-            CheckTrue(header.Text.Contains("招式"), $"标题写清招式槽：{header.Text}");
-            CheckTrue(header.Text.Contains("内功"), $"标题写清内功容量：{header.Text}");
+            // 标题那一行只写「武学」；招式槽／内功格那两个占用数在小节头右边的次要字里
+            // （示意图的 `.lu-panel-h` ＋ `.lu-dim`——一个 12px 的字号档里，层级只能靠颜色与位置分）
+            var title = skill_section.FindChild("SkillHeader", true, false) as Label;
+            var hint = skill_section.FindChild("SectionHint", true, false) as Label;
+            CheckTrue(title != null && title.Text.Contains("武学"), $"武学小节有标题：{title?.Text}");
+            CheckTrue(hint != null && hint.Text.Contains("招式"), $"小节头写清招式槽：{hint?.Text}");
+            CheckTrue(hint != null && hint.Text.Contains("内功"), $"小节头写清内功容量：{hint?.Text}");
         }
 
         const string skill_id = "sk_xuanwei_01";
@@ -515,42 +529,64 @@ public partial class TestCharacterUi : TestCase
 
     private void _CheckBagTab(TableDb db, CharacterScreen screen, GodotObject state)
     {
-        screen.select_tab(2);
+        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
         Inventory inventory = _InventoryOf(state);
         inventory.add_item(db, "item_herb", 2);
         inventory.add_item(db, "item_wine_gourd", 1);
         screen.refresh();
 
-        var herb_label = screen.FindChild("ItemLabelitem_herb", true, false) as Label;
-        CheckNotNull(herb_label, "背包里有草药");
-        if (herb_label != null)
+        // 格子网格：一格一件，堆叠数压在右下角那个小徽标上（清单 §二-2）
+        CheckNotNull(screen.FindChild("ItemCellitem_herb", true, false), "网格里有草药那一格");
+        var herb_badge = screen.FindChild("ItemCountitem_herb", true, false) as Label;
+        CheckNotNull(herb_badge, "草药有堆叠数徽标");
+        if (herb_badge != null)
         {
-            CheckTrue(herb_label.Text.Contains("×2"), "显示堆叠数量");
+            CheckEq(herb_badge.Text, "2", "徽标写的就是堆叠数量");
         }
 
-        var drop_herb = screen.FindChild("DropButtonitem_herb", true, false) as Button;
+        CheckNull(
+            screen.FindChild("ItemCountitem_wine_gourd", true, false),
+            "只有 1 件时不摆堆叠数（清单 §二-2 那一行）");
+
+        // 动作收在右侧详情里：先选中那一格，再看主／次两个按钮
+        //（旧版是每一行自己带一份按钮，同一件事会有两个入口）
+        screen.select_bag_entry("item:item_herb");
+        CheckEq(
+            (screen.FindChild("BagUseButton", true, false) as Button)?.Text, "查看",
+            "没有 use_context 的材料，主动作是「查看」");
+        var drop_herb = screen.FindChild("BagDropButton", true, false) as Button;
         CheckNotNull(drop_herb, "材料可以丢弃");
-        var drop_key = screen.FindChild("DropButtonitem_wine_gourd", true, false) as Button;
-        CheckNotNull(drop_key, "钥匙道具也在列表里");
+
+        screen.select_bag_entry("item:item_wine_gourd");
+        var drop_key = screen.FindChild("BagDropButton", true, false) as Button;
+        CheckNotNull(drop_key, "钥匙道具也在网格里");
         if (drop_key != null)
         {
             CheckTrue(drop_key.Disabled, "钥匙道具的丢弃按钮被禁用");
         }
 
+        var drop_reason = screen.FindChild("BagDropReason", true, false) as Label;
+        CheckTrue(
+            drop_reason != null && drop_reason.Text.Contains("钥匙"),
+            "置灰的丢弃按钮下面写明原因");
+
         Godot.Collections.Dictionary refused = screen.drop_item("item_wine_gourd");
         CheckFalse(refused["ok"].AsBool(), "钥匙道具丢弃被拒");
         CheckTrue(screen.status_text().Contains("钥匙"), "状态栏说明拒绝原因");
+
+        screen.select_bag_entry("item:item_herb");
+        drop_herb = screen.FindChild("BagDropButton", true, false) as Button;
         if (drop_herb != null)
         {
             drop_herb.EmitSignal(Button.SignalName.Pressed);
             CheckEq(inventory.count("item_herb"), 1, "丢弃材料数量减一");
         }
 
-        // 分类筛选
+        // 分类筛选（点左边那一列的标签＝换分类，网格里只剩这一档）
         screen.set_filter("material");
-        CheckNotNull(screen.FindChild("DropButtonitem_herb", true, false), "材料分类下能看到草药");
+        CheckNotNull(screen.FindChild("ItemCellitem_herb", true, false), "材料分类下能看到草药");
         CheckTrue(
-            screen.FindChild("DropButtonitem_wine_gourd", true, false) == null, "钥匙被筛掉");
+            screen.FindChild("ItemCellitem_wine_gourd", true, false) == null, "钥匙被筛掉");
 
         // 「钥匙」按**设计语义**筛（is_key_item），不是按 item_type=key：
         // 05 把铁镐列进钥匙道具，而它的 item_type 是 tool——以前它哪个分类都进不去
@@ -558,35 +594,37 @@ public partial class TestCharacterUi : TestCase
         screen.refresh();
         screen.set_filter("key");
         CheckNotNull(
-            screen.FindChild("DropButtonitem_wine_gourd", true, false), "钥匙分类下有酒葫芦");
+            screen.FindChild("ItemCellitem_wine_gourd", true, false), "钥匙分类下有酒葫芦");
         CheckNotNull(
-            screen.FindChild("DropButtonitem_pickaxe", true, false),
+            screen.FindChild("ItemCellitem_pickaxe", true, false),
             "钥匙分类下有铁镐（item_type=tool，但它是钥匙道具）");
-        CheckTrue(screen.FindChild("DropButtonitem_herb", true, false) == null, "材料不在钥匙分类里");
+        CheckTrue(screen.FindChild("ItemCellitem_herb", true, false) == null, "材料不在钥匙分类里");
         screen.set_filter("all");
     }
 
     /// <summary>秘籍研读：门槛不够按钮置灰并写原因；够门槛时点一下就学会并消耗一本。</summary>
     private void _CheckSkillbook(TableDb db, CharacterScreen screen, GodotObject state)
     {
-        screen.select_tab(2);
+        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
         screen.set_filter("skillbook");
         _InventoryOf(state).add_item(db, "item_scroll_wudu", 1);
         screen.refresh();
-        var button = screen.FindChild("StudyButtonitem_scroll_wudu", true, false) as Button;
+        screen.select_bag_entry("item:item_scroll_wudu");
+        var button = screen.FindChild("BagUseButton", true, false) as Button;
         CheckNotNull(button, "残页有研读按钮");
         if (button == null)
         {
             return;
         }
 
-        // 1 级书生智 10 < 12：按钮置灰，原因写在按钮上
+        CheckEq(button.Text, "研读", "秘籍的主动作是「研读」（不是「使用」）");
+        // 1 级书生智 10 < 12：按钮置灰，原因写在按钮下面那一行
         CheckTrue(button.Disabled, "智不够时研读按钮置灰");
-        var label = screen.FindChild("ItemLabelitem_scroll_wudu", true, false) as Label;
-        CheckNotNull(label, "残页有文字行");
+        var label = screen.FindChild("BagUseReason", true, false) as Label;
+        CheckNotNull(label, "置灰的研读按钮下面写了原因");
         if (label != null)
         {
-            CheckTrue(label.Text.Contains("门槛"), $"行里写明研读不行的原因：{label.Text}");
+            CheckTrue(label.Text.Contains("门槛"), $"写明研读不行的原因：{label.Text}");
         }
 
         // 点数全塞智，把它抬到 12
@@ -596,7 +634,7 @@ public partial class TestCharacterUi : TestCase
         }
 
         screen.refresh();
-        button = screen.FindChild("StudyButtonitem_scroll_wudu", true, false) as Button;
+        button = screen.FindChild("BagUseButton", true, false) as Button;
         CheckFalse(button.Disabled, "智 12 后研读按钮可点");
         button.EmitSignal(Button.SignalName.Pressed);
         var game_state = (GameState)state;
@@ -608,13 +646,49 @@ public partial class TestCharacterUi : TestCase
 
     private void _CheckBack(CharacterScreen screen, Godot.Collections.Array back_calls)
     {
-        var back = screen.FindChild("BackButton", true, false) as Button;
-        CheckNotNull(back, "有返回按钮");
+        // 2026-10-11 起「返回」不再是一个孤零零的按钮：**底栏最左边那个「地图」入口**就是它
+        // （UI 清单 §一：底栏贴屏幕底、`Esc` 提示在底部说明行，示意图那一屏没有返回按钮）。
+        // 没接控制器时（用例这条路）`nav_to(map)` 就是回退——所以这里按下去应当触发 `back_handler`。
+        var back = screen.FindChild(UiNav.node_name_of(UiNav.MAP), true, false) as Button;
+        CheckNotNull(back, "底栏有「地图」入口（＝离开这一层）");
         if (back != null)
         {
             back.EmitSignal(Button.SignalName.Pressed);
-            CheckEq(back_calls.Count, 1, "返回按钮触发回退");
+            CheckEq(back_calls.Count, 1, "底栏「地图」入口触发回退");
         }
+    }
+
+    /// <summary>顶栏右边那截常驻数字（铜钱）——2026-10-11 起它不再待在页面头那一行。</summary>
+    private static string _MoneyText(CharacterScreen screen)
+    {
+        var top_bar = screen.FindChild("TopBar", true, false) as Control;
+        var money = top_bar?.FindChild("Right", true, false) as Label;
+        return money != null ? money.Text : "";
+    }
+
+    /// <summary>页签自己与每一页的最小尺寸（版式超预算时用来看是哪一页撑的）。</summary>
+    private static string _PageMins(CharacterScreen screen)
+    {
+        var tabs = screen.FindChild("Tabs", true, false) as TabContainer;
+        if (tabs == null)
+        {
+            return "缺";
+        }
+
+        var parts = new System.Collections.Generic.List<string>();
+        Vector2 tabs_min = tabs.GetCombinedMinimumSize();
+        parts.Add($"Tabs={tabs_min.X:0}x{tabs_min.Y:0}");
+        foreach (Node child in tabs.GetChildren())
+        {
+            var control = child as Control;
+            if (control != null)
+            {
+                Vector2 min = control.GetCombinedMinimumSize();
+                parts.Add($"{child.Name}={min.X:0}x{min.Y:0}");
+            }
+        }
+
+        return string.Join("／", parts);
     }
 
     /// <summary>
@@ -653,13 +727,37 @@ public partial class TestCharacterUi : TestCase
         CheckNotNull(header, "满员时头部信息还在");
         if (header != null)
         {
-            CheckTrue(header.Text.Contains("999999"), $"六位数铜钱照常显示：{header.Text}");
+            CheckTrue(header.Text.Contains("经验"), $"满员时头部仍然写队伍经验：{header.Text}");
         }
+
+        CheckTrue(
+            _MoneyText(screen).Contains("999999"),
+            $"六位数铜钱照常显示（顶栏）：{_MoneyText(screen)}");
 
         bool laid_out = LayoutBudget.fits(screen);
         if (!laid_out)
         {
-            Fail("4 人满员 + 长名字下版式超预算：" + LayoutBudget.ascii_line(screen));
+            // 失败时把「整屏那一列的直接子节点」各块的最小尺寸一并打出来：整屏那行只给一个总数，
+            // 看不出是哪一块撑破的（2026-10-11 就是靠它一眼认出「页面头那个自动换行标签在宽度
+            // 还没有的时候，会按一个字一行去算高度」）。
+            var parts = new System.Collections.Generic.List<string>();
+            Control column = LayoutBudget.measure_target(screen);
+            if (column != null)
+            {
+                foreach (Node child in column.GetChildren())
+                {
+                    var control = child as Control;
+                    if (control != null)
+                    {
+                        Vector2 min = control.GetCombinedMinimumSize();
+                        parts.Add($"{child.Name}={min.X:0}x{min.Y:0}");
+                    }
+                }
+            }
+
+            Fail("4 人满员 + 长名字下版式超预算：" + LayoutBudget.ascii_line(screen)
+                + "　分块：" + string.Join("／", parts)
+                + "　页：" + _PageMins(screen));
         }
 
         CheckTrue(laid_out, "4 人满员 + 长名字仍塞进设计分辨率");
@@ -675,8 +773,8 @@ public partial class TestCharacterUi : TestCase
         CheckLt(
             members_width, LayoutBudget.design_width(),
             $"4 人 + 长名字的成员行不超设计宽度（{members_width:0} px）");
-        screen.select_tab(2);
-        CheckEq(screen.current_tab(), 2, "满员下也能切到背包页");
+        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
+        CheckEq(screen.current_tab(), UiNav.char_tab_of(UiNav.BAG), "满员下也能切到行囊页");
         CheckNotNull(screen.sheet(), "满员下选中的角色仍有数据面板");
         _DropScreen(screen);
     }

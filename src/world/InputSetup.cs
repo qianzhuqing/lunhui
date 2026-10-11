@@ -23,7 +23,7 @@ public partial class InputSetup : RefCounted
         { "sneak", new Godot.Collections.Array { (int)Key.Shift } },
         { "interact", new Godot.Collections.Array { (int)Key.E, (int)Key.Space } },
         { "open_character", new Godot.Collections.Array { (int)Key.Tab } },
-        // 0.18.1 的全局快捷键：行囊是角色面板的第三个页签，单独一个键直达
+        // 0.18.1 的全局快捷键：行囊是角色面板的一页（2026-10-11 Q91 起是**第 4 页**），单独一个键直达
         { "open_bag", new Godot.Collections.Array { (int)Key.I } },
         // 0.28.0（Q62）：看 NPC 信息是独立的一个键——「我只是想看看这人是谁」
         // 不该经过一次会改变世界状态的交互（E 才是交互菜单）

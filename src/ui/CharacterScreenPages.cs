@@ -5,7 +5,7 @@ using Lunhui.Data.Tables;
 namespace Lunhui.Ui;
 
 /// <summary>
-/// bCharacterScreenb 三个页签的重建（角色／装备／背包）——从 bCharacterScreen.csb 拆出来的 partial
+/// bCharacterScreenb 四个页签的重建（角色／装备／行囊／武学）——从 bCharacterScreen.csb 拆出来的 partial
 /// （那份要守 800 行硬上限）。
 ///
 /// 这一份只干一件事：按 bCharacterSheetb／bInventoryb 给的数据**摆控件**。
@@ -22,6 +22,11 @@ public partial class CharacterScreen
         if (st == null || inventory == null)
         {
             _header.Text = "没有会话状态";
+            if (_money_label != null)
+            {
+                _money_label.Text = "";
+            }
+
             return;
         }
 
@@ -56,8 +61,12 @@ public partial class CharacterScreen
             }
         }
 
-        _header.Text = $"铜钱 {inventory.money}　{exp_text}"
-            + $"　难度 {st.Call("difficulty_name", Db).AsString()}　{talent_text}";
+        // 铜钱改挂**顶栏右边**（示意图把常驻数字都放在那一行）；这一行留经验／难度／天赋
+        _header.Text = $"{exp_text}　难度 {st.Call("difficulty_name", Db).AsString()}　{talent_text}";
+        if (_money_label != null)
+        {
+            _money_label.Text = $"铜钱 {inventory.money}";
+        }
     }
 
     private void _rebuild_character()
@@ -134,21 +143,45 @@ public partial class CharacterScreen
         _build_character_middle(middle, panel, st);
         _build_character_right(right, panel);
 
-        // 武学（学 + 装）暂时仍留在这一页底部：它自己那一屏（清单 §二-6）还没做，
-        // 现在挪走等于把「装／卸武学」整块功能删掉。等那一屏做出来再搬过去。
-        Godot.Collections.Dictionary summary = panel.slot_summary();
-        _char_box.AddChild(_make_label(
-            "SkillHeader",
-            $"武学（招式 {_i(summary, "active_used")}/{_i(summary, "active_slots")}"
-                + $"　内功 {_i(summary, "passive_used")}/{_i(summary, "passive_capacity")} 格）",
-            18));
-        foreach (Variant row_value in panel.skill_rows())
+        // 武学（学 ＋ 装）在 2026-10-11 搬进了它自己的「武学」页（清单 §二-6 那一屏），
+        // 见 `_rebuild_skills()`——留在这里的话，底栏那个「武学」入口就没有落点。
+    }
+
+    /// <summary>
+    /// 「武学」页（清单 §二-6）：招式槽与内功格分开摆，顶部写占用。
+    /// 数值全部来自 `CharacterSheet.skill_rows()`／`slot_summary()`，界面不自己算。
+    /// </summary>
+    private void _rebuild_skills()
+    {
+        _clear(_skill_box);
+        GodotObject st = current_state();
+        CharacterSheet panel = sheet();
+        if (st == null || panel == null || !panel.valid())
         {
-            _char_box.AddChild(_make_skill_row(row_value.AsGodotDictionary()));
+            _skill_box.AddChild(_make_label("SkillEmpty", "没有会话状态"));
+            return;
         }
 
-        // 底部提示（14 §四）
-        _char_box.AddChild(_make_label("TabHint", "Tab 切换页签，Esc 返回"));
+        Godot.Collections.Dictionary summary = panel.slot_summary();
+        VBoxContainer head = UiChrome.section_head(
+            "武学",
+            $"招式 {_i(summary, "active_used")}/{_i(summary, "active_slots")}"
+                + $"　内功 {_i(summary, "passive_used")}/{_i(summary, "passive_capacity")} 格",
+            "SkillSection");
+        // 用例按老名字 `SkillHeader` 找这一行的文字（`.cs` 版 `TestCharacterUi._CheckSkillLoadout`），
+        // 所以把标题那个 Label 单独改名：节点名是接口，别因为换了骨架就把接口改掉。
+        if (head.FindChild("SectionTitle", true, false) is Label head_title)
+        {
+            head_title.Name = "SkillHeader";
+        }
+
+        _skill_box.AddChild(head);
+
+        // 装／卸都要能按段找得到：招式在前、内功在后（`skill_rows()` 就是按这个顺序给的）
+        foreach (Variant row_value in panel.skill_rows())
+        {
+            _skill_box.AddChild(_make_skill_row(row_value.AsGodotDictionary()));
+        }
     }
 
     /// <summary>
@@ -331,6 +364,10 @@ public partial class CharacterScreen
         box.AddChild(_make_label(
             "CurrentHp",
             $"当前气血 {current_hp} / {max_hp}{(current_hp >= max_hp ? "" : "　（可到医馆花钱治疗）")}"));
+        // 一条气血条（15 §4.4：状态条高 12、颜色是信息色）——光有数字看不出「还剩多少」，
+        // 而这是玩家进战斗前最想知道的一件事。
+        box.AddChild(UiChrome.stat_bar(
+            "hp", max_hp > 0 ? (float)current_hp / max_hp : 0f, 200, "HpBar"));
         foreach (Variant stat_value in Db.rows("stat_def"))
         {
             var stat_row = stat_value.As<StatDefRow>();
@@ -603,121 +640,4 @@ public partial class CharacterScreen
         return rows;
     }
 
-    // ------------------------------------------------------------------ 背包页
-
-    private void _rebuild_bag()
-    {
-        _clear(_bag_box);
-        GodotObject st = current_state();
-        Inventory inventory = st?.Get("inventory").As<Inventory>();
-        if (st == null || inventory == null)
-        {
-            _bag_box.AddChild(_make_label("Empty", "没有会话状态"));
-            return;
-        }
-
-        var filters = new HBoxContainer { Name = "Filters" };
-        filters.AddThemeConstantOverride("separation", 6);
-        _bag_box.AddChild(filters);
-        foreach (string[] entry in FILTERS)
-        {
-            string key = entry[0];
-            filters.AddChild(_make_button(
-                $"FilterButton{key}", $"{(_filter == key ? "▶ " : "")}{entry[1]}", () => set_filter(key)));
-        }
-
-        _bag_box.AddChild(_make_label("BagHeader", $"背包（铜钱 {inventory.money}）", 18));
-        int shown = 0;
-        foreach (string item_id in inventory.item_ids())
-        {
-            var row = Db.get_row("item_base", item_id) as ItemBaseRow;
-            if (row == null || !_row_matches_filter(row))
-            {
-                continue;
-            }
-
-            shown += 1;
-            string iid = item_id;
-            var line = new HBoxContainer { Name = $"ItemRow{iid}" };
-            line.AddThemeConstantOverride("separation", 8);
-            // 道具图标（15 §六：bassets/icons/item/<item_id>.pngb；表里的 biconb 列写了就用它，
-            // 那条列本来就是"图标 id"）。同样**有图才摆**——19 张只到了 3 张。
-            string icon_id = row.icon.Length > 0 ? row.icon : iid;
-            TextureRect item_icon = IconPaths.make_icon(IconPaths.item(icon_id), $"ItemIcon{iid}");
-            if (item_icon != null)
-            {
-                line.AddChild(item_icon);
-            }
-
-            Label label = _make_label(
-                $"ItemLabel{iid}",
-                $"{row.name_cn} ×{inventory.count(iid)}（{row.rarity}）{row.desc}",
-                0,
-                _rarity_color(row.rarity));
-            label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            line.AddChild(label);
-            // 秘籍（skillbook）能研读；研读才消耗，丢弃照旧被钥匙规则挡住
-            if (row.item_type == "skillbook")
-            {
-                Godot.Collections.Dictionary study_check = SkillGrant.study_gate(Db, st, iid);
-                // 原因写在标签上、按钮只写「研读」：按钮文字太长会把这行撑变形
-                if (!_b(study_check, "ok"))
-                {
-                    label.Text += $"　— 研读：{_s(study_check, "error")}";
-                }
-
-                line.AddChild(_make_button(
-                    $"StudyButton{iid}", "研读", () => { study_item(iid); }, !_b(study_check, "ok")));
-            }
-
-            line.AddChild(_make_button(
-                $"DropButton{iid}", "丢弃", () => { drop_item(iid); }, row.is_key_item));
-            _bag_box.AddChild(line);
-        }
-
-        // 装备实例（未穿戴的可以在这里直接装）
-        if (_filter == "all" || _filter == "equip")
-        {
-            _bag_box.AddChild(_make_label("BagEquipHeader", "装备", 18));
-            CharacterSheet panel = sheet();
-            foreach (string instance_id in inventory.equipment_ids())
-            {
-                var base_row = Db.get_row("equip_base", inventory.base_of(instance_id)) as EquipBaseRow;
-                if (base_row == null)
-                {
-                    continue;
-                }
-
-                shown += 1;
-                string iid = instance_id;
-                Godot.Collections.Dictionary equipped_by = inventory.equipped_by(iid);
-                var line = new HBoxContainer { Name = $"EquipRow{iid}" };
-                line.AddThemeConstantOverride("separation", 8);
-                string suffix = equipped_by.Count > 0 ? "（已装备）" : "";
-                string affix_text = panel == null ? "" : panel.affix_summary_of(iid);
-                Label label = _make_label(
-                    $"EquipLabel{iid}",
-                    $"{base_row.name_cn}（{base_row.rarity}）{base_row.desc}{suffix}"
-                        + $"{(affix_text.Length == 0 ? "" : $"　词条：{affix_text}")}",
-                    0,
-                    panel != null ? panel.rarity_color(base_row.rarity) : "");
-                label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-                line.AddChild(label);
-                if (equipped_by.Count == 0 && panel != null)
-                {
-                    Godot.Collections.Dictionary check = inventory.can_equip(
-                        Db, panel.char_id, panel.level, panel.weapon_type_id(), iid);
-                    line.AddChild(_make_button(
-                        $"BagEquipButton{iid}", "装备", () => { equip_instance(iid); }, !_b(check, "ok")));
-                }
-
-                _bag_box.AddChild(line);
-            }
-        }
-
-        if (shown == 0)
-        {
-            _bag_box.AddChild(_make_label("BagEmpty", "这一分类下没有东西"));
-        }
-    }
 }

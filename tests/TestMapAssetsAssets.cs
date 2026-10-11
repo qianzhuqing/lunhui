@@ -284,6 +284,63 @@ public partial class TestMapAssets
         // 现例 `poison` 行的 icon 就是 `status_poison`。
         _CheckIconDirMatchesTable(db, "res://assets/icons/status", "status_effect", "异常状态");
         _CheckIconDirMatchesTable(db, "res://assets/icons/buff", "buff_def", "增益");
+        // 七维／派生数值／空槽占位（15 §六 命名表，2026-10-11 美术落盘）：这三张表**没有 `icon` 列**，
+        // 一律按主键走（`IconPaths.attr()`／`stat()`），所以走下面那条按主键列匹配的变体。
+        _CheckIconDirMatchesKey(db, "res://assets/icons/attr", "attribute_def", "attr_id", "七维");
+        _CheckIconDirMatchesKey(db, "res://assets/icons/stat", "stat_def", "stat_id", "派生数值");
+        // `icons/slot/` 的文件名带 `slot_` 前缀（`slot_weapon.png` ↔ `equip_slot_def` 的 `weapon` 行）。
+        // **不能并入 `icons/equip/`**：那个目录的门限要求每张 png 都是 `equip_base` 的 id，
+        // 空槽占位不是装备，塞进去当场红。
+        _CheckIconDirMatchesKey(
+            db, "res://assets/icons/slot", "equip_slot_def", "slot_id", "空槽占位", "slot_");
+    }
+
+    /// <summary>一类图标目录里的**文件名**必须都能在对应表里按**主键**认出来。
+    ///
+    /// 与下面那条的区别：`status_effect`／`buff_def` 有 `icon` 列（代码优先读它），而
+    /// `attribute_def`／`stat_def`／`equip_slot_def` **没有** `icon` 列，一律按主键走。
+    /// `prefix` 专给 `icons/slot/` 用：文件名叫 `slot_weapon.png`，行的主键却只有 `weapon`
+    /// （15 §六 命名表把 `slot_` 写进了文件名那一侧）。
+    ///
+    /// 目录还没交图 = 跳过、不算错（与另一条同口径——美术约 160 个图标是分批交的；
+    /// 反过来"表里有行但没图"也不报错，同理"有图才摆"）。</summary>
+    private void _CheckIconDirMatchesKey(
+        TableDb db, string dirPath, string table, string keyColumn, string label, string prefix = "")
+    {
+        var dir = DirAccess.Open(dirPath);
+        if (dir == null)
+        {
+            return;
+        }
+
+        var allowed = new HashSet<string>();
+        foreach (Variant entry in db.rows(table))
+        {
+            var row = entry.AsGodotObject();
+            allowed.Add(prefix + row.Get(keyColumn).AsString().StripEdges());
+        }
+
+        int checkedCount = 0;
+        var unknown = new List<string>();
+        foreach (string file in dir.GetFiles())
+        {
+            if (!file.EndsWith(".png"))
+            {
+                continue;
+            }
+
+            string fileId = StripPng(file);
+            checkedCount++;
+            if (!allowed.Contains(fileId))
+            {
+                unknown.Add(fileId);
+            }
+        }
+
+        CheckGt(checkedCount, 0.0, $"{label}图标目录里有图（{checkedCount} 张）");
+        CheckEq(
+            unknown.Count, 0,
+            $"每张{label}图标的名字都要能在 {table}.{keyColumn} 里认出来（认不出的：{Join(unknown)}）");
     }
 
     /// <summary>一类图标目录里的**文件名**必须都能在对应表里认出来（目录还没交图 = 跳过，不算错，

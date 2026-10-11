@@ -93,7 +93,7 @@ public partial class PlaceholderGame : Control
         }
     }
 
-    /// <summary>打开角色与行囊（三个页签）</summary>
+    /// <summary>打开角色与行囊（四个页签：角色／装备／行囊／武学）</summary>
     public void press_character() => _tree()?.ChangeSceneToFile(CHARACTER_SCENE);
 
     /// <summary>进入大地图开始探索（最短闭环的入口）</summary>

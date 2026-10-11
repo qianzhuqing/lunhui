@@ -4,6 +4,7 @@ using Lunhui.Audio;
 using Lunhui.Core;
 using Lunhui.Data;
 using Lunhui.Data.Tables;
+using Lunhui.Ui;
 
 namespace Lunhui.World;
 
@@ -2992,10 +2993,10 @@ public partial class LocalMapController : Node2D
         open_character_overlay(0);
         stack_ok = stack_ok && overlays().Call("depth").AsInt32() == 2 && _panel_open(shop_panel);
         // 已在栈里 → 弹回它（不重复压），并切到指定页签
-        open_character_overlay(2);
+        open_character_overlay(UiNav.char_tab_of(UiNav.BAG));
         Node char_panel = _overlay_node("character");
         stack_ok = stack_ok && overlays().Call("depth").AsInt32() == 2 && char_panel != null
-            && char_panel.Call("current_tab").AsInt32() == 2;
+            && char_panel.Call("current_tab").AsInt32() == UiNav.char_tab_of(UiNav.BAG);
         stack_ok = stack_ok && close_top_overlay() && overlays().Call("depth").AsInt32() == 1
             && _panel_open(shop_panel);
         stack_ok = stack_ok && close_top_overlay() && overlays().Call("is_empty").AsBool()
@@ -3279,7 +3280,8 @@ public partial class LocalMapController : Node2D
 
         if (@event.IsActionPressed("open_bag"))
         {
-            open_character_overlay(2);
+            // 下标走 `UiNav.char_tab_of`，别写字面量（行囊 2026-10-11 从第 3 页挪到第 4 页）
+            open_character_overlay(UiNav.char_tab_of(UiNav.BAG));
             return;
         }
 
@@ -3368,6 +3370,32 @@ public partial class LocalMapController : Node2D
 
         _free_overlay(top_id);
         return true;
+    }
+
+    /// <summary>
+    /// 底栏七入口的跳转（`docs/dev/UI示意落地清单.md` §一）：四个页签入口在角色面板那一侧就切了，
+    /// 落到这儿的是**跨浮层**的三个——地图（离开这一摞浮层，回场景）、纪事、系统（那一屏还没做，
+    /// 底栏上是置灰的，见 `UiNav.disabled_reason`）。
+    /// </summary>
+    public void nav_to(string id)
+    {
+        if (UiNav.is_back(id))
+        {
+            while (overlays().Call("depth").AsInt32() > 0)
+            {
+                if (!close_top_overlay())
+                {
+                    break;
+                }
+            }
+
+            return;
+        }
+
+        if (id == UiNav.CLUE)
+        {
+            open_clues();
+        }
     }
 
     /// <summary>程序化关一个浮层（界面自己的「返回」按钮走这里）。</summary>
@@ -3474,6 +3502,10 @@ public partial class LocalMapController : Node2D
         panel.Set("back_handler", Callable.From(() => _close_overlay("character")));
         // Q67 拍板 ④：角色面板点同伴 → 开交往屏。走的就是场景层**现成那条** `open_npc()`。
         panel.Set("npc_open_handler", Callable.From<string>(npc_id => open_npc(npc_id)));
+        // 底栏七入口（UI 清单 §一）：四个页签入口面板自己切，跨浮层的三个回到这里；
+        // 地名走小地图现成那条「第 N 层 房间名」（HUD 用的是同一处口径）。
+        panel.Set("nav_handler", Callable.From<string>(nav_id => nav_to(nav_id)));
+        panel.Set("place_label", _floor_label());
         _overlay_stack_script().Call("mount", this, panel);
         panel.Call("setup");
         panel.Call("select_tab", tab_index);

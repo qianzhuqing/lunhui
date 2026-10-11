@@ -3,6 +3,7 @@ using Godot.Collections;
 using Lunhui.Core;
 using Lunhui.Data;
 using Lunhui.Data.Tables;
+using Lunhui.Ui;
 
 namespace Lunhui.World;
 
@@ -2130,7 +2131,8 @@ public partial class OverworldController : Node2D
 
         if (@event.IsActionPressed("open_bag"))
         {
-            open_character_overlay(2);
+            // 下标走 `UiNav.char_tab_of`，别写字面量（行囊 2026-10-11 从第 3 页挪到第 4 页）
+            open_character_overlay(UiNav.char_tab_of(UiNav.BAG));
             return;
         }
 
@@ -2220,6 +2222,34 @@ public partial class OverworldController : Node2D
         return true;
     }
 
+    /// <summary>
+    /// 底栏七入口的跳转（`docs/dev/UI示意落地清单.md` §一）：面板内部能消化的（行囊／武学／角色／装备）
+    /// 在面板那一侧就切了页签，落到这儿的是**跨浮层**的三个——地图（回场景）、纪事、系统。
+    /// 「系统」那一屏（存读档＋开关）还没做，入口在底栏上是置灰的（`UiNav.disabled_reason`）；
+    /// 真点到也不做事——**不摆一个点不动的空壳界面**。
+    /// </summary>
+    public void nav_to(string id)
+    {
+        if (UiNav.is_back(id))
+        {
+            // 「地图」＝离开这一摞浮层，回到场景本身。压了几层就弹几层。
+            while (overlays().Call("depth").AsInt32() > 0)
+            {
+                if (!close_top_overlay())
+                {
+                    break;
+                }
+            }
+
+            return;
+        }
+
+        if (id == UiNav.CLUE)
+        {
+            open_clues();
+        }
+    }
+
     private void _close_overlay(string id)
     {
         foreach (Variant extra in overlays().Call("remove", id).AsGodotArray())
@@ -2297,6 +2327,10 @@ public partial class OverworldController : Node2D
         panel.Set("back_handler", Callable.From(() => _close_overlay("character")));
         // Q67 拍板 ④：同伴的交往入口在角色面板——这里把「谁」接到既有那条 `open_npc()`
         panel.Set("npc_open_handler", Callable.From<string>(npc_id => open_npc(npc_id)));
+        // 底栏七入口（UI 清单 §一）：跨浮层的那三个回到这里（地图／纪事／系统），
+        // 四个页签入口由面板自己切。地名借 HUD 那一份（同一处口径，别在面板里再算一次）。
+        panel.Set("nav_handler", Callable.From<string>(nav_id => nav_to(nav_id)));
+        panel.Set("place_label", _region_name());
         _overlay_stack_script().Call("mount", this, panel);
         panel.Call("setup");
         panel.Call("select_tab", tab_index);
@@ -2752,10 +2786,10 @@ public partial class OverworldController : Node2D
         stack_ok = stack_ok && overlays().Call("depth").AsInt32() == 1 && waypoint_panel != null;
         open_character_overlay(0);
         stack_ok = stack_ok && overlays().Call("depth").AsInt32() == 2 && waypoint_panel != null;
-        open_character_overlay(2);
+        open_character_overlay(UiNav.char_tab_of(UiNav.BAG));
         Node char_panel = FindChild("CharacterPanel", true, false);
         stack_ok = stack_ok && overlays().Call("depth").AsInt32() == 2 && char_panel != null
-            && char_panel.Call("current_tab").AsInt32() == 2;
+            && char_panel.Call("current_tab").AsInt32() == UiNav.char_tab_of(UiNav.BAG);
         stack_ok = stack_ok && close_top_overlay() && overlays().Call("depth").AsInt32() == 1 && waypoint_panel != null;
         stack_ok = stack_ok && close_top_overlay() && overlays().Call("is_empty").AsBool() && waypoint_panel == null;
         ok = ok && stack_ok;

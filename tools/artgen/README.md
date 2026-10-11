@@ -26,12 +26,15 @@ node tools\artgen\artgen.js --out DIR  rem 落到别处（改图时先看效果�
 | 文件 | 干什么 |
 |---|---|
 | `pixel.js` | 画布、调色板运算、噪声、PNG 编码（无依赖） |
+| `pngread.js` | **只读** PNG 解码（判"这张示意图放大几倍"用；`pixel.js` 只写不读，两者故意分开） |
+| `cut.js` | **从示意图裁素材**：判倍数 → 按宫格裁成 32×32（`--hires K` 顺带导 K 倍）＋联络表 |
 | `tiles.js` | 五套主题的调色板与 44 个瓦片的画法 ＋ 迷雾 |
 | `icons.js` | 7 个地标图标、灰态、高亮环、精英光晕 |
 | `props.js` | 宝箱（铜／银／金 × 开／关）、火盆（灭／燃）、NPC 占位、**封渡木桩**、**旧镖车 64×64** |
 | `items.js` | 物品图标（`icons/item/`） |
 | `equips.js` | **装备图标 27 张**（`icons/equip/`） |
 | `skills.js` | **武学图标 65 张**（`icons/skill/`，内功 30 ＋ 招式 35） |
+| `tile.js` | **招式图标·方底版（实验支，还没落 `assets/`）**：方格底 ＋ 三阶明暗，`maskOf()` 单独出剪影判形体；**剑与"势"分两张 mask 画，间距门限 ≥3px**（`--gaps` 只看间距）；`node tools\artgen\tile.js --out DIR --preview 图.png --zoom 6` |
 | `status.js` | **异常状态图标 4 张**（`icons/status/`，战斗界面「增益减益」那排 chip） |
 | `ui.js` | 面板底板九宫格 ＋ 状态条临界贴图 |
 | `actors.js` | **NPC 头像 9 张 ＋ 敌人剪影**（`sprites/avatars/`、`sprites/<faction>/`） |
