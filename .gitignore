@@ -30,3 +30,9 @@ docs/dev/*.import
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# C# 构建中间产物：lunhui.csproj 在根目录，msbuild 会在旁边生成 obj/ 与 bin/（dll、缓存）。
+# 它们没有任何人读，但 sync_to_git.bat 的 git add . 会把整批扫进仓库——
+# 2026-10-12 就因为漏了这条，把截图残留 obj/create.png 提交了进去。
+obj/
+bin/
