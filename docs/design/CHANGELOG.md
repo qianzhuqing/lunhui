@@ -108,7 +108,7 @@
 
 | 模块 | 变动 |
 |---|---|
-| **程序** | 揭开逻辑**不用改**（已按表驱动）。要改两处：① `tests/test_overworld.gd` 里「开局揭开 3 个」的断言 → **2 个**（清风驿＋驿站）；② 建议加一条构建期校验：`reveal_on_map=1` 只允许 `town`／`fast_travel`（防以后再漂）。另加两条新活：`Conditional` 层的显示开关（跟 `item_treasure_map`）、`Overlay` 的半透明。`docs/dev/模块对接表.csv`／`验证清单.csv` 的 design_version 跟到 0.32.0 |
+| **程序** | 揭开逻辑**不用改**（已按表驱动）。要改两处：① `tests/TestOverworld.cs` 里「开局揭开 3 个」的断言 → **2 个**（清风驿＋驿站）；② 建议加一条构建期校验：`reveal_on_map=1` 只允许 `town`／`fast_travel`（防以后再漂）。另加两条新活：`Conditional` 层的显示开关（跟 `item_treasure_map`）、`Overlay` 的半透明。`docs/dev/模块对接表.csv`／`验证清单.csv` 的 design_version 跟到 0.32.0 |
 | **地编** | 大地图重建规格**不变**（兴趣点仍不摆图标、地形成片、路牌、明雷重摆）。三处新增：① 开局只有清风驿／驿站两处是亮的，其余要走到附近才擦雾；② 第 5 层 `Conditional` 铺石隙细径 22 格；③ 两处死路的内段压 `T_ROCK_EAVE` |
 | **美术** | **无新增产出**。`icon_shixi` 从「备用」变成真的要用；`icon_cave`／`icon_ruin`／`icon_ferry` 三张转为备用（留档，不删） |
 | **表结构** | **不动**。只改 `map_region` 的值：1 行揭开条件（落雁坡）＋ 4 行 `icon` |
@@ -138,6 +138,32 @@
 | battle_ui | HUD 顶栏走深墨（与示意图一致）；状态条三色、伤害浮字不变 |
 | art_assets | 图标（武学／装备／物品／异常／增益／派生）与立绘补 1px 墨色描边——浅底可见性，**不改尺寸** |
 | 表结构／存档 | **不动** |
+
+### buff 参数收口（Q83–Q89，2026-10-04 当日晚）
+
+开发侧查 buff 系统时把参数缺口一次开成七条，**本轮全部答完**，答案落在
+`08_增益与套装.md` 的「参数口径（2026-10-04 拍板，Q83–Q89）」一节：
+
+1. **Q83** 套装数值**以 `set_bonus` 现表为准**（黑风 2/4 件、玄微剑 3/5 招、玄微心法 **4/7 格**）；
+   12 屏示意图那张套装卡只当演示——顺带订正 `08` 自己那行写错的「3 格 / 5 格」。
+2. **Q84** 「招式段数 +1」**做**：`stat_def` 加派生值 `extra_hit`（上限 2），**只对招式生效**；
+   第一章只有一处数——玄微剑 3 招档加 `stat:extra_hit = 1`。
+3. **Q85** 主动防御／拆招／逃跑／破绽窗口四个数**照现状确认**，并**赞成补进 `combat_const`**。
+4. **Q86** **补两列**：`status_effect.burn_def_cut = 0.05`、`qi_regen_mul = 0.5`。
+5. **Q87** `skill_passive` 加 `qi_cost`，**按占格 ×6**（1／2／3 格 = 6／12／18 气）。
+6. **Q88** 反伤与「流血换位」**本章都不做**（反伤第一章没有来源；流血换位依赖尚未定的前／后排站位）——
+   反伤的规则与数值已写死：受击直伤的 10%、每回合 1 次、不连锁。
+7. **Q89** 只放开 `item` ＋ `on_consume`（数值随 Q33 给），**不放开 `event`**。
+
+### 影响模块
+
+| 模块 | 变动 |
+|---|---|
+| buff_system／debuff_system | 新列 `status_effect.burn_def_cut`／`qi_regen_mul`、`skill_passive.qi_cost`；`buff_grant` 放开 `item+on_consume` |
+| battle_simulator／battle_ui | 新增派生值 `extra_hit`（**只作用于招式**的段数结算）；四个战斗常数搬进 `combat_const` |
+| character_ui | 内功催动按钮要显示耗气（不再是「暂按 0」） |
+| set_system | 玄微剑 3 招档多一条 `extra_hit = 1` |
+| 存档 | **不动**（都是表与常数，没有新状态字段） |
 
 ---
 
@@ -333,7 +359,7 @@
 
 **最小修法：代码 2 行 ＋ 表 2 格**：
 
-- `src/core/recruit_service.gd::_ready_rows()` 里的 `if int(row.is_initial) == 1: continue` **删掉**
+- `src/core/RecruitService.cs::_ready_rows()` 里的 `if int(row.is_initial) == 1: continue` **删掉**
   （下一句 `state.char_ids.has(...)` 已经管住重复：主角是书生时他在队里、照样跳过）；
 - `recruit_def.scholar_fallen` 补 `join_condition=flag_board_read`／`join_scene=scene_qingfengyi`（**本轮已填**）。
 

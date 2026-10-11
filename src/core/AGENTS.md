@@ -19,14 +19,16 @@
   **读档落点也在这里定**：`MenuController.load_game` 的结果带 `start_scene = START_OVERWORLD`（视图据此切
   `scenes/world_run.tscn`），新建游戏仍进占位枢纽页（`START_HUB`）。
   **新加的字段必须同时写进 `to_dict()`**（漏了不会报错，只是读档静默丢）——
-  `tests/test_handshake_code.gd::_check_save_fields_are_serialized` 会扫源文件兜底（`Inventory` 同理），
+  `tests/TestHandshakeCode.cs::CheckSaveFieldsAreSerialized` 会扫源文件兜底（`Inventory` 同理），
   确实不持久化的（如读档整理结果）要加进那儿的白名单并写明理由（见框架说明决策 173）。
-  **字段类型写错的老档也要容错**（JSON 合法但 `inventory` 是字符串之类）：要么判损坏、要么读成缺省，**不许运行期报错**——`test_save_migration._check_type_mismatched_fields` 用六种写法钉着（决策 248）。
-  **升版本时还要做一件事**：往 `tests/test_save_migration.gd` 的 `ADDED_IN` 补一行（写清新版本加了哪些字段）——
+  **字段类型写错的老档也要容错**（JSON 合法但 `inventory` 是字符串之类）：要么判损坏、要么读成缺省，**不许运行期报错**——`TestSaveMigrationRobust._CheckTypeMismatchedFields` 用六种写法钉着（决策 248）。
+  **升版本时还要做一件事**：往 `tests/TestSaveMigrationBase.cs` 的 `AddedIn` 补一行（写清新版本加了哪些字段）——
   那条用例会拿当前存档逐档「删掉那一档之后才有的字段再读」，v1~v11 每一档都验一遍；
   不补的话新字段的迁移就没人试过（这条纪律是 2026-10-03 补的，见 `docs/dev/框架说明.md` 决策 78）。
 - **存档时机按设计 02**：城镇手动存（F5／枢纽按钮）、大地图切小图自动存、副本内清房间/开箱/触发/事件/扫荡自动存；
-  统一走 `src/core/save_service.gd`，读档只在主菜单。用例注入 `save_store_override` 到临时目录，别写 `user://`。
+  统一走 `src/core/SaveService.cs`（2026-10-10 由 `save_service.gd` 搬成 C#），读档只在主菜单。
+  用例注入 `save_store_override` 到临时目录，别写 `user://`；`SaveService.create()` 的槽参数是
+  `GodotObject`（**故意不强类型成 `SaveStore`**），所以 GDScript 的失败桩塞得进去。
 - **首杀奖励只领一次**：首杀记录的唯一落点是 `GameState.first_kills`（v10 起进存档），
   战斗结算前调 `GameState.mark_first_kill(drop_group)`，返回 true 才算首杀；
   `first_kill_only=1` 的掉落槽只在首杀那次掷，扫荡固定 `first_kill=false`。
@@ -49,7 +51,7 @@
   （力体敏智运），`=0` 的是**资质**（悟性／根骨）——创建时定死，只能靠图鉴奖励与特定内功提升。
   唯一判定出处是 `GameState.allocation_block_reason()`，加点入口与角色面板的加号按钮都问它；
   每级给 `level_growth.upgrade_points` 点（0.13.0 起是 5）。
-- 槽位上限、熟练度倍率、打坐费用、图鉴奖励都是「公式在代码（`src/core/growth_calculator.gd`）、常数在
+- 槽位上限、熟练度倍率、打坐费用、图鉴奖励都是「公式在代码（`src/core/GrowthCalculator.cs`）、常数在
   `growth_const.csv`」；改数值只改表，别把系数写进代码。
 
 ## 队伍与剧情
@@ -58,17 +60,17 @@
   （现在只有书生一人），其余按 `join_condition`／`join_scene` 在剧情里加入。
   取队伍一律走 `GameState.default_party_ids_from_recruit(db)`；`default_party_ids(db)`（按
   `character_base` 顺序取前 `MAX_PARTY` 行）只留给老用例与夹具。**用例要多人队伍就显式点名**
-  （`tests/test_case.gd` 的 `party_state(db, N)`），别再指望 `new_game()` 自动给 4 人。
+  （`tests/TestCase.cs` 的 `PartyState(db, N)`），别再指望 `new_game()` 自动给 4 人。
 - **入队只有一条路**：`RecruitService` 判定 + `GameState.add_character()` 落地（等级／起始装备／
   起始武学／装配一次发齐）。触发粒度：**城镇只认客栈那一次交互**（设计 09 §3.2 的原文）、
   副本／野外按场景（`join_scene` 的粒度就是场景）、大地图区域按走到 `Markers/Node_<node_id>`
   70px 内（与地标高亮同半径）。入队点亮 `flag_<char_id>_joined`（`guide_step` 拿它当下一步条件）；
   已在队里时返回 false 且**不重发装备**（每次按 E 都会查一遍，这是常态路径）。
-- **引导只有一处**：`src/core/guide_service.gd`（读 `guide_step`，当前步 = 条件已满足的最后一行，
+- **引导只有一处**：`src/core/GuideService.cs`（读 `guide_step`，当前步 = 条件已满足的最后一行，
   第一步用 `start` 哨兵）。HUD 那一行在两个控制器里各加一个 Label（**y=80**：状态栏 8／揭雾或完成度
   34／战斗外增益 56 之后的第四行，自检有不叠字断言），文案由 `hud_text()` 生成，**别在界面里另拼一套**。
   谁点亮旗标是各系统的事：`flag_board_read` 由清风驿的悬赏板发，`flag_ch_ci_joined` 由入队发。
-- **宝箱守卫只有一处**：`src/core/guard_service.gd`（`npc_guard` 那间房 → 文取条件／武取队伍）。
+- **宝箱守卫只有一处**：`src/core/GuardService.cs`（`npc_guard` 那间房 → 文取条件／武取队伍）。
   规则：**没有守卫的箱子照旧直接开**；有守卫且没解决时，**第一次按 E 只是让他开口**
   （说明他要什么＋另一条路，不扣东西），第二次才付账。武取**不用按键**——`fight_team` 与
   `dungeon_room.enemy_team` 是同一条，打赢房里那场仗就解锁。解决状态两条各写各的：
@@ -77,7 +79,7 @@
   （`peace_item`／`peace_check_source`／`peace_check_value`，**可叠加、任一满足即过**，06 的口径）：
   判定路走 `EventCheckService.best_check_value`（与事件判定同一算法），过门槛就放行且**不消耗道具**——
   控制器**优先走不花东西的那条**，别改成「先收道具」。
-- **木桩练习战只有一处**：`src/core/practice_service.gd`（入口＝`building_def.service_id == dummy_training`；
+- **木桩练习战只有一处**：`src/core/PracticeService.cs`（入口＝`building_def.service_id == dummy_training`；
   两条上限与到顶提示全部读 `growth_const.dummy_*` / `ui_text.dummy_cap_reached`）。战斗里那句
   「这一局是练习战」写在 `Encounter.practice`，**结算（`battle_screen._settle`）按它**跳过
   掉落／铜钱／首杀／击败领悟、把经验与熟练度封顶，并且不写房间完成度。
@@ -104,7 +106,8 @@
   `battle_screen._settle` 同时跑两路（掉落组 + 敌人装备），**别把装备塞回 `drop_table`**。
   （口径两条是开发侧定的：`÷100` 的读法与「首杀取武器槽」，已登记 `待策划确认.md` Q56。）
 - 练功木桩是**唯一允许没有 `drop_group` 的敌人**（`faction=training`）；
-  `table_validator._check_training_faction` 盯着这条口子：别的阵营漏配掉落组照样报错。
+  `TableValidatorActors.CheckTrainingFaction`（原 `table_validator._check_training_faction`）
+  盯着这条口子：别的阵营漏配掉落组照样报错。
 ## 物品与装备
 
 - **奖励物品入账只有一条路：`BattleReward.grant_item()`**（货币 → `inventory.money`、装备 → 建实例、
@@ -132,10 +135,10 @@
 
 ## 武学
 
-- **武学是「学 + 装」两件事**：门槛／招式槽／内功容量全在 `src/core/skill_loadout.gd`，
+- **武学是「学 + 装」两件事**：门槛／招式槽／内功容量全在 `src/core/SkillLoadout.cs`，
   战斗里能用的招式由 `SkillLoadout.battle_skill_ids()` 决定（不要再从模板 `skill_base` 直接取招）；
   装配进存档，改槽位公式只改 `growth_const.csv`。
-- **武学的来源只有三处**（都在 `src/core/skill_grant.gd`，按 `skill_base.source_type` 配表驱动）：
+- **武学的来源只有三处**（都在 `src/core/SkillGrant.cs`，按 `skill_base.source_type` 配表驱动）：
   击败指名敌人（`drop`）、触发指名隐藏点位（`hidden`）、研读指名秘籍（`item`，学会才消耗）。
   加新来源改这一个文件＋表，别把「谁会什么」写死在角色模板里。
 - **武学是三张表**：`skill_base`（身份与门槛）、`skill_active`（招式数值）、`skill_passive`（内功明细）、
@@ -152,14 +155,15 @@
 - **异常状态只在 `BattleActor` 上**：叠层／快照／回合末结算／灼伤削防／内伤压制内力都在那里，
   数值看 `status_effect.csv` + `damage_type.csv`；伤害管线里 DoT 走 `DamageResolver.resolve_dot()`，
   别再往九步直伤管线里塞 DoT 特例。击杀方式记在 `GameSession.last_battle.kill_styles`（隐藏内容判「毒杀」用）。
-- **多段与全体在模拟器里**：`skill_active.hit_count` 每段独立掷点（`_resolve_one_hit`），
-  `target_type=all_enemy` 由 `_targets_for` 展开——加新招式别再让结算忽略这两列。
+- **多段与全体在模拟器里**：段数 = `skill_active.hit_count` ＋ 角色派生值 `stat_def.extra_hit`
+  （`_effective_hits()` 一处算，**普攻不吃** `extra_hit`，见 08 号参数口径 Q84），每段独立掷点
+  （`_resolve_one_hit`），`target_type=all_enemy` 由 `_targets_for` 展开——加新招式别再让结算忽略这几列。
 - **预兆与拆招也在模拟器里**（设计 04 核心循环）：`_refresh_intents()` 每回合开始给敌人定招，
   `intent_of/intent_lines` 供界面显示预兆；敌人出手一律走 `_skill_for()` 用预兆里那一招。
-  `parry(actor, target)` 花掉我方一次行动，那一招整招伤害 ×0.5、拆招者架势 +15% 上限
-  （`PARRY_POISE_GAIN` 是开发侧定的数值，待设计补表列，别自己再发明一套）。
+  `parry(actor, target)` 花掉我方一次行动，那一招整招伤害乘 `combat_const.parry_damage_mult`、
+  拆招者架势涨 `parry_poise_gain`（2026-10-04 设计补表，Q85；代码常量只留兜底，别自己再发明一套）。
 - **逃跑也在模拟器里**：`flee(actor)` 花掉一次行动掷一次判定，成功率随身法对比（`flee_chance()`，
-  公式与上下限是开发侧定的，待设计补 `combat_const`）；成功以 `WINNER_FLEE` 收场——**不结算经验／铜钱／掉落、明雷不清**，
+  系数取 `combat_const` 的 `flee_base`／`flee_min`／`flee_max`，Q85）；成功以 `WINNER_FLEE` 收场——**不结算经验／铜钱／掉落、明雷不清**，
   这条别在界面或 `_settle()` 里另写一套。被追上（`CONTACT_CAUGHT`）的第一回合由 `flee_block_reason()` 挡下。
 
 ## 世界与副本

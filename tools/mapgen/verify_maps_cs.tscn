@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/mapgen/VerifyMapsCs.cs" id="1_verify_maps"]
+
+[node name="VerifyMapsCs" type="Node"]
+script = ExtResource("1_verify_maps")

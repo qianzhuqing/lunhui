@@ -1,6 +1,6 @@
 // 地图上会被代码读到的道具贴图（`assets/sprites/props/`）与角色占位。
 //
-// 这些名字是**代码认的**（`chest.gd` / `trigger_point.gd` / 场景里的 npc 占位），
+// 这些名字是**代码认的**（`Chest.cs` / `TriggerPoint.cs` / 场景里的 npc 占位），
 // 所以只能同名替换、不能改名：
 //   chest_<copper|silver|gold>[_open].png  ← `Chest.SPRITE_DIR`
 //   brazier_<off|on>.png                   ← `TriggerPoint.BRAZIER_*`

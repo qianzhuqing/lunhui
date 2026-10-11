@@ -3,7 +3,7 @@
     07_地图资源需求.md §8.4 列了音效位（火盆点燃／宝箱开启／命中…），框架说明的扩展点里
     也写着战斗表现只剩「逐帧贴图 + 命中音效」这类资产依赖。音效素材没到之前，这里按
     `tools/mapgen/make_placeholders.py` 的同一套办法**程序化**生成「一听就知道是占位」的短音，
-    让 `src/audio/sfx.gd` 接好的事件真的有东西可放。
+    让 `src/audio/Sfx.cs` 接好的事件真的有东西可放。
 
 Usage:
     python tools/audio/make_placeholders.py
@@ -16,7 +16,7 @@ Outputs (22050 Hz / 16-bit / 单声道，每条 0.1~0.5 秒):
     assets/audio/sfx/sfx_chest.wav    宝箱开启
     assets/audio/sfx/sfx_brazier.wav  火盆点燃
 
-    文件名的唯一引用点是 `src/audio/sfx.gd` 的 `EVENTS`；音效侧替换正式素材时**保持同名**即可，
+    文件名的唯一引用点是 `src/audio/Sfx.cs` 的 `EVENTS`；音效侧替换正式素材时**保持同名**即可，
     代码一行都不用改（同「贴图缺失才退回色块」的口径）。
 """
 

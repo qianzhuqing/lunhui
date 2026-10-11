@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://src/ui/creation_screen.gd" id="1_creation_screen"]
+[ext_resource type="Script" path="res://src/ui/CreationScreen.cs" id="1_creation_screen"]
 
 [node name="CreationScreen" type="Control"]
 layout_mode = 3

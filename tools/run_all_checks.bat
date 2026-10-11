@@ -9,13 +9,14 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
 rem Default to the Godot 4.7.1 install on this machine; override with GODOT_BIN.
-if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_win64.exe\Godot_v4.7.1-stable_win64_console.exe"
+if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64_console.exe"
 if not exist "%GODOT_BIN%" (
 	echo [error] Godot not found: %GODOT_BIN%
 	echo         Set GODOT_BIN to the Godot console executable.
 	exit /b 1
 )
 if not exist ".logs" mkdir ".logs"
+call "tools\ensure_csharp_build.bat" || exit /b 1
 
 set "FAILED_STEPS="
 set "PASSED_STEPS=0"

@@ -69,7 +69,7 @@ function writeCanvas(relative, canvas) {
   return write(relative, encodePNG(canvas));
 }
 
-// 瓦片集：一套主题一张图集，图集坐标与 map_kit.gd 的 T_* 常量一一对应
+// 瓦片集：一套主题一张图集，图集坐标与 MapKit.cs 的 T_* 常量一一对应
 for (const theme of Object.keys(THEMES)) {
   writeCanvas(`assets/tilesets/ink_jianghu/${theme}/tilemap_packed.png`, buildAtlas(theme));
 }

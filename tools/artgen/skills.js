@@ -13,7 +13,7 @@
 // **文件名 = `skill_base.skill_id`，一位不能差**（15 §六：程序按 id 找图）。
 // 第一版按 `pf_<school>_NN` 的序号规律猜了名字（`pf_xuanwei_06` 等），而那 5 部
 // **本命内功**在表里根本不带序号（`pf_xuanwei_zhbai`），于是图静静地不显示——
-// 2026-10-04 由 `test_map_assets._check_icon_file_names` 抓出来，本文件同步改名。
+// 2026-10-04 由 `TestMapAssets._check_icon_file_names` 抓出来，本文件同步改名。
 // 教训写在这儿：`pf_<school>_NN` 只对「门派主线的第 N 部」成立，
 // **本命／机遇那类额外条目一律带名字后缀**，不能再按序号推。
 

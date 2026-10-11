@@ -1,7 +1,7 @@
 ﻿<#
 变异探针（只读·手动工具，不进验收）：把数据改坏，看 **validate_tables.ps1** 抓不抓得住。
 
-为什么单独有一半：验收里其实有两道网——`table_validator.gd`（构建期，见 analysis_mutations.gd）
+为什么单独有一半：验收里其实有两道网——`TableValidator.cs`（构建期，见 analysis_mutations.gd）
 与 `validate_tables.ps1`。两边管的不是同一批东西：PS1 管编码/列数/主键/引用/枚举/价格方向/
 武器槽一致性/文档比对这些。所以只跑一半会把「另一道网已经管住」误判成"没人管"。
 

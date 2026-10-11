@@ -4,7 +4,7 @@
 //
 //   · **文件名 = `buff_def.icon` 的值，不是 `buff_id`**——19 行里 13 行是缩写
 //     （`buff_set_heifeng_2` → `buff_set_hf2`）。游戏侧 `battle_screen._make_effect_chip()`
-//     取的是 `icon` 列、空才退回行 id（`IconPaths.buff()`），门限 `test_map_assets` 同一口径。
+//     取的是 `icon` 列、空才退回行 id（`IconPaths.buff()`），门限 `TestMapAssets` 同一口径。
 //   · **颜色只走「增益蓝」**（08 §181「增益蓝、减益红」）：表里 19 行 `is_debuff` 全是 0，
 //     第一章的「减益红」由 `status_effect`（异常 4 张，走 `icons/status/`）承担，
 //     所以这一批**一张红的都不出**（小策划 2026-10-04 拍板）。

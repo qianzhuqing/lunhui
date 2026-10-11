@@ -4,12 +4,13 @@ rem usage: check_scene.bat <name> <scene> <flag> [extra args]
 setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
-if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_win64.exe\Godot_v4.7.1-stable_win64_console.exe"
+if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64_console.exe"
 if not exist "%GODOT_BIN%" (
 	echo [error] Godot not found: %GODOT_BIN%
 	exit /b 1
 )
 if not exist ".logs" mkdir ".logs"
+call "tools\ensure_csharp_build.bat" || exit /b 1
 rem Safety net against a wedged run: engine-level frame cap. A scene whose selftest flag is
 rem misspelled runs normally and would otherwise wait for input forever (hit that while probing);
 rem with the cap it quits by itself and the SELF-TEST marker below turns the step into a failure.

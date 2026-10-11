@@ -6,8 +6,8 @@
 - **玩法入口顺序**：启动菜单 →（新建游戏）→ 占位游戏场景 →「进入大地图」→ `world_run` → 撞明雷 → 战斗界面 → 回大地图。
   **大地图明雷 0.8.1 起默认关**（`feature_toggle.overworld_roaming_enemy = 0`，机制没删）：
   开关的读点在 `OverworldController.roaming_enabled()`，会话级覆盖是 `GameSession.roaming_enabled_override`
-  （-1 读表／0 关／1 开）；自检与 `tools/check_loop.gd` 都会自己打开它，别把"默认关"当成机制坏了。
-- 输入映射在运行期注册（`src/world/input_setup.gd`），改键只改那一处；不要往 project.godot 手写 InputEvent 文本。
+  （-1 读表／0 关／1 开）；自检与 `tools/CheckLoopRunner.cs` 都会自己打开它，别把"默认关"当成机制坏了。
+- 输入映射在运行期注册（`src/world/InputSetup.cs`），改键只改那一处；不要往 project.godot 手写 InputEvent 文本。
 - 地编的地图资产（`scenes/maps/`）视为只读：运行期控制层在 `src/world/`，不要直接改图去迁就代码。
 - **小地图落点与出口有三条硬约定**（都是踩过坑才定下的，见 `docs/dev/框架说明.md` 决策 42）：
   ① 进图落点用**地编放的 `Characters/player_spawn`**，不要自己按 `dungeon_room` 猜入口；

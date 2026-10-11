@@ -8,7 +8,7 @@ rem Keep this file ASCII-only + CRLF (cmd.exe parses it in the local codepage).
 setlocal
 cd /d "%~dp0.."
 
-if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_win64.exe\Godot_v4.7.1-stable_win64_console.exe"
+if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64_console.exe"
 if not exist "%GODOT_BIN%" (
 	echo [error] Godot not found: %GODOT_BIN%
 	echo         Set GODOT_BIN to the Godot console executable.
@@ -16,19 +16,20 @@ if not exist "%GODOT_BIN%" (
 )
 
 if not exist ".logs" mkdir ".logs"
+call "tools\ensure_csharp_build.bat" || exit /b 1
 rem Rebuild the generated tables FIRST -- same trap as run_balance_analysis.bat: without it the
 rem measurement silently reads the PREVIOUS build's data (see framework notes decision 167).
-"%GODOT_BIN%" --headless --path . --log-file ".logs\perf_build.log" --quit-after 2000 --script res://tools/build_tables.gd
+"%GODOT_BIN%" --headless --path . --log-file ".logs\perf_build.log" --quit-after 2000 res://tools/build_tables.tscn
 if errorlevel 1 (
 	echo [error] table build failed, see .logs\perf_build.log
 	exit /b 1
 )
 call "tools\check_log_errors.bat" ".logs\perf_build.log" || exit /b 1
-rem --quit-after is a wedge net, same reasoning as check_scene.bat: a --script run whose
-rem _initialize() hits a runtime error returns to the main loop and never calls quit(),
+rem --quit-after is a wedge net, same reasoning as check_scene.bat: a scene-entry run whose
+rem _Ready() hits a runtime error returns to the main loop and never calls quit(),
 rem so the console would sit there forever. With the frame cap it exits on its own.
 rem It also means a broken run is NOT distinguishable by exit code, so read the output.
-"%GODOT_BIN%" --headless --path . --log-file ".logs\perf.log" --quit-after 900 --script res://tools/analysis_perf.gd
+"%GODOT_BIN%" --headless --path . --log-file ".logs\perf.log" --quit-after 900 res://tools/analysis_perf_cs.tscn
 set "RUN_CODE=%ERRORLEVEL%"
 rem Marker first: a runtime error aborts the script, and a half table looks exactly like a full one.
 findstr /C:"PERF SNAPSHOT: OK" ".logs\perf.log" >nul 2>&1

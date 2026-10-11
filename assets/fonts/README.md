@@ -5,7 +5,7 @@
 
 ![字体试排](../../docs/dev/images/字体落地_试排.png)
 
-试排图由 `tools/artgen/font_preview.gd` 在**真窗口**里渲出来（headless 抓不到字形），
+试排图由 `tools/artgen/FontPreview.cs`（入口 `tools/artgen/font_preview_cs.tscn`）在**真窗口**里渲出来（headless 抓不到字形），
 里面把两档字号、拉丁与数字、三级文字颜色并排摆了一遍——顺带把「12px 原生的字按 13px 画会糊」
 这件事也摆出来了（同一页里对比着看，比读十遍规范直观）。
 

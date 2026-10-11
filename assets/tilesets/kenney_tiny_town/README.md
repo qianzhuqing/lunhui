@@ -28,7 +28,7 @@ Godot 的 `TileSetAtlasSource` 只要 `texture_region_size = 16×16`、`separati
 
 ## 常用瓦片索引（列, 行）
 
-这套索引是照 `tilemap_packed.png` 逐格核对出来的，`tools/mapgen/map_kit.gd`
+这套索引是照 `tilemap_packed.png` 逐格核对出来的，`tools/mapgen/MapKit.cs`
 里的瓦片常量就按这张表命名。
 
 | 用途 | 索引 |

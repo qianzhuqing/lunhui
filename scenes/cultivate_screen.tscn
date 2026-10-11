@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://src/ui/cultivate_screen.gd" id="1_cultivate_screen"]
+[ext_resource type="Script" path="res://src/ui/CultivateScreen.cs" id="1_cultivate_screen"]
 
 [node name="CultivateScreen" type="CanvasLayer"]
 layer = 5

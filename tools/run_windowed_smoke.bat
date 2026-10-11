@@ -12,13 +12,14 @@ rem Keep this file ASCII-only + CRLF: cmd.exe parses it in the local codepage.
 setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
-if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_win64.exe\Godot_v4.7.1-stable_win64_console.exe"
+if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64_console.exe"
 if not exist "%GODOT_BIN%" (
 	echo [error] Godot not found: %GODOT_BIN%
 	echo         Set GODOT_BIN to the Godot console executable.
 	exit /b 1
 )
 if not exist ".logs" mkdir ".logs"
+call "tools\ensure_csharp_build.bat" || exit /b 1
 
 rem Hand the windowed switch to check_scene.bat: same verdict marker, same runtime-error log gate,
 rem just without --headless and with its own log file names.
@@ -27,7 +28,7 @@ rem only the run_tests chain rebuilt them -- editing a CSV and running this smok
 rem judge the OLD data (a full round was chased on a stale copy, 2026-10-04).
 if not defined CHECK_SCRIPT_MAX_FRAMES set "CHECK_SCRIPT_MAX_FRAMES=2000"
 echo [build] rebuilding config tables ...
-"%GODOT_BIN%" --headless --path . --log-file ".logs\build.log" --quit-after %CHECK_SCRIPT_MAX_FRAMES% --script res://tools/build_tables.gd
+"%GODOT_BIN%" --headless --path . --log-file ".logs\build.log" --quit-after %CHECK_SCRIPT_MAX_FRAMES% res://tools/build_tables.tscn
 if errorlevel 1 (
 	echo [error] table build failed, see .logs\build.log
 	exit /b 1

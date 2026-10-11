@@ -23,7 +23,7 @@ const { Canvas, encodePNG } = require("./pixel");
 const { TILE, buildAtlas } = require("./tiles");
 const props = require("./props");
 
-// 图集坐标（与 map_kit.gd 的 T_* 一一对应）
+// 图集坐标（与 MapKit.cs 的 T_* 一一对应）
 const FLOOR = [1, 9];
 const WALL = [4, 8];
 const GAP = [4, 9];

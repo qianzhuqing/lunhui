@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://src/ui/dungeon_screen.gd" id="1_dungeon_screen"]
+[ext_resource type="Script" path="res://src/ui/DungeonScreen.cs" id="1_dungeon_screen"]
 
 [node name="DungeonScreen" type="CanvasLayer"]
 layer = 5

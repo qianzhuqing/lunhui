@@ -6,7 +6,7 @@ rem acceptance run. Rounds of this sweep found real holes (see framework notes 1
 rem method is kept as a tool instead of being rewritten each time.
 rem
 rem Two halves, because acceptance has two nets and they do not cover the same things:
-rem   * build-time  -> tools\analysis_mutations.gd  (in-memory copies, never touches CSV/.tres)
+rem   * build-time  -> tools\AnalysisMutations.cs  (in-memory copies, never touches CSV/.tres)
 rem   * acceptance  -> tools\analysis_mutations.ps1 (temp copies of tables + docs)
 rem
 rem NOT part of run_all_checks.bat: it copies files into a temp dir and is a diagnostic, not a gate.
@@ -19,13 +19,14 @@ rem Keep this file ASCII-only + CRLF: cmd.exe parses it in the local codepage.
 setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
-if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_win64.exe\Godot_v4.7.1-stable_win64_console.exe"
+if not defined GODOT_BIN set "GODOT_BIN=F:\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64\Godot_v4.7.1-stable_mono_win64_console.exe"
 if not exist "%GODOT_BIN%" (
 	echo [error] Godot not found: %GODOT_BIN%
 	echo         Set GODOT_BIN to the Godot console executable.
 	exit /b 1
 )
 if not exist ".logs" mkdir ".logs"
+call "tools\ensure_csharp_build.bat" || exit /b 1
 
 rem Same watchdog as the other --script steps: a runtime error inside _initialize would otherwise
 rem skip quit() and leave the process spinning forever.
@@ -38,7 +39,7 @@ echo === lunhui: mutation sweep ===
 
 echo.
 echo --- build-time validator (in-memory mutations) ---
-"%GODOT_BIN%" --headless --path . --log-file ".logs\mutation_build.log" --quit-after %CHECK_SCRIPT_MAX_FRAMES% --script res://tools/analysis_mutations.gd > ".logs\mutation_build_stdout.log" 2>&1
+"%GODOT_BIN%" --headless --path . --log-file ".logs\mutation_build.log" --quit-after %CHECK_SCRIPT_MAX_FRAMES% res://tools/analysis_mutations_cs.tscn > ".logs\mutation_build_stdout.log" 2>&1
 set "BUILD_CODE=%ERRORLEVEL%"
 rem Marker is the source of truth (a wedged run can still exit 0); the runtime-error gate too.
 findstr /C:"MUTATIONS: OK" ".logs\mutation_build_stdout.log" >nul 2>&1

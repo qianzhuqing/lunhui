@@ -5,7 +5,7 @@
 脚本与门限看 `tools/AGENTS.md`。
 
 - **CSV 是唯一数值源**：`data/tables/*.csv` 由设计师维护，运行期只读 `data/generated/*.tres`（生成物不进 Git）。
-  **改完 CSV 必须重建**（`tools\build_tables.gd`／`run_tests.bat`／`run_all_checks.bat` 都会重建）——
+  **改完 CSV 必须重建**（`tools\BuildTables.cs`／`run_tests.bat`／`run_all_checks.bat` 都会重建）——
   不重建就等于在读上一版数据，而输出看不出区别（真踩过：观测工具没重建，量出错误结论并写进了文档，
   见框架说明决策 167／168）。现在 `TableDb` 加载时会自己提醒："CSV 比 data/generated 新"。
 - 不修改既有 CSV 的已有列；新增列要同步行类与校验规则。
@@ -13,11 +13,11 @@
   `clue_service` 当**线索标题**渲染、被 `event_check_service` 拼进「已经做过了」与失败提示；
   同理 `building_def.desc`、`map_local` 的名字与说明也一样会摆到界面上。
   所以**别在这些列里写表名／列名／旗标 id／`once_only`／Q 编号**这类 token——
-  玩家看不懂，而且 `CopyGuard`（`tests/test_copy_audit.gd` ＋ 每个场景自检里的
+  玩家看不懂，而且 `CopyGuard`（`tests/TestCopyAudit.cs` ＋ 每个场景自检里的
   `COPY id_tokens`）**当场会红**。**机制说明一律进设计文档**（例：20 号 §七、07 §六），
   表里只留人话。真踩过：0.28.0／0.29.0 的新行里四个 token 全被 CopyGuard 命中（决策 286）。
-- **改枚举要三处一起改**：`docs/design/06_配置表说明.md`（数据字典）／`src/core/table_validator.gd` 的 `ENUMS`／
-  `tools/validate_tables.ps1` 的枚举与引用检查。`tests/test_handshake.gd::_check_doc_enums_match_code`
+- **改枚举要三处一起改**：`docs/design/06_配置表说明.md`（数据字典）／`src/core/TableValidator.cs` 的 `enums()`／
+  `tools/validate_tables.ps1` 的枚举与引用检查。`tests/TestHandshakeDocs.cs::CheckDocEnumsMatchCode`
   会把「06 里写的枚举」与「代码 ENUMS／表内实际取值」对一遍——曾经 `event_check.reward_type`
   文档写 7 种、代码只剩 4 种，导致「配一条 equip 奖励」被自己的构建期校验器拒掉（见框架说明决策 87）。
   文档里那几处**已知过期**的写在 `DOC_ENUM_KNOWN_STALE` 并注明理由，改完删一行。

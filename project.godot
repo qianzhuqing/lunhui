@@ -17,8 +17,12 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-GameData="*res://src/autoload/game_data.gd"
-GameSession="*res://src/autoload/game_session.gd"
+GameData="*res://src/autoload/GameData.cs"
+GameSession="*res://src/autoload/GameSession.cs"
+
+[dotnet]
+
+project/assembly_name="lunhui"
 
 [display]
 

@@ -6,7 +6,7 @@
 // `avatars.js`：一份东西两处定义，漂了不报错，正是这个仓库最防的那种坑。
 //
 // 路径不是照 15 §六 的表抄的，而是**照代码实际加载的路径**：
-//   `src/ui/npc_panel.gd` 读的是 `res://assets/sprites/avatars/avatar_<npc_id>.png`
+//   `src/ui/NpcPanel.cs` 读的是 `res://assets/sprites/avatars/avatar_<npc_id>.png`
 //   （设计文档里写的是 `assets/sprites/npc/`，与工程不一致——出图要按工程，见决策 276）。
 // 因此这里的文件名 = `npc_def.npc_id`，一位不能差。
 //

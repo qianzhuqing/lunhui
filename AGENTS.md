@@ -1,6 +1,8 @@
 ﻿# 约定摘要
 
-《轮回》是一个 Godot 4.7（GDScript，Mobile 渲染器）的武侠回合制 RPG。
+《轮回》是一个 Godot 4.7（**C#**，Mobile 渲染器）的武侠回合制 RPG——
+2026-10-11 起**除 `addons/` 外全部是 C#**（原先的 GDScript 已整体搬完，见
+`docs/dev/CSharp迁移计划.md`；后续开发一律 C#）。
 策划文档在 `docs/design/`（**变更日志只保留最近 5 个版本**，更早 47 个在
 `docs/design/archive/CHANGELOG.md`）；工程说明在 `docs/dev/框架说明.md`（**现状说明**——
 **377 条编号决策已拆到 `docs/dev/decisions/`**：全仓库那些「见框架说明决策 N」的引用，
@@ -174,7 +176,7 @@ Get-ChildItem $env:USERPROFILE\.codex\sessions -Recurse -Filter *.jsonl |
 > 想快速了解现状（能玩到什么、缺什么），先看 `docs/dev/当前状态.md` 这一页看板。
 
 ```bat
-tools\run_tests.bat        rem 生成配置表 → 刷新类缓存 → 跑自检，退出码 0 = 全绿
+tools\run_tests.bat        rem 生成配置表 → 跑 C# 自检（单链，转发 run_tests_cs.bat），退出码 0 = 全绿
 tools\run_all_checks.bat   rem 一条命令跑完「自检 + 表校验 + 配表审计 + 地图验收（07 §9）+ 跨场景闭环 + 13 个真实场景自检」；步数看它末尾的 passed steps
 tools\run_mutation_sweep.bat rem 变异探针（手动·只读）：故意改坏数据，看两道校验网抓不抓得住；退出码 0 = 每条都被抓住
 tools\run_mutation_sweep.bat code rem 再跑第三块「代码常量」（每个 case 一次完整自检，约 10 分钟）：改坏了手感常量有没有测试会红
@@ -222,31 +224,32 @@ tools\run_windowed_smoke.bat
   不加例外就报 `fatal: detected dubious ownership`——已用
   `git config --global --add safe.directory F:/GodotProject/lunhui` 修好，**现在直接跑 `git` 即可**
   （不带 `-c safe.directory=…` 也行）。换机器／换账户后若又遇到这条，照上面加一行即可。
-- **新加的公共接口要真的接进游戏路径**：`tests/test_handshake_code.gd::_check_no_new_test_only_api` 会扫
-  「定义了但 `src/`＋`scenes/` 里没人调用」的函数（`_` 开头的跳过），只在白名单 `TEST_ONLY_API_ALLOWED`
+- **新加的公共接口要真的接进游戏路径**：`tests/TestHandshakeCodeGuards.cs::CheckNoNewTestOnlyApi` 会扫
+  「定义了但 `src/`＋`scenes/` 里没人调用」的函数（`_` 开头的跳过，**`public static` 也算**——
+  2026-10-11 P5 补的正则，补之前静态口在这道门里整个隐形），只在白名单 `TestOnlyApiAllowed`
   里才放行。真出了这类坑：图鉴奖励 `codex_bonus()` 写好却只有用例在调，游戏里收集再多也不涨属性。
   要么接上，要么把名字与理由写进白名单。
 - **同一事实只许有一处定义**（漂移了不报错的那种）：`LOCKED_SCENES` 归 `WorldMapService`、
   贡献 kind 字符串（`attr_point`／`stat_flat`）归 `AttributeCalculator`，别在别处再写字面量。
-  `tests/test_handshake_code.gd::_check_single_source_of_truth()` 按 `SINGLE_SOURCE_RULES` 盯着；
+  `tests/TestHandshakeCodeGuards.cs::CheckSingleSourceOfTruth()` 按 `SINGLE_SOURCE_RULES` 盯着；
   新发现这类重复（**写错只会静默丢东西**）就加一条规则。场景路径那种写错就加载失败的不收（见决策 88）。
 - **公式不进表**：表只配系数、上限、曲线枚举，算法写在 `src/core/`。
-- 跨文件**调用**（`X.new()`／`X.静态方法()`）必须走 `preload` 常量，别把"能不能跑起来"压在
-  `.godot` 的全局类名缓存上（`tests/test_handshake_code.gd::_check_preload_for_global_class_calls` 盯着，
-  2026-10-04 起 0 处裸调用）。**类型标注**（`var x: TableDb`、`-> Inventory`）可以写全局类名——
-  那是仓库的现状（106 处），靠工具链每轮 `--editor --quit` 刷新缓存；这条界线是量出来的，见决策 369。
+- **跨文件调用直接调就行**：源码全在同一个程序集里，C# 没有 `preload` 这一说。原先那条
+  「调用必须走 `preload` 常量、别压在 `.godot` 的全局类名缓存上」的门限**随 GDScript 一起退休了**
+  （2026-10-11 P5，`CheckPreloadForGlobalClassCalls` 已删；它当年为什么要、那条界线怎么量出来的
+  见决策 369）。接替它的是同一条思路的 C# 版：**新加的公共接口要真的接进游戏路径**（见上一条）。
 - **单文件别长成上帝类**：一个脚本只担一类职责、按职责拆细，**单个文件硬上限 800 行**，超了就要拆。
   存量超标文件列在 `docs/dev/代码拆分清单.md`（2026-10-04 量出 15 个，已拆掉
-  `tests/test_handshake.gd` 一个 → 剩 14 个），按优先级逐步拆，**新增代码不许把已有数字继续往上推**。
+  `tests/TestHandshake.cs` 一个 → 剩 14 个），按优先级逐步拆，**新增代码不许把已有数字继续往上推**。
   拆分**只挪位置、不改行为**：一个批次拆一个文件，拆完 `tools\run_tests.bat` 与
-  `tools\validate_tables.ps1` 仍然全绿，才动下一个。门限是 `tests/test_handshake_repo.gd::_check_file_size`
+  `tools\validate_tables.ps1` 仍然全绿，才动下一个。门限是 `tests/TestHandshakeRepoFiles.cs::CheckFileSize`
   （白名单就是那份清单本身，拆完把它那一行划掉、抬头的「N 个超标」跟着改）。
 - 不要改 `addons/godot-mcp/`（编辑器插件）。`addons/sound_manager/` 是复用的第三方 MIT 库，
   它的规矩见 `src/audio/AGENTS.md`。
 - 主场景是 `scenes/main_menu.tscn`（启动菜单）；`scenes/bootstrap.tscn` 是配置表诊断场景，不是入口。
 - `GameData`（配置表）与 `GameSession`（当前这一局的 GameState）是 autoload；取它们不要用
   `get_node("/root/X")` 绝对路径，`--script` 模式下会失败，统一走 `Engine.get_main_loop()` 的 root 相对查找
-  （见 `src/ui/main_menu.gd` 的 `_session_node`）。
+  （见 `src/ui/MainMenu.cs` 的 `_session_node`）。
 - **改跨场景衔接（大地图↔小地图、战斗↔回程、驿站传送）或存读档之后必须跑 `tools\check_loop.bat`**：
   它在真引擎里跑真实场景切换（大地图→小地图／回大地图、明雷战斗→回大地图、房间战斗→回小地图）
   外加一次**真文件存读档指纹比对**。用例里大多数切场景都被 `handler` 拦下了，所以那一层只有它能看见
@@ -254,7 +257,7 @@ tools\run_windowed_smoke.bat
 
 ## 策划改了需求怎么办（强制流程）
 
-策划每改一次需求，开发侧的**计划和验证都要跟着动**，这条由 `tests/test_handshake_*.gd`（八族）把关：
+策划每改一次需求，开发侧的**计划和验证都要跟着动**，这条由 `tests/TestHandshake*.cs`（八族）把关：
 
 1. 读 `docs/design/CHANGELOG.md`，看当前设计版本和影响模块。
    **它只保留最近 5 个版本**（2026-10-04 起）——更早的 47 个已归档到
@@ -262,7 +265,7 @@ tools\run_windowed_smoke.bat
 2. 在 `docs/dev/模块对接表.csv` 找到自己负责的模块，评估要不要返工。
 3. 改代码 → **补或改 `tests/` 里的用例**（新增能力必须有新断言，改动的数值必须有对应校验）。
 4. 回填 `docs/dev/验证清单.csv`：`verify_paths` 写清用例文件，`verified_design_version` 改成当前设计版本。
-   **新写的用例必须同时加进 `tools/run_tests.gd` 的 `TEST_SCRIPTS`**——只登记不执行会被
+   **新写的用例必须同时加进 `tools/RunTestsCs.cs` 的 `Suites`**——只登记不执行会被
    `test_handshake` 的新门限抓出来（「登记了却从不运行」），那是以前两个门限都盖不住的方向。
 5. 同步对接表的 `design_version`（对齐当前版本）与 `status`。
 6. 跑 `tools\run_tests.bat` 与 `tools\validate_tables.ps1`，两个都必须绿。
@@ -282,7 +285,7 @@ tools\run_windowed_smoke.bat
 `docs/design/` 下也不许有没人引用的设计文档（除 README／CHANGELOG）——那三列是给设计侧「去哪找」用的，
 写错比不写更糟。
 还有死代码检查：`src/` 下的脚本与 `scenes/` 下的场景都必须有人引用（路径字符串或 `class_name` 被用到）。
-要留「暂时没人用」的东西，加进 `tests/test_handshake.gd` 的 `INFRASTRUCTURE_SCRIPTS` 并写明理由。
+要留「暂时没人用」的东西，加进 `tests/TestHandshake.cs` 的 `InfrastructureScripts` 并写明理由。
 
 ## 结构
 
@@ -291,13 +294,13 @@ tools\run_windowed_smoke.bat
 | `src/core/` | 纯逻辑（`RefCounted`/`Resource`，无节点），可在 headless 下端到端跑 |
 | `src/data/` | 行类与表注册表（CSV 列 ↔ 行类字段的唯一映射） |
 | `src/audio/` | 音效播放层（复用 MIT 的 `godot_sound_manager`；事件名→文件只在 `Sfx.EVENTS` 一处） |
-| `src/autoload/game_data.gd` | `GameData` 单例：加载表 + 校验 |
-| `tests/` | 自检用例，继承 `tests/test_case.gd` |
+| `src/autoload/GameData.cs` | `GameData` 单例：加载表 + 校验 |
+| `tests/` | 自检用例，继承 `tests/TestCase.cs` |
 | `tools/` | 构建与自检脚本 |
 
 ## 加功能的路子
 
-配表（`data/tables`）→ 行类（`src/data/tables`）→ 注册表登记 → 校验规则（`src/core/table_validator.gd`）
+配表（`data/tables`）→ 行类（`src/data/tables`）→ 注册表登记 → 校验规则（`src/core/TableValidator.cs`）
 → 纯逻辑类（`src/core`）→ 用例（`tests/`）→ `docs/dev/框架说明.md` 补一段。
 
 ## 代码风格

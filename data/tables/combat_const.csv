@@ -8,3 +8,10 @@ backstab_poise_reduce,背袭架势削减,0.3,背袭时敌方架势初始值降�
 surprise_damage_bonus,奇袭首回合增伤,0.5,从背后接触沉睡敌人的首回合加成
 sneak_detect_reduce,潜行被发现概率降低,0.4,
 dot_execute_threshold,DoT斩杀阈值,0.15,目标血量低于此比例时剩余DoT立即结算
+defend_poise_gain,主动防御回复架势,0.15,主动防御时回复自身架势上限的比例
+parry_damage_mult,拆招伤害倍率,0.5,被拆掉的那一招整招伤害乘这个数
+parry_poise_gain,拆招架势反涨,0.15,拆招者回复自身架势上限的比例
+flee_base,逃跑基础成功率,0.5,双方身法相同时的成功率
+flee_min,逃跑成功率下限,0.25,
+flee_max,逃跑成功率上限,0.95,
+poise_break_bonus,破绽窗口增伤,0.5,架势被打空后受到的额外伤害比例

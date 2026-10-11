@@ -20,7 +20,7 @@
 
 - `tools/*.bat` 必须保持纯 ASCII：cmd.exe 用本地代码页解析，非 ASCII 会变成乱码命令。
   新增 `.bat` 一律 **CRLF 行尾**（LF-only 时 `call :label` 之类的标签查找会出问题）。
-  （这两条 + `.ps1` 的 BOM 规则已经**写了门限**：`tests/test_handshake.gd::_check_repo_conventions`，
+  （这两条 + `.ps1` 的 BOM 规则已经**写了门限**：`tests/TestHandshakeRepoFiles.cs::CheckRepoConventions`，
   按原始字节验，失败会点出字节位置。`run_tests.bat` 当年就是 LF-only，被这条门限抓出来的。）
 - `tools/*.ps1` 带中文的话必须存成 **UTF-8 带 BOM**：Windows PowerShell 5.1 读无 BOM 的 .ps1 会按 ANSI 解，
   中文被拆坏后连语法都会报错（`audit_table_usage.ps1` 踩过，报的是莫名其妙的「缺少 }」）。
@@ -40,7 +40,7 @@
 
 - **要判断「一条规则到底有没有在管」，用变异探针**（2026-10-03 的做法，见框架说明决策 152）：
   在一份临时副本上把数据**故意改坏**，`validate_tables.ps1 -Root <临时目录>` 只跑校验——
-  「错误/警告条数与基线一模一样」＝这条改动没被抓住。构建期的规则（`table_validator.gd`）点不到
+  「错误/警告条数与基线一模一样」＝这条改动没被抓住。构建期的规则（`TableValidator.cs`）点不到
   临时目录，要用内存副本喂（复制 `db.tables[...]`、只改内存，**不碰 CSV／.tres**）。
   两个口径：① **PS1 只是两道网里的一道**，别把「PS1 没抓到」当成「没人管」；
   ② 补完新规则后要**再跑一遍同一批改动**，确认每条都被抓住（只写"已加规则"不算数）。
@@ -88,10 +88,10 @@ godot --headless --path . --log-file .logs\menu_smoke.log res://scenes/main_menu
 默认上限 `CHECK_SCRIPT_MAX_FRAMES=2000`，可用环境变量覆盖。
 每一步跑完还会调 `tools\check_log_errors.bat` 扫引擎日志：里面有 `SCRIPT ERROR` 就判红——
 它能抓住「退出码 0、`SELFCHECK: OK` 也打印了，但出错那一行之后的代码根本没跑」这种假绿
-（反向验证过：把一条越界塞进 `run_tests.gd` 的 `quit()` 之后，两道旧判定都说绿，只有它报红）。
+（反向验证过：把一条越界塞进旧 `run_tests.gd` 的 `quit()` 之后，两道旧判定都说绿，只有它报红）。
 
 **场景跑的是生成物，不是 CSV**（2026-10-04 加）：所有场景自检（含真窗口冒烟）读的是
-`data/generated/*.tres`，而**只有 `run_tests.bat` 那条链会重建它**（`build_tables.gd`）。
+`data/generated/*.tres`，而**只有 `run_tests.bat` 那条链会重建它**（`BuildTables.cs`）。
 所以「改了 `data/tables/*.csv` → 直接跑场景自检／冒烟」会**拿旧数据判**（红的是幽灵、绿的也是幽灵——
 有人为此白追了一轮）。处置：**`run_windowed_smoke.bat` 现在开头自己先重建一次**（多几秒，
 不再靠人记）；单独跑 `check_scene.bat`／`check_maps.bat`／`check_loop.bat` 之前，
@@ -120,8 +120,8 @@ godot --headless --path . --log-file .logs\menu_smoke.log res://scenes/main_menu
 - **试探式读**（`Get-Content … | Select-Object -Skip N -First M`）：**64 次，26%**；
 - 验收（全量 ＋ 单元）：14 次，6%；
 - **77% 的命令是单条**（242 次里 186 次没合并任何东西）。
-- 同几个文件被**试探式读了 6–9 次**：`test_overworld.gd` 9、`overworld_controller.gd` 8、
-  `local_map_controller.gd` 7、`test_handshake.gd` 6。
+- 同几个文件被**试探式读了 6–9 次**：`TestOverworld.cs` 9、`OverworldController.cs` 8、
+  `LocalMapController.cs` 7、`TestHandshake.cs` 6。
 
 **四条做法**（按省下的调用数排）：
 
@@ -135,8 +135,8 @@ godot --headless --path . --log-file .logs\menu_smoke.log res://scenes/main_menu
 4. **验收分档 ＋ 合并补丁**：改一处 → 只跑最小的那条（单场景自检／`run_tests.bat`）；
    **全量一轮最多一次**，放收尾。同一个文件的多处改动**合并进一个 `apply_patch`**（多个 hunk 一起发）。
 5. **同一条线程里读过的文件，别再读一遍**（2026-10-04 实测：`小程序` **一条线程内**
-   `test_overworld.gd` 被读了 **9 次**、`overworld_controller.gd` **8 次**、
-   `local_map_controller.gd` 与 `test_handshake.gd` 各 **7 次**——**全是它自己反复读**，
+   `TestOverworld.cs` 被读了 **9 次**、`OverworldController.cs` **8 次**、
+   `LocalMapController.cs` 与 `TestHandshake.cs` 各 **7 次**——**全是它自己反复读**，
    不是不同线程各读一次）。它已经在你的历史里了，**重读＝纯重发**。
    要确认「有没有变」就 `git diff --stat <文件>`，要拿具体几行就 `rg -n`——
    **只有文件确实被改过、或上下文被压缩把它丢了**，才重读。

@@ -44,10 +44,10 @@ node tools\artgen\artgen.js --out DIR  rem 落到别处（改图时先看效果�
 
 ## 两条硬约束
 
-1. **图集坐标不能动。** `tiles.js` 的 `LAYOUT` 里每个坐标都对应 `tools/mapgen/map_kit.gd`
+1. **图集坐标不能动。** `tiles.js` 的 `LAYOUT` 里每个坐标都对应 `tools/mapgen/MapKit.cs`
    的 `T_*` 常量；挪一格，所有场景的 `tile_map_data` 就全指错地方，而且**不报错**——
    只是地图上长出一堆莫名其妙的东西。要加瓦片就挑空坐标加，然后同步 `T_*` 与
-   主题的 `tiles`／`solid` 清单（`.tres` 的 `blocked` 与碰撞盒由 `map_kit` 生成）。
+   主题的 `tiles`／`solid` 清单（`.tres` 的 `blocked` 与碰撞盒由 `MapKit` 生成）。
 2. **主题之间只有调色板与材质语言不同。** `THEMES` 里每套主题给一组区域主色
    （16_区域美术设定 §五要求相邻区域不撞主色）＋ `groundStyle`／`wallStyle`／`floorStyle`；
    画法共用。加主题 = 加一份调色板 + 一个 `.tres` + 一个 `map_local` 行。
@@ -106,7 +106,7 @@ headless 抓不到贴图导入与渲染路径上的问题。
 
 早先还有一条：**文件名 = `skill_base.skill_id`，一位不能差**。第一版按 `pf_<school>_NN` 的序号规律
 猜名字（`pf_xuanwei_06`），而本命／机遇那类条目在表里**带名字后缀**（`pf_xuanwei_zhbai`）→
-图静静地不显示。2026-10-04 由 `test_map_assets._check_icon_file_names` 抓出来并已改名
+图静静地不显示。2026-10-04 由 `TestMapAssets._check_icon_file_names` 抓出来并已改名
 （**改的是本文件的输出键，不是文件名**——手改会被下次重跑覆盖，决策 357）。
 
 表里 `skill_base` 共 **65 行**，拆成两半、两套画法（15 §4.3 的「同一类别内构图取齐」：
@@ -210,7 +210,7 @@ cmd /c tools\run_tests.bat                rem 硬门限：每张图的名字都�
 cmd /c tools\run_windowed_smoke.bat       rem 真窗口：角色面板的武学行「有图才摆」，这一趟能看见
 ```
 
-`_check_icon_file_names`（`tests/test_map_assets.gd`）会把「名字对不上表」的图当场点出来——
+`_check_icon_file_names`（`tests/TestMapAssets.gd`）会把「名字对不上表」的图当场点出来——
 这是 2026-10-04 真实抓过 5 张的那条门限。**只要文件名 = `skill_id`，父目录是 `assets/icons/skill/`。**
 
 **按类别分两批交的**（30 内功一次、35 招式一次），每批都单独跑绿、单独上线——
@@ -219,8 +219,8 @@ cmd /c tools\run_windowed_smoke.bat       rem 真窗口：角色面板的武学�
 
 ### 地图道具：`props.js` 里的两张「剧情道具」
 
-这两张不是运行期道具，是**地图资产**，所以路径常量该落在生成器侧（`tools/mapgen/map_kit.gd`），
-不是 `chest.gd` / `trigger_point.gd` 那种运行期目录常量——**这条分界是小程序 2026-10-04 澄清的**。
+这两张不是运行期道具，是**地图资产**，所以路径常量该落在生成器侧（`tools/mapgen/MapKit.cs`），
+不是 `Chest.cs` / `TriggerPoint.cs` 那种运行期目录常量——**这条分界是小程序 2026-10-04 澄清的**。
 
 | 文件 | 尺寸 | 谁摆 |
 |---|---|---|

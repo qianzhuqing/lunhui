@@ -463,7 +463,7 @@ foreach ($row in $Tables['character_base.csv']) {
 }
 
 # 5.11 战斗常数：管线依赖的常数必须全部存在
-foreach ($constId in @('crit_base_mult', 'def_const', 'def_level_coeff', 'variance_min', 'variance_max', 'backstab_poise_reduce', 'surprise_damage_bonus', 'dot_execute_threshold')) {
+foreach ($constId in @('crit_base_mult', 'def_const', 'def_level_coeff', 'variance_min', 'variance_max', 'backstab_poise_reduce', 'surprise_damage_bonus', 'dot_execute_threshold', 'defend_poise_gain', 'parry_damage_mult', 'parry_poise_gain', 'flee_base', 'flee_min', 'flee_max', 'poise_break_bonus')) {
     if ((Get-Col $Tables['combat_const.csv'] 'const_id') -notcontains $constId) {
         Add-Error "[完整] combat_const.csv 缺少伤害管线依赖的常数 $constId"
     }
@@ -943,7 +943,10 @@ foreach ($row in $Tables['character_base.csv']) {
 $srcText = ''
 $srcDirForAudit = Join-Path $root 'src'
 if (Test-Path -LiteralPath $srcDirForAudit) {
-    foreach ($f in (Get-ChildItem -LiteralPath $srcDirForAudit -Recurse -File -Filter *.gd)) {
+    # 两种语言都扫：搬进 C# 的常量（`PracticeService.TEAM_ID` 这种）只写在 `.cs` 里，
+    # 只扫 `.gd` 的话 `team_dummy_training` 会被当成「没人用」的孤立数据（2026-10-10 踩到）。
+    foreach ($f in (Get-ChildItem -LiteralPath $srcDirForAudit -Recurse -File |
+                    Where-Object { $_.Extension -eq '.gd' -or $_.Extension -eq '.cs' })) {
         $srcText += [IO.File]::ReadAllText($f.FullName) + "`n"
     }
 }
@@ -1041,7 +1044,7 @@ Write-Output ("  可达性 : 装备 {0} / 道具 {1} / 武学 {2} 部逐条反�
 # 口径（只算**已经发得出来**的成员）：
 #   equip         来源同 5.19（掉落／货架／起始／事件与隐藏奖励／敌人身上／NPC 兑换／代码点名），
 #                 并**按槽位**算上限——同槽位最多 `equip_slot_def.max_equip` 件（戒指是 2）
-#   skill_active   招式数 = 来源已实现的成员数（`SkillGrant.IMPLEMENTED_SOURCES` 那几类）
+#   skill_active   招式数 = 来源已实现的成员数（`SkillGrant.implemented_sources()` 那几类）
 #   skill_passive  格数 = 来源已实现的成员 `slot_cost` 之和
 #
 # **口径的边界（2026-10-04 补）**：这里只算**数据侧**「有没有来源」——**地图侧缺位点它看不见**。
@@ -1236,7 +1239,7 @@ Write-Output ("  掉落类型 : {0} 个槽逐条比了「表里写的 item_type�
 # 04 有两张「定死」的表：**伤害类型表**（7 行 × 可暴击／可闪避／吃外防／吃内防／结算时机／持续／层数上限）
 # 与**系别相克矩阵**（3×3）。它们以前只活在文档里，代码与数据各一套、没人比对——
 # **第一次跑就抓到一条**：`dot_internal`（内伤）文档写「吃内防 否」，数据却是 `use_def_qi=1`，
-# 也就是内伤每一跳都会被目标的**内功防御**削减，而 `damage_resolver` 的注释同样写着「内伤无视防御」。
+# 也就是内伤每一跳都会被目标的**内功防御**削减，而 `DamageResolver.cs` 的注释同样写着「内伤无视防御」。
 # 报**警告**不报错误：改哪一边是设计侧的内容决定（按文档把那一格改成 0 是一个字的活）。
 $doc04 = Join-Path $Root 'docs/design/04_战斗与伤害.md'
 if (Test-Path -LiteralPath $doc04) {
@@ -1916,7 +1919,7 @@ foreach ($row in $Tables['dialogue_node.csv']) {
 }
 foreach ($row in $Tables['dialogue_option.csv']) {
     # `set_flag` 能写多个（分号隔开：幕二「拔剑」那条一次置两个旗标，Q83）——每一段都要认得出来。
-    # 拆法是 GDScript 那边（行类 `dialogue_option_row.parse_set_flags`）的镜像，改一处要连着改另一处。
+    # 拆法是行类那边的镜像（C# 迁移后是 `DialogueOptionRow.parse_set_flags`），改一处要连着改另一处。
     foreach ($part in ([string]$row.set_flag) -split ';') {
         $flag = $part.Trim()
         if ($flag -ne '' -and -not $flag.StartsWith('flag_') -and -not $flag.StartsWith('heart_')) {
@@ -2152,13 +2155,15 @@ else {
 
 # ---------------------------------------------------------------- 9. 与 Godot 行类的列漂移
 
-$registryPath = Join-Path $Root 'src/data/table_registry.gd'
+$registryPath = Join-Path $Root 'src/data/TableRegistry.cs'
 $rowScriptDir = Join-Path $Root 'src/data/tables'
 $driftCount   = 0
 
 if ((Test-Path -LiteralPath $registryPath) -and (Test-Path -LiteralPath $rowScriptDir)) {
     $registryText = Get-Content -LiteralPath $registryPath -Encoding UTF8 -Raw
-    $tableBlockMatch = [regex]::Match($registryText, 'const\s+TABLES\s*:=\s*\[(.*?)\]', 'Singleline')
+    # C# 迁移（P2，2026-10-10）：注册表从 `table_registry.gd` 换成 `TableRegistry.cs`，
+    # 常量读法跟着换（`public static readonly string[] TABLES = { … };`）。
+    $tableBlockMatch = [regex]::Match($registryText, 'public\s+static\s+readonly\s+string\[\]\s+TABLES\s*=\s*\{(.*?)\};', 'Singleline')
     $registeredTables = @()
     if ($tableBlockMatch.Success) {
         $registeredTables = @([regex]::Matches($tableBlockMatch.Groups[1].Value, '"([a-z0-9_]+)"') |
@@ -2167,22 +2172,29 @@ if ((Test-Path -LiteralPath $registryPath) -and (Test-Path -LiteralPath $rowScri
 
     # 列别名：CSV 列名与行类属性名不一致的少数情况（如 id→row_id、exp→exp_reward），
     # 必须套用别名后再比对，否则会把合法表报成漂移。
+    # C# 版把别名写成三元组一行一条（`("表", "列", "属性")`，见 TableRegistry.cs 里为什么这么写），
+    # 所以这里读 ALIAS_TRIPLES 而不是嵌套字典字面量。
     $columnAliases = @{}
-    $aliasBlock = [regex]::Match($registryText, 'const\s+COLUMN_ALIASES\s*:=\s*\{(.*?)\n\}', 'Singleline')
+    $aliasBlock = [regex]::Match($registryText, 'ALIAS_TRIPLES\s*=\s*\{(.*?)\};', 'Singleline')
     if ($aliasBlock.Success) {
-        foreach ($tableMatch in [regex]::Matches($aliasBlock.Groups[1].Value, '"([a-z0-9_]+)"\s*:\s*\{([^}]*)\}')) {
-            $aliasTable = $tableMatch.Groups[1].Value
-            $aliasMap = @{}
-            foreach ($pairMatch in [regex]::Matches($tableMatch.Groups[2].Value, '"([^"]+)"\s*:\s*"([^"]+)"')) {
-                $aliasMap[$pairMatch.Groups[1].Value] = $pairMatch.Groups[2].Value
-            }
-            $columnAliases[$aliasTable] = $aliasMap
+        foreach ($triple in [regex]::Matches($aliasBlock.Groups[1].Value, '\(\s*"([a-z0-9_]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')) {
+            $aliasTable = $triple.Groups[1].Value
+            if (-not $columnAliases.ContainsKey($aliasTable)) { $columnAliases[$aliasTable] = @{} }
+            $columnAliases[$aliasTable][$triple.Groups[2].Value] = $triple.Groups[3].Value
         }
     }
 
     foreach ($tableName in $registeredTables) {
         $csvPath = Join-Path $tableDir "$tableName.csv"
         $rowPath = Join-Path $rowScriptDir "${tableName}_row.gd"
+        # C# 迁移（P2）：行类正一个个从 .gd 换成 .cs（类名＝表名 PascalCase ＋ Row）。
+        # 两边都看一眼，搬完再删掉这一段回落逻辑（见 docs/dev/CSharp迁移计划.md）。
+        if (-not (Test-Path -LiteralPath $rowPath)) {
+            $csRowName = ((($tableName -split '_') | ForEach-Object { $_.Substring(0,1).ToUpper() + $_.Substring(1) }) -join '') + 'Row'
+            $csRowPath = Join-Path $rowScriptDir "$csRowName.cs"
+            if (Test-Path -LiteralPath $csRowPath) { $rowPath = $csRowPath }
+        }
+        $rowFileName = [System.IO.Path]::GetFileName($rowPath)
 
         if (-not (Test-Path -LiteralPath $csvPath)) {
             Add-Warning "[代码漂移] 注册表登记了 $tableName，但 data/tables 下没有 $tableName.csv"
@@ -2190,16 +2202,23 @@ if ((Test-Path -LiteralPath $registryPath) -and (Test-Path -LiteralPath $rowScri
             continue
         }
         if (-not (Test-Path -LiteralPath $rowPath)) {
-            Add-Warning "[代码漂移] 注册表登记了 $tableName，但没有行类 ${tableName}_row.gd"
+            Add-Warning "[代码漂移] 注册表登记了 $tableName，但没有行类 ${tableName}_row.gd（或 $csRowName.cs）"
             $driftCount++
             continue
         }
 
         $csvColumns = Split-CsvLine (@(Get-RawLines $csvPath)[0])
         $rowText = Get-Content -LiteralPath $rowPath -Encoding UTF8 -Raw
-        # 行类声明的 @export 字段；基类的 id 由构建脚本写入，不是 CSV 列
-        $exportNames = @([regex]::Matches($rowText, '@export\s+var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:') |
-            ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -ne 'id' })
+        # 行类声明的字段：GDScript 是 `@export var 名字: 类型`，C# 是 `[Export] public 类型 名字 { get; set; }`。
+        # 基类的 id 由构建脚本写入，不是 CSV 列。
+        $exportNames = if ($rowPath -like '*.cs') {
+            @([regex]::Matches($rowText, '\[Export\]\s*public\s+[A-Za-z0-9_\.<>\[\]]+\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{') |
+                ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -ne 'id' })
+        }
+        else {
+            @([regex]::Matches($rowText, '@export\s+var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:') |
+                ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -ne 'id' })
+        }
 
         # CSV 列 → 套用别名后应当出现的行类属性名
         $expectedProps = @()
@@ -2214,13 +2233,13 @@ if ((Test-Path -LiteralPath $registryPath) -and (Test-Path -LiteralPath $rowScri
 
         for ($colIndex = 0; $colIndex -lt $csvColumns.Count; $colIndex++) {
             if ($exportNames -notcontains $expectedProps[$colIndex]) {
-                Add-Warning "[代码漂移] $tableName 的 CSV 列 '$($csvColumns[$colIndex])' 在 ${tableName}_row.gd 里没有对应属性，构建会失败"
+                Add-Warning "[代码漂移] $tableName 的 CSV 列 '$($csvColumns[$colIndex])' 在 $rowFileName 里没有对应属性，构建会失败"
                 $driftCount++
             }
         }
         foreach ($propertyName in $exportNames) {
             if ($expectedProps -notcontains $propertyName) {
-                Add-Warning "[代码漂移] $tableName 的行类属性 '$propertyName' 在 CSV 表头里没有对应列，构建会失败"
+                Add-Warning "[代码漂移] $rowFileName 的行类属性 '$propertyName' 在 CSV 表头里没有对应列，构建会失败"
                 $driftCount++
             }
         }
@@ -2229,13 +2248,13 @@ if ((Test-Path -LiteralPath $registryPath) -and (Test-Path -LiteralPath $rowScri
     foreach ($f in $csvFiles) {
         $baseName = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
         if ($registeredTables -notcontains $baseName) {
-            Add-Warning "[代码漂移] $($f.Name) 尚未登记到 table_registry.gd，游戏运行期读不到这张表"
+            Add-Warning "[代码漂移] $($f.Name) 尚未登记到 TableRegistry.cs，游戏运行期读不到这张表"
             $driftCount++
         }
     }
 }
 else {
-    Add-Warning '[代码漂移] 未找到 src/data/table_registry.gd 或 src/data/tables，跳过代码一致性检查'
+    Add-Warning '[代码漂移] 未找到 src/data/TableRegistry.cs 或 src/data/tables，跳过代码一致性检查'
 }
 
 # ---------------------------------------------------------------- 10. 开发对接表
@@ -2294,11 +2313,12 @@ else {
 
 # 补齐「枚举三处」里漏在 PS1 的那 7 列（2026-10-04）。
 #
-# 由来：`data/AGENTS.md` 写着「改枚举要三处一起改：06 数据字典／`table_validator.ENUMS`／本脚本」，
+# 由来：`data/AGENTS.md` 写着「改枚举要三处一起改：06 数据字典／`src/core/TableValidator.cs` 的
+# `ENUMS`／本脚本」，
 # 而这一轮逐个对了一遍——`ENUMS` 里 41 个枚举列里，有 **7 列的列名在本脚本里一次都没出现过**
 # （也就是**这边根本没查**）：`building_def.building_type`／`drop_table.roll_type`／
 # `item_base.use_context`／`map_local.scene_type`／`map_region.node_type`／`talent_def.category`／
-# `weapon_type_def.default_element`。取值一律镜像 `table_validator.ENUMS`（那边是唯一出处，
+# `weapon_type_def.default_element`。取值一律镜像 `TableValidator.ENUMS`（那边是唯一出处，
 # 与 `docs/design/06_配置表说明.md` 由 `test_handshake._check_doc_enums_match_code` 对账）。
 $enumColumns = @(
     @{ Table = 'building_def.csv';    Id = 'building_id'; Column = 'building_type';   Values = @('shop', 'service') },
@@ -2324,7 +2344,8 @@ foreach ($spec in $enumColumns) {
 
 # 图标列必须等于**这一行自己的 id**（`equip_base.icon`／`item_base.icon`，15 §六＋A14，0.31.1）。
 # 界面取图是「优先 icon、空则退回行 id」——写错不会报错，只会**画出别人家的图标**；
-# 空着合法（等于退回 id）。构建期那条规则在 `table_validator._check_icon_self_reference`，这里是同一套。
+# 空着合法（等于退回 id）。构建期那条规则在 `TableValidatorStructure.CheckIconSelfReference`
+# （原 `table_validator._check_icon_self_reference`），这里是同一套。
 foreach ($spec in @(
     @{ Table = 'equip_base.csv'; Id = 'equip_id' },
     @{ Table = 'item_base.csv';  Id = 'item_id' }

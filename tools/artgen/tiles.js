@@ -1,6 +1,6 @@
 // 《轮回》墨色江湖瓦片集：按主题画 32×32 packed 图集。
 //
-// 图集坐标**必须**与 `tools/mapgen/map_kit.gd` 里的 T_* 常量一一对应——
+// 图集坐标**必须**与 `tools/mapgen/MapKit.cs` 里的 T_* 常量一一对应——
 // 这样换美术就只是换一张 PNG（地图脚本、场景、碰撞数据一行都不用动），
 // 也就是 15_美术风格需求 §六「按同名替换，不改代码」那条约定。
 //
@@ -993,11 +993,11 @@ function tileSkySlit(pal, seed) {
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
       const dx = Math.abs(x - 15.5) / 15.5;
-      const a = Math.pow(1 - dx, 2.2) * 0.78;
-      if (a <= 0.02) continue;
+      const m = Math.pow(1 - dx, 2.2) * 0.78;
+      if (m <= 0.02) continue;
       // 越靠上越亮（光从头顶的缝隙里下来），到底部散开
       const dy = y / (TILE - 1);
-      c.blend(x, y, hex(mix("#8EA8CC", "#D6E4F6", 1 - dy)), a * (1 - dy * 0.35));
+      c.blend(x, y, hex(mix("#8EA8CC", "#D6E4F6", 1 - dy)), m * (1 - dy * 0.35));
     }
   }
   for (let i = 0; i < 30; i++) {
@@ -1102,8 +1102,8 @@ function tileWell(pal, seed) {
   c.disk(15, 16, 9, hex(pal.waterDark));
   c.disk(15, 16, 7, hex(pal.water));
   c.ellipse(12, 13, 3, 2, hex(shade(pal.water, 0.25)));
-  for (let a = 0; a < 8; a++) {
-    const ang = (a / 8) * Math.PI * 2;
+  for (let m = 0; m < 8; m++) {
+    const ang = (m / 8) * Math.PI * 2;
     c.rect(15 + Math.cos(ang) * 11, 16 + Math.sin(ang) * 11, 3, 3, hex(pal.stoneLight));
   }
   c.rect(4, 6, 24, 3, hex(pal.woodDark));
@@ -1308,11 +1308,11 @@ function valueNoise(x, y, cell, seed, period) {
   const fy = (y / cell) - gy;
   const sx = fx * fx * (3 - 2 * fx);
   const sy = fy * fy * (3 - 2 * fy);
-  const a = noise(wrap(gx), wrap(gy), seed);
+  const m = noise(wrap(gx), wrap(gy), seed);
   const b = noise(wrap(gx + 1), wrap(gy), seed);
   const c = noise(wrap(gx), wrap(gy + 1), seed);
   const d = noise(wrap(gx + 1), wrap(gy + 1), seed);
-  return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+  return (m * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
 }
 
 /**
