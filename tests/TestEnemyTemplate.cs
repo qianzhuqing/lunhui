@@ -35,6 +35,7 @@ public partial class TestEnemyTemplate : TestCase
         _CheckPassiveCapacityRule(db);
         _CheckAttrMapSemantics(db);
         _CheckFactoryBasics(db);
+        _CheckElementColumn(db);
     }
 
     /// <summary>
@@ -313,6 +314,60 @@ public partial class TestEnemyTemplate : TestCase
             "green",
             "威胁标示统计（明雷颜色环用）"
         );
+    }
+
+    /// <summary>
+    /// `enemy_base.element`（设计 22 §六-6，2026-10-12 加列）：**空 ＝ 外功**。
+    ///
+    /// 这一列会让**相克乘数（1.3／0.8）真的动起来**，所以两个方向都要钉：
+    /// ① 配了的那两只要写进 `tags["element"]`——相性行与伤害管线读的是同一个 tag；
+    /// ② **没配的那种不能写空串**：`DamageResolver._dict_str(tags,"element",DEFAULT_ELEMENT)`
+    /// 是「键在就取值」，空串会让 `element_multiplier(atk, "")` 全落空、相克静默变 1.0
+    /// （静默丢机制是最危险的一种，所以这条要有个用例站着）。
+    /// </summary>
+    private void _CheckElementColumn(TableDb db)
+    {
+        var filled = new System.Collections.Generic.List<string>();
+        foreach (Variant entry in db.rows("enemy_base"))
+        {
+            if (entry.AsGodotObject() is EnemyBaseRow row && row.element.Length > 0)
+            {
+                filled.Add($"{row.enemy_id}={row.element}");
+            }
+        }
+
+        CheckEq(
+            string.Join(",", filled),
+            "en_bd_poison_hand=odd,en_hidden_drunk=internal",
+            "第一批只填两只（设计 22 §六-6：其余留空＝外功，铺开是内容决策）"
+        );
+
+        EnemyFactory factory = EnemyFactory.create(db);
+        GodotObject poison = factory.create_enemy("en_bd_poison_hand", "normal");
+        GodotObject drunk = factory.create_enemy("en_hidden_drunk", "normal");
+        GodotObject wolf = factory.create_enemy("en_wolf", "normal");
+        CheckEq(_TagOf(poison, "element"), "odd", "毒手的系别进了 tags");
+        CheckEq(_TagOf(drunk, "element"), "internal", "醉刀客的系别进了 tags");
+        CheckEq(
+            _TagOf(wolf, "element"), "",
+            "没配的那只**不写这个 tag**（写空串会让相克乘数整个失效）"
+        );
+
+        DamageResolver resolver = DamageResolver.create(db, RngService.create(1));
+        // 方向别写反：`element_multiplier(atk, def)` 读的是 `element_counter` 的 `element_atk|element_def`。
+        // 毒手是 `odd` 守方——克它的是**外功**（`external,odd,1.3`）；醉刀客是 `internal` 守方——克它的是**奇诡**。
+        CheckEq(resolver.element_multiplier("external", "odd"), 1.3, "外功打毒手（奇诡守）＝克（1.3）");
+        CheckEq(resolver.element_multiplier("odd", "internal"), 1.3, "奇诡打醉刀客（内功守）＝克（1.3）");
+        CheckEq(
+            resolver.element_multiplier("internal", DamageResolver.DEFAULT_ELEMENT), 1.3,
+            "没配的那只按外功算——内功打野狼仍是 1.3（与加列之前一模一样）"
+        );
+    }
+
+    private static string _TagOf(GodotObject actor, string key)
+    {
+        Godot.Collections.Dictionary tags = actor.Get("tags").AsGodotDictionary();
+        return tags.ContainsKey(key) ? tags[key].AsString() : "";
     }
 
     // ---------------------------------------------------------------- 夹具与小工具

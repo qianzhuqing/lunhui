@@ -408,7 +408,11 @@ public partial class RunTestsCs : Node
 /// `BattleScreenSelfTest` 补「相性签写中文系别名」一条——**它顺带抓出两个真 bug**：
 /// 相性行读的是 `defend_element`／`attack_element` 两个不存在的列名（所以那枚「克 X」签从来没出现过）。
 /// 于是实测 **11888**（TestCharacterSkillUi.cs 是 TestCharacterUi 的 partial，**不能进 Suites**——登记了会红「不在执行列表里」；验证清单 的 verify_paths 也只登记 suite 文件），MinAssertions 11857 → **11878**（total−10）。
-private const int MinAssertions = 11878;
+/// 敌人的系别与相性行（2026-10-12 小策划 P22）：`enemy_base.csv` ＋1 列 `element`（空＝外功，
+/// 第一批只填毒手 odd／醉刀客 internal）、`EnemyFactory` 只在非空时写 `tags["element"]`、
+/// 相性行每只存活敌人都画；`TestEnemyTemplate._CheckElementColumn` ＋ `BattleScreenSelfTest`
+/// 那一族共 +8。于是实测 **11896**，MinAssertions 11878 → **11886**（total−10）。
+private const int MinAssertions = 11886;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

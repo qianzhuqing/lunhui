@@ -2328,6 +2328,7 @@ $enumColumns = @(
     @{ Table = 'map_region.csv';      Id = 'node_id';     Column = 'node_type';     Values = @('town', 'fast_travel', 'wild', 'dungeon', 'poi') },
     @{ Table = 'talent_def.csv';      Id = 'talent_id';   Column = 'category';      Values = @('combat', 'body', 'agile', 'mind', 'social', 'fortune') },
     @{ Table = 'weapon_type_def.csv'; Id = 'weapon_type'; Column = 'default_element'; Values = @('external', 'internal', 'odd') },
+    @{ Table = 'enemy_base.csv';      Id = 'enemy_id';   Column = 'element';         Values = @('', 'external', 'internal', 'odd') },
     @{ Table = 'skill_active.csv';    Id = 'skill_id';    Column = 'target_type';   Values = @('single', 'self', 'all_enemy') },
     @{ Table = 'dungeon_room.csv';    Id = 'room_id';     Column = 'branch_group';  Values = @('main', 'side', 'hidden') },
     @{ Table = 'hidden_trigger.csv';  Id = 'trigger_id';  Column = 'trigger_type';  Values = @('item', 'space', 'kill_style', 'completion', 'sequence', 'behavior', 'carry') }

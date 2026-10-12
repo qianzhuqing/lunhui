@@ -73,6 +73,38 @@ public partial class BattleScreen
         ok = ok && element_ok && element_marks.Count > 0;
         lines.Add($"相性签写中文系别名（{string.Join("／", element_marks)}）={_bool(element_ok)}");
 
+        // 相性行节点本身（22 §1.2.5／§八）：**每只存活敌人都画**、**没内容不留空行**、枚数 ≤3、
+        // **我方身上不许有**。Boss 那条贴顶长血条右端的签是同一份 `_affinity_marks()` 的另一种挂法
+        // （节点名不是 `Affinity_*`），这里量的是「每只敌人身上那一条」。
+        bool affinity_node_ok = true;
+        int enemy_marks = 0;
+        foreach (Variant actor_variant in enemies)
+        {
+            GodotObject actor = actor_variant.AsGodotObject();
+            string actor_id = actor.Get("actor_id").AsString();
+            string[] marks = _affinity_marks(actor);
+            enemy_marks += marks.Length;
+            if (!actor.Call("is_alive").AsBool())
+            {
+                continue;
+            }
+
+            Node row_node = FindChild($"Affinity_{actor_id}", true, false);
+            affinity_node_ok = affinity_node_ok && marks.Length <= 3
+                && (marks.Length > 0) == (row_node != null);
+        }
+
+        foreach (Variant actor_variant in allies)
+        {
+            string actor_id = actor_variant.AsGodotObject().Get("actor_id").AsString();
+            affinity_node_ok = affinity_node_ok
+                && FindChild($"Affinity_{actor_id}", true, false) == null;
+        }
+
+        ok = ok && affinity_node_ok && enemy_marks > 0;
+        lines.Add($"相性行挂在敌人身上（{enemies.Count} 只共 {enemy_marks} 枚·≤3·我方没有·空的不留行）"
+            + $"={_bool(affinity_node_ok)}");
+
         // 版式（22 §八）：整屏·无壳之后不再有「整页最小尺寸」这回事，要量的是
         // **所有可见挂件都留在画框里** ＋ 第五版那条让位（顺序条右缘 ＜ 我方最左单位头顶条左缘）。
         ok = ok && _check_stage_layout(lines);

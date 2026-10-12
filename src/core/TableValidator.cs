@@ -51,6 +51,9 @@ public partial class TableValidator : RefCounted
         },
         ["element_counter"] = new() { ["element_atk"] = ELEMENTS, ["element_def"] = ELEMENTS },
         ["weapon_type_def"] = new() { ["default_element"] = ELEMENTS },
+        // `enemy_base.element`（设计 22 §六-6，2026-10-12）：**空 ＝ external 外功**（与加列之前一致），
+        // 所以白名单里带 ""——与 `skill_active.element` 同一写法。
+        ["enemy_base"] = new() { ["element"] = new[] { "", "external", "internal", "odd" } },
         ["event_check"] = new()
         {
             ["check_type"] = new[] { "hard", "soft" },

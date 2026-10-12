@@ -558,7 +558,10 @@ public partial class BattleScreen
     {
         var marks = new System.Collections.Generic.List<(string text, bool counter)>();
         Godot.Collections.Dictionary tags = actor.Get("tags").AsGodotDictionary();
-        string element = tags.ContainsKey("element") ? tags["element"].AsString() : "external";
+        // 系别：`enemy_base.element` 由 `EnemyFactory` 写进 tag，**空串 ＝ 外功**（设计 22 §六-6）。
+        // 取不到、或取到空串，都按外功走——空串不能当成「没有系别」，那样相克矩阵就整个失效了。
+        string raw_element = tags.ContainsKey("element") ? tags["element"].AsString() : "";
+        string element = raw_element.Length > 0 ? raw_element : "external";
         if (Db != null)
         {
             foreach (Variant row_variant in Db.rows("element_counter"))

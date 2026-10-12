@@ -102,6 +102,14 @@ public partial class EnemyFactory : RefCounted
             row.money * difficulty.money_mul, System.MidpointRounding.AwayFromZero);
         // `actor.tags` 是同一份原生字典，就地改就够（对位 GDScript 的 `actor.tags["difficulty"] = …`）
         actor.tags["difficulty"] = difficulty_id;
+        // 系别（设计 22 §六-6，2026-10-12 加列）：**空 ＝ 外功**——所以空串**不写这个 tag**，
+        // 让伤害管线的 `DamageResolver.DEFAULT_ELEMENT`（external）兜底。写个空串反而会让
+        // `_dict_str(tags, "element", …)` 取到空值、相克乘数静默变 1.0（1.3／0.8 全没了）。
+        // 相性行与伤害两端读的都是这一个 tag，别在别处再算一次系别。
+        if (row.element.Length > 0)
+        {
+            actor.tags["element"] = row.element;
+        }
         // 异常抗性要真的挂上：毒手 50% 毒抗、大寨主／醉刀客 20~30% 三抗（enemy_base 的 res_* 列）
         actor.resistances = row.resistances();
         return actor;

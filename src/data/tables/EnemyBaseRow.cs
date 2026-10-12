@@ -83,6 +83,12 @@ public partial class EnemyBaseRow : TableRow
     // `enemy_passive` 装配内功获得，与角色同规则；内伤抗性角色侧本来就有 `stat_def.res_internal`）
     [Export]
     public double res_internal { get; set; }
+    // 系别（设计 22 §六-6 2026-10-12 定：加这一列）。**空 ＝ external 外功**——与加列之前的行为
+    // 完全一致，所以其余 15 只不填。第一批只填两只该「不一样」的：毒手 odd、醉刀客 internal。
+    // 这一列会动伤害（`element_counter` 相克 1.3／0.8），铺开是内容决策，等试玩手感回来再定。
+    // 取值白名单就是 `TableValidator.ELEMENTS`，与 `skill_active.element`／`weapon_type_def.default_element` 同一份。
+    [Export]
+    public string element { get; set; } = "";
 
     // 引用 drop_table.drop_group
     [Export]
