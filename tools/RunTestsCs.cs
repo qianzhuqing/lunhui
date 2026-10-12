@@ -395,7 +395,10 @@ public partial class RunTestsCs : Node
 /// 词条区＋洗词条置灰／点候选只选中／换上之后预演值＝真穿上值」那一族，
 /// `TestHandshake` 顺带把「已接进游戏路径」的 `weapon_type_name_of` 从 TEST_ONLY_API_ALLOWED 划掉。
 /// 于是实测 **11821**，MinAssertions 11793 → **11811**（total−10）。
-private const int MinAssertions = 11811;
+/// 装备需求那一问的回执（2026-10-12 小策划 P19 ②）：`TestCharacterUi` 补「武器槽需求行写 `Lv N（剑）`／
+/// 已满足／类型不匹配时写「本角色只能用剑」且不漏表内 id」那三条（装备页那一簇随文件拆分搬进
+/// `tests/TestCharacterEquipUi.cs`）。于是实测 **11828**，MinAssertions 11811 → **11818**（total−10）。
+private const int MinAssertions = 11818;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

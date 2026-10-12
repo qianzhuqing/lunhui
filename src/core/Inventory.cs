@@ -509,7 +509,9 @@ public partial class Inventory : RefCounted
         {
             return _equip_check(
                 false,
-                $"{equip.name_cn} 是{equip.weapon_type}，本角色只能用{_weapon_type_name(db, weapon_type)}",
+                // 两个武器类型都走 `name_cn`：这条文案会直接摆到装备页的「可换」行上，
+                // 漏出 `fist` 这种表内 id 就是玩家可见文案里出现 id（14 §七 那条纪律）
+                $"{equip.name_cn} 是{_weapon_type_name(db, weapon)}，本角色只能用{_weapon_type_name(db, weapon_type)}",
                 slot_id,
                 slot_row.max_equip);
         }

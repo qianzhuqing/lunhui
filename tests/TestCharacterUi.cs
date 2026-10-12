@@ -13,6 +13,9 @@ namespace Lunhui.Tests;
 /// 钉「加号没点数要置灰而不是点了才报错」「候选标题写中文槽位名而不是内部 id」
 /// 「钥匙道具丢弃被拒且写明原因」「没图的行走文字、有图的才摆图标」这些**玩家看得见**的口径。
 /// 数据那一半在 `tests/TestCharacterSheet.cs`。
+///
+/// **两份 partial**（都是顶到 800 行硬上限后按职责拆出去的，只挪位置不改行为）：
+/// `TestCharacterBagUi.cs`（行囊页 ＋ 秘籍研读，2026-10-12）与 `TestCharacterEquipUi.cs`（装备页 §二-5，同日）。
 /// </summary>
 public partial class TestCharacterUi : TestCase
 {
@@ -501,136 +504,6 @@ public partial class TestCharacterUi : TestCase
                 $"不把表里的效果 id 原样甩给玩家：{effect_label.Text}");
         }
     }
-
-    private void _CheckEquipmentTab(TableDb db, CharacterScreen screen, GodotObject state)
-    {
-        screen.select_tab(1);
-        // 三栏（清单 §二-5）：左＝七槽 ＋ 换上之后｜中＝详情｜右＝可换
-        CheckTrue(screen.FindChild("EquipSlotsColumn", true, false) != null, "装备页有七槽栏");
-        CheckTrue(screen.FindChild("EquipDetailColumn", true, false) != null, "装备页有详情栏");
-        CheckTrue(screen.FindChild("EquipCandidateColumn", true, false) != null, "装备页有可换栏");
-
-        // 七个槽位照 equip_slot_def 摆出来（戒指两格 → 八行）：每个 slot_id 的第一格都在
-        Godot.Collections.Array slot_defs = db.rows("equip_slot_def");
-        var slot_hits = 0;
-        foreach (Variant slot_value in slot_defs)
-        {
-            string slot_id = slot_value.As<EquipSlotDefRow>().slot_id;
-            if (screen.FindChild($"SlotButton{slot_id}_0", true, false) != null)
-            {
-                slot_hits += 1;
-            }
-        }
-
-        CheckEq(slot_hits, slot_defs.Count, "七个槽位都摆出来");
-
-        // 空槽也占一行，写「空 · 可装」（清单 §二-5）
-        var empty_slot = screen.FindChild("SlotButtonlegs_0", true, false) as Button;
-        CheckNotNull(empty_slot, "下装槽空着也占一行");
-        if (empty_slot != null)
-        {
-            CheckTrue(empty_slot.Text.Contains("可装"), $"空槽写「可装」：{empty_slot.Text}");
-        }
-
-        var slot_button = screen.FindChild("SlotButtonweapon_0", true, false) as Button;
-        CheckNotNull(slot_button, "武器槽有按钮");
-        CheckTrue(screen.FindChild("SlotButtonring_1", true, false) != null, "戒指槽有两格");
-
-        // 卸下那一按搬进了详情栏（清单 §二-5：选中槽位后才写出那件装备的详情）——先选槽，再按
-        screen.press_slot("weapon", 0);
-        var detail_header = screen.FindChild("EquipDetailHeader", true, false) as Label;
-        CheckNotNull(detail_header, "选中武器槽后详情栏写出装备名");
-        var req_value = screen.FindChild("EquipReqRowValue", true, false) as Label;
-        CheckNotNull(req_value, "详情栏写出装备需求");
-        if (req_value != null)
-        {
-            CheckTrue(req_value.Text.StartsWith("Lv "), $"装备需求写 Lv：{req_value.Text}");
-        }
-
-        CheckTrue(screen.FindChild("AffixText", true, false) != null, "详情栏有词条区");
-        var reroll = screen.FindChild("RerollAffixButton", true, false) as Button;
-        CheckNotNull(reroll, "有洗词条按钮");
-        if (reroll != null)
-        {
-            CheckTrue(reroll.Disabled, "洗词条 Q6 待定，先置灰");
-        }
-
-        var unequip = screen.FindChild("UnequipButtonweapon_0", true, false) as Button;
-        CheckNotNull(unequip, "武器槽有卸下按钮");
-        if (unequip == null)
-        {
-            return;
-        }
-
-        Inventory inventory = _InventoryOf(state);
-        string instance_id = inventory.equipped_instances(db, CharId)[0];
-        double atk_equipped = screen.sheet().stat_value("atk_phys");
-        unequip.EmitSignal(Button.SignalName.Pressed);
-        // 0.10.2 起初始装备是**两件**（武器＋布衣）：卸掉武器后身上还剩那件布衣
-        CheckEq(inventory.equipped_instances(db, CharId).Length, 1, "卸下武器后身上还剩上衣");
-        CheckFalse(inventory.is_equipped(instance_id), "卸下的那把武器不再算穿着");
-        CheckTrue(screen.status_text().Contains("卸下"), "状态栏提示卸下");
-        // 状态栏说装备名，不是 eq_sword_01#1 这种实例 id（2026-10-03 文案审计）
-        CheckFalse(screen.status_text().Contains("#"), $"卸下提示不漏实例序号：{screen.status_text()}");
-        CheckFalse(screen.status_text().Contains("eq_"), $"卸下提示不漏装备 id：{screen.status_text()}");
-
-        // 选槽位后候选里出现刚卸下的武器，点一下就装回去
-        screen.press_slot("weapon", 0);
-        var candidate_header = screen.FindChild("CandidateHeader", true, false) as Label;
-        CheckNotNull(candidate_header, "选槽后出现候选列表标题");
-        if (candidate_header != null)
-        {
-            CheckTrue(
-                candidate_header.Text.Contains("武器") && !candidate_header.Text.Contains("weapon"),
-                $"候选标题写中文槽位名而不是内部 id：{candidate_header.Text}");
-        }
-
-        // 点候选那一行＝**只选中**（清单 §二-5）：详情栏换成它，「换上之后」即时重算
-        var candidate_row = screen.FindChild($"CandidateRow{instance_id}", true, false) as Button;
-        CheckNotNull(candidate_row, "候选列表里有整行可选");
-        if (candidate_row != null)
-        {
-            candidate_row.EmitSignal(Button.SignalName.Pressed);
-            var cand_header = screen.FindChild("EquipDetailHeader", true, false) as Label;
-            var base_row = db.get_row("equip_base", inventory.base_of(instance_id)) as EquipBaseRow;
-            string weapon_name = base_row != null ? base_row.name_cn : "";
-            CheckTrue(
-                cand_header != null && weapon_name.Length > 0 && cand_header.Text.Contains(weapon_name),
-                $"详情栏换成选中的候选：{(cand_header != null ? cand_header.Text : "缺")}");
-            CheckTrue(
-                screen.FindChild($"EquipConfirmButton{instance_id}", true, false) != null,
-                "选中候选后详情栏出现「换上」");
-            CheckNotNull(screen.FindChild("SwapRowatk_phys", true, false), "「换上之后」写出外功那一行");
-            Godot.Collections.Dictionary after = screen.sheet().preview_swap_stats("weapon", 0, instance_id);
-            double atk_after = after.ContainsKey("atk_phys") ? after["atk_phys"].AsDouble() : -1.0;
-            CheckEq(
-                (int)System.Math.Round(atk_after), (int)System.Math.Round(atk_equipped),
-                "预演算出的外功＝真穿上时的外功");
-        }
-
-        var equip_button = screen.FindChild($"EquipButton{instance_id}", true, false) as Button;
-        CheckNotNull(equip_button, "候选列表里出现刚卸下的武器");
-        if (equip_button != null)
-        {
-            CheckFalse(equip_button.Disabled, "候选按钮可点");
-            equip_button.EmitSignal(Button.SignalName.Pressed);
-            CheckEq(inventory.equipped_instances(db, CharId).Length, 2, "装回后身上两件装备");
-            CheckTrue(screen.status_text().Contains("装上"), $"状态栏提示装上：{screen.status_text()}");
-            CheckFalse(screen.status_text().Contains("eq_"), $"装上提示不漏装备 id：{screen.status_text()}");
-        }
-
-        // 武器类型不匹配的装备要被置灰：塞一把拳套进背包
-        string fist = inventory.add_equipment(screen._db as TableDb, "eq_fist_01", new Godot.Collections.Array());
-        screen.refresh();
-        screen.press_slot("weapon", 0);
-        var fist_button = screen.FindChild($"EquipButton{fist}", true, false) as Button;
-        CheckNotNull(fist_button, "拳套出现在武器的候选里");
-        if (fist_button != null)
-        {
-            CheckTrue(fist_button.Disabled, "武器类型不匹配的候选被置灰");
-        }
-    }
-
 
     private void _CheckBack(CharacterScreen screen, Godot.Collections.Array back_calls)
     {

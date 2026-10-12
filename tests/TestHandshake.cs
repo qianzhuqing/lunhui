@@ -66,6 +66,7 @@ public abstract partial class TestHandshake : TestCase
         // 拆开的 `partial`（注册进运行器的是主文件）与探针类——不是独立用例。
         "TestBattleUiCommands.cs", "TestBattleUiSettles.cs", "TestMapAssetsAssets.cs",
         "TestCharacterBagUi.cs",
+        "TestCharacterEquipUi.cs",
         "TestSaveMigrationBase.cs", "TestTablePipelineBase.cs",
         "FailingProbe.cs", "FailingSaveStore.cs", "UnwritableSaveStore.cs",
     };

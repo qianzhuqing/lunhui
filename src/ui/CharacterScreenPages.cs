@@ -543,7 +543,12 @@ public partial class CharacterScreen
         return IconPaths.equip(icon_id);
     }
 
-    /// <summary>某个槽位可用的背包装备：b{instance_id, name, rarity, color, summary, ok, error}b</summary>
+    /// <summary>
+    /// 某个槽位可用的背包装备：b{instance_id, name, rarity, color, summary, ok, error}b。
+    /// **`base` 与 `level_req` 必须带上**：详情栏（清单 §二-5）对着选中的候选摆品阶／装备需求／
+    /// 属性行／套装归属，全都从 `base` 读——少了它那几块会静默空掉（2026-10-12 踩过：需求行写成 `Lv 0`）。
+    /// 形状与 `CharacterSheet.equipped_rows()` 对齐，好让 `_base_of_row()` 两边通吃。
+    /// </summary>
     private Godot.Collections.Array _candidate_rows(string slot_id)
     {
         var rows = new Godot.Collections.Array();
@@ -569,11 +574,13 @@ public partial class CharacterScreen
             {
                 { "instance_id", instance_id },
                 { "base_id", base_row.equip_id }, // 装备取图要用（优先 icon、空则退回它）
+                { "base", base_row },
                 { "name", base_row.name_cn },
                 { "rarity", panel.rarity_name(base_row.rarity) },
                 { "color", panel.rarity_color(base_row.rarity) },
                 { "summary", panel.equipment_summary(base_row) },
                 { "affix_summary", panel.affix_summary_of(instance_id) },
+                { "level_req", base_row.level_req },
                 { "ok", _b(check, "ok") },
                 { "error", _s(check, "error") },
             });

@@ -129,10 +129,14 @@ public partial class CharacterScreen
         press_slot("weapon", 0);
         Label equip_detail_header = FindChild("EquipDetailHeader", true, false) as Label;
         Label equip_req_value = FindChild("EquipReqRowValue", true, false) as Label;
+        Label equip_req_note = FindChild("EquipReqRowNote", true, false) as Label;
         Button reroll_button = FindChild("RerollAffixButton", true, false) as Button;
         bool detail_ok = equip_detail_header != null && equip_detail_header.Text.Length > 0
             && equip_req_value != null
+            // P19 ②：武器槽的两条真门槛都正面写出来——`Lv N（剑）`，等级够了写「已满足」
             && equip_req_value.Text.StartsWith("Lv ", System.StringComparison.Ordinal)
+            && equip_req_value.Text.Contains("（", System.StringComparison.Ordinal)
+            && equip_req_note != null && equip_req_note.Text == "已满足"
             && FindChild("AffixText", true, false) != null
             && reroll_button != null && reroll_button.Disabled;
         ok = ok && detail_ok;

@@ -269,12 +269,30 @@ public partial class CharacterScreen
             col.AddChild(_kv_row("EquipRarityRow", "品阶", panel.rarity_name(base_row.rarity), ""));
         }
 
-        // 装备需求：表里只有等级门槛（`equip_base.level_req`）＋武器类型那一关，
-        // **没有属性门槛这一列**（示意图画的是「力 8 已满足」，那条口径表里没有）
+        // 装备需求：表里只有**两条真门槛**——`equip_base.level_req`，以及武器槽那一关
+        // （`equip_slot_def.is_weapon_slot()` 时，`equip_base.weapon_type` 必须等于角色自己的 `weapon_type`）。
+        // 2026-10-12 小策划拍板（P19 ②）：示意图那条「力 8 已满足」是图自己编的样例，**不加属性门槛列**；
+        // 但两条真门槛都要**正面写出来**——武器槽写 `Lv N（剑）`（括注是这件装备要的武器类型），
+        // 非武器槽只写 `Lv N`。只写等级的话，武器类型那一关在装备页上就没有答案。
         int level_req = base_row != null ? base_row.level_req : _i(subject, "level_req");
-        col.AddChild(_kv_row(
-            "EquipReqRow", "装备需求", $"Lv {level_req}",
-            level_req <= panel.level ? "已满足" : $"差 {level_req - panel.level} 级"));
+        string req_text = weapon_name.Length > 0 ? $"Lv {level_req}（{weapon_name}）" : $"Lv {level_req}";
+        string req_note;
+        if (level_req > panel.level)
+        {
+            req_note = $"差 {level_req - panel.level} 级";
+        }
+        else if (base_row != null && weapon_name.Length > 0
+            && base_row.weapon_type != panel.weapon_type_id())
+        {
+            // 与 `Inventory.can_equip` 同一口径，措辞也照它（「本角色只能用剑」）
+            req_note = $"本角色只能用{panel.weapon_type_name()}";
+        }
+        else
+        {
+            req_note = "已满足";
+        }
+
+        col.AddChild(_kv_row("EquipReqRow", "装备需求", req_text, req_note));
         if (base_row != null && base_row.desc.Length > 0)
         {
             col.AddChild(_kv_row("EquipDescRow", "说明", base_row.desc, ""));
@@ -313,8 +331,17 @@ public partial class CharacterScreen
         bool is_candidate = _selected_candidate.Length > 0 && instance_id == _selected_candidate;
         if (is_candidate)
         {
-            actions.AddChild(_make_button(
-                $"EquipConfirmButton{instance_id}", "换上", () => { equip_instance(instance_id); }));
+            // 门槛不满足时**置灰并写原因**（清单 §二-5 那一行）；原因就是 `can_equip` 那一句，
+            // 全文摆在悬浮里（行上放不下，见 `_candidate_row` 的注释）。
+            bool usable = !subject.ContainsKey("ok") || _b(subject, "ok");
+            Button confirm = _make_button(
+                $"EquipConfirmButton{instance_id}", "换上", () => { equip_instance(instance_id); }, !usable);
+            if (!usable)
+            {
+                confirm.TooltipText = _s(subject, "error");
+            }
+
+            actions.AddChild(confirm);
         }
 
         string slot_id = _s(subject, "slot_id");
@@ -577,8 +604,16 @@ public partial class CharacterScreen
             ? $"{_s(candidate, "name")}（已选中）"
             : $"{_s(candidate, "name")}　{_s(candidate, "summary")}　{delta}";
         line.AddChild(select);
-        line.AddChild(_make_button(
-            $"EquipButton{instance_id}", "换上", () => { equip_instance(instance_id); }, !ok));
+        Button equip_button = _make_button(
+            $"EquipButton{instance_id}", "换上", () => { equip_instance(instance_id); }, !ok);
+        if (!ok)
+        {
+            // 置灰原因写在按钮上（清单 §二-5：「门槛不满足时置灰并写原因」）——行上的差值那截
+            // 顶多写一句，完整的理由（含等级／武器类型）挂在悬浮里
+            equip_button.TooltipText = _s(candidate, "error");
+        }
+
+        line.AddChild(equip_button);
         return line;
     }
 
