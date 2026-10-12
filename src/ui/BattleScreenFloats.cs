@@ -73,8 +73,12 @@ public partial class BattleScreen
             // 跳字必须挂在**不受容器排版管**的浮层上：挂在卡片里的话，VBoxContainer 每次排版
             // 都会把它按到卡片左边（position 被顶掉），半个数字还会被滚动区裁掉——踩过。
             Control layer = _float_layer();
-            label.Position = ((Control)row).GlobalPosition - GlobalPosition
-                + new Vector2(210 + (26 * hit_index), 4 - (10 * hit_index));
+            // 整屏战场之后落点改挂**单位头顶**（22 §1.2：信息挂人身上）——
+            // 单位挂在 `StageRoot` 里，所以要把镜头层的偏移算进来，否则推镜时数字会留在原地。
+            var unit = (Control)row;
+            Vector2 anchor = (_stage_root != null ? _stage_root.Position : Vector2.Zero)
+                + unit.Position + new Vector2(unit.Size.X * 0.5f, -4.0f);
+            label.Position = anchor + new Vector2(18 * hit_index, -12.0f - (10 * hit_index));
             layer.AddChild(label);
             // 卡片靠右时上面那个 +210 会把数字推出屏幕（满招式那档内容宽 1134，离 1152 只剩 18px），
             // 所以按浮层尺寸夹一下：宁可压回卡片上，也别让玩家看不见这一击打了多少。
@@ -159,16 +163,7 @@ public partial class BattleScreen
 
     private Node _find_actor_row(string actor_id)
     {
-        foreach (Node box in new Node[] { _allies_box, _enemies_box })
-        {
-            Node row = box?.GetNodeOrNull($"Actor_{actor_id}");
-            if (row != null)
-            {
-                return row;
-            }
-        }
-
-        return null;
+        return _units_by_id.TryGetValue(actor_id, out Control unit) ? unit : null;
     }
 
     public void press_auto()

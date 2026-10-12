@@ -373,7 +373,13 @@ public partial class RunTestsCs : Node
     /// 的 C# 正则补上 `public static`（以前静态口在这道门里整个隐形），浮出来的 56 条过渡期取值口
     /// 逐条写进白名单。于是实测 **11605**，MinAssertions 11598 → **11595**（total−10；
     /// 少的 5 条＝删掉的那 3 条 ＋ 探针第三块清豁免后文档口径的两处涨落）。
-    private const int MinAssertions = 11595;
+    /// 战斗界面第五版（2026-10-12，P13）：顺序条定案 ＋ 卡片壳删掉之后，用例从「卡片上的行」
+    /// 改指向**挂在人身上的挂件**（头顶条／状态图标／预兆签），断言条数随之上涨。于是实测 **11707**，
+    /// MinAssertions 11595 → **11697**（total−10；这批**没有**用例被删，差值全是改指 + 新加的口径）。
+    /// 战斗界面第六版（2026-10-12，P15）：删掉「▶ 推进」＋流程自动推进 ＋ 结算卡那枚「确定」＝返回。
+    /// 用例改指（▶ → ResultConfirm）并新增 `_CheckAutoAdvance`（没有推进钮／轮到我方 tick 停下／
+    /// 暂停条开着 tick 不推进／收起即继续）。于是实测 **11746**，MinAssertions 11697 → **11736**（total−10）。
+    private const int MinAssertions = 11736;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

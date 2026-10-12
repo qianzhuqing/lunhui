@@ -34,6 +34,7 @@ public partial class TestBattleUi : TestCase
     private const string CommandUiDir = "res://.logs/test_save_timing/command_ui";
     private const string ParryUiDir = "res://.logs/test_save_timing/parry_ui";
     private const string AutoBattleDir = "res://.logs/test_save_timing/auto_battle";
+    private const string AutoAdvanceDir = "res://.logs/test_save_timing/auto_advance";
     private const string FirstKillDir = "res://.logs/test_save_timing/first_kill";
     private const string AutoBattleSettingDir = "res://.logs/test_settings/battle_auto";
 
@@ -102,6 +103,8 @@ public partial class TestBattleUi : TestCase
         _CheckSkillButtonsUi(db);
         _CheckSupportSkillButton(db);
         _CheckCommandUi(db);
+        _CheckPauseUi(db);
+        _CheckAutoAdvance(db);
         _CheckSettleCardContract(db);
         _CheckAutosaveFailure(db);
         CheckTrue(store.slot_exists(1), "战斗结算后自动落盘");
@@ -116,8 +119,9 @@ public partial class TestBattleUi : TestCase
     {
         CheckGt(battle.allies.Count, 0.0, "我方有战斗单位");
         CheckGt(battle.enemies.Count, 0.0, "敌方有战斗单位");
-        var headline = battle.FindChild("Headline", true, false) as Label;
-        CheckNotNull(headline, "有开场文案");
+        // 整屏·无壳（22 §1.1）之后没有"顶栏标题"了：开场文案改挂在指令行上方那一行播报上
+        var headline = battle.FindChild("MsgLine", true, false) as Label;
+        CheckNotNull(headline, "有开场文案（指令行上方那一行）");
         if (headline != null)
         {
             CheckTrue(
@@ -134,34 +138,47 @@ public partial class TestBattleUi : TestCase
         }
 
         var actor_label = battle.FindChild($"Name_{_Actor(battle.allies[0]).actor_id}", true, false) as Label;
-        CheckNotNull(actor_label, "我方面板列出战斗单位");
+        CheckNotNull(actor_label, "我方单位在战场上列了出来");
         if (actor_label != null)
         {
-            CheckTrue(actor_label.Text.Contains("气血"), $"显示气血：{actor_label.Text}");
+            BattleActor ally = _Actor(battle.allies[0]);
+            CheckEq(actor_label.Text, ally.display_name, $"头顶写的是名字：{actor_label.Text}");
+            // 数值挂在气血条右侧（22 §1.2.1：主条右侧 12px 数字，**满血不隐藏**）
+            var values = battle.FindChild($"HpText_{ally.actor_id}", true, false) as Label;
+            CheckNotNull(values, "气血条右侧写数值");
+            if (values != null)
+            {
+                CheckTrue(
+                    values.Text.Contains($"{ally.hp}/"),
+                    $"数值写当前／上限：{values.Text}");
+            }
         }
 
         _CheckSceneLayout(battle);
     }
 
     /// <summary>
-    /// 界面骨架必须是 `scenes/battle_screen.tscn` 里的真实节点（本轮从代码搭建改成 .tscn），
-    /// 卡片行仍然按战斗状态动态生成，但要挂在场景里那两个列表节点下。
-    /// （「整页塞得进设计分辨率」由真实场景自检 `--battle-selftest` 断言：那里才跑过帧、版式算得出来）
+    /// 界面骨架必须是 `scenes/battle_screen.tscn` 里的真实节点（不是代码里现搭的），
+    /// 单位按战斗状态动态生成、挂在**镜头层 `StageRoot`** 下（22 §1.4）。
+    /// （挂件全在画框里、顺序条让开人与条，由真实场景自检 `--battle-selftest` 断言：那里才跑过帧）
     /// </summary>
     private void _CheckSceneLayout(BattleScreen battle)
     {
-        CheckNotNull(battle.GetNodeOrNull("Margin/Column/Headline"), "Headline 是场景节点");
-        CheckNotNull(battle.GetNodeOrNull("Margin/Column/Buttons/NextRoundButton"), "按钮是场景节点");
-        const string enemy_list_path = "Margin/Column/Front/TeamEnemies/EnemyScroll/ListEnemies";
-        CheckNotNull(battle.GetNodeOrNull(enemy_list_path), "敌方列表是场景节点");
-        var scroll = battle.GetNode<ScrollContainer>("Margin/Column/Front/TeamEnemies/EnemyScroll");
-        Node enemy_list = battle.GetNode(enemy_list_path);
-        CheckGt(scroll.CustomMinimumSize.Y, 0.0, "敌方列表留了滚动区高度");
+        CheckNotNull(battle.GetNodeOrNull("StageRoot"), "镜头层 StageRoot 是场景节点");
+        CheckNotNull(battle.GetNodeOrNull("CommandRow"), "指令行是场景节点");
+        // 22 §1.6 第六版：删掉「▶ 推进」——没有任何手动推进入口；离场改走结算卡上的「确定」。
+        CheckTrue(
+            battle.GetNodeOrNull("CommandRow/NextRoundButton") == null,
+            "没有「▶ 推进」节点（第六版：流程自动推进）");
+        CheckNotNull(battle.GetNodeOrNull("ResultConfirm"), "结算卡有「确定」钮（＝返回）");
+        CheckNotNull(battle.GetNodeOrNull("TurnBar"), "行动顺序条是场景节点");
+        CheckNotNull(battle.GetNodeOrNull("LogPanel/Log"), "战报是场景节点");
+        Node stage = battle.GetNode("StageRoot");
         var pick = battle.FindChild($"TargetButton_{_Actor(battle.enemies[0]).actor_id}", true, false) as Button;
-        CheckNotNull(pick, "敌人卡片有选目标按钮");
+        CheckNotNull(pick, "敌人头上有选目标按钮");
         if (pick != null)
         {
-            CheckTrue(enemy_list.IsAncestorOf(pick), "动态卡片挂在场景的敌方列表下");
+            CheckTrue(stage.IsAncestorOf(pick), "动态单位挂在场景的镜头层下");
         }
     }
 
@@ -171,13 +188,17 @@ public partial class TestBattleUi : TestCase
         BattleActor target = _Actor(battle.enemies[0]);
         target.add_status("poison", "test", 7.0, 5, 3, "", true);
         battle._refresh();
-        var label = battle.FindChild($"Status_{target.actor_id}", true, false) as Label;
-        CheckNotNull(label, "卡片上有异常状态行");
-        if (label != null)
+        // 22 §1.2.3：异常状态不再占一行字——改成**头顶条下面那一枚 20×20 图标**，
+        // 名字／极性／层数／剩余回合全进 tooltip（原「增减益面板」整块删掉）。
+        CheckNotNull(
+            battle.FindChild($"StatusIcons_{target.actor_id}", true, false),
+            "敌人头顶有状态图标那一排");
+        var chip = battle.FindChild($"Buff_{target.actor_id}_poison", true, false) as Button;
+        CheckNotNull(chip, "中毒在头顶图标排里");
+        if (chip != null)
         {
-            CheckTrue(label.Text.Contains("中毒"), $"状态行写清是中毒：{label.Text}");
-            CheckTrue(label.Text.Contains("×1"), $"状态行写清层数：{label.Text}");
-            CheckEq(label.GetThemeColor("font_color"), new Color("7fd35a"), "中毒用伤害类型的颜色");
+            CheckTrue(chip.TooltipText.Contains("中毒"), $"图标写清是中毒：{chip.TooltipText}");
+            CheckTrue(chip.TooltipText.Contains("减益"), $"图标写清极性：{chip.TooltipText}");
         }
 
         // 持续伤害跳字：颜色跟着状态走
@@ -278,11 +299,13 @@ public partial class TestBattleUi : TestCase
         if (dead_label != null)
         {
             CheckTrue(dead_label.Text.Contains("倒"), $"阵亡标「（倒）」：{dead_label.Text}");
-            var row = battle.FindChild($"Actor_{target.actor_id}", true, false) as Control;
-            CheckNotNull(row, "阵亡单位卡片还在");
-            if (row != null)
+            // 22 §1.2：没有卡片了——阵亡表现是**形象压暗 ＋ 倒下**（不是卡片压暗）
+            var sprite = battle.FindChild($"Sprite_{target.actor_id}", true, false) as TextureRect;
+            CheckNotNull(sprite, "阵亡单位还在战场上");
+            if (sprite != null)
             {
-                CheckLt(row.Modulate.A, 0.6, $"阵亡卡片压暗（alpha {row.Modulate.A:F2}）");
+                CheckLt(sprite.Modulate.A, 0.6, $"阵亡形象压暗（alpha {sprite.Modulate.A:F2}）");
+                CheckGt(Mathf.Abs(sprite.Rotation), 0.1f, $"阵亡形象倒下（rotation {sprite.Rotation:F2}）");
             }
         }
 
@@ -484,19 +507,15 @@ public partial class TestBattleUi : TestCase
         CheckTrue(
             battle.result_label_text().Contains("熟练度"),
             $"结算里播报熟练度：{battle.result_label_text()}");
-        var next = battle.FindChild("NextRoundButton", true, false) as Button;
-        CheckNotNull(next, "有「下一回合」按钮");
-        if (next != null)
+        // 22 §1.6 第六版：离场改走结算卡上那一枚「确定」（用户口径：点确定＝返回）——
+        // 它平时不出现，打完之后才露出来；指令行那枚「▶ 推进」已经整条删掉。
+        var confirm = battle.FindChild("ResultConfirm", true, false) as Button;
+        CheckNotNull(confirm, "结算卡有「确定」钮");
+        if (confirm != null)
         {
-            CheckTrue(next.Disabled, "打完后不能再点下一回合");
-        }
-
-        var back = battle.FindChild("ReturnButton", true, false) as Button;
-        CheckNotNull(back, "有返回大地图按钮");
-        if (back != null)
-        {
-            back.EmitSignal(Button.SignalName.Pressed);
-            CheckEq(returns.Count, 1, "返回按钮触发回程");
+            CheckTrue(confirm.Visible, "打完之后「确定」钮才出现");
+            confirm.EmitSignal(Button.SignalName.Pressed);
+            CheckEq(returns.Count, 1, "打完点「确定」＝回程");
         }
     }
 
@@ -512,18 +531,18 @@ public partial class TestBattleUi : TestCase
         {
             string actor_id = actor.actor_id;
             CheckNotNull(battle.FindChild($"HpBar_{actor_id}", true, false), $"有气血条（{actor_id}）");
-            CheckNotNull(battle.FindChild($"QiBar_{actor_id}", true, false), $"有内力条（{actor_id}）");
-            CheckNotNull(battle.FindChild($"PoiseBar_{actor_id}", true, false), $"有架势条（{actor_id}）");
+            CheckNotNull(battle.FindChild($"PoiseBar_{actor_id}", true, false), $"有架势刻度（{actor_id}）");
         }
 
         BattleActor ally = _Actor(battle.allies[0]);
         string ally_id = ally.actor_id;
         var qi = battle.FindChild($"QiBar_{ally_id}", true, false) as ProgressBar;
-        var poise = battle.FindChild($"PoiseBar_{ally_id}", true, false) as ProgressBar;
+        CheckNotNull(qi, "我方有内力条（22 §1.2.1：内力只画我方）");
         CheckEq((int)qi.MaxValue, Mathf.Max(1, ally.max_qi()), "内力条上限 = 内力上限");
         CheckEq((int)qi.Value, ally.qi, "内力条读数 = 当前内力");
-        CheckEq((int)poise.MaxValue, Mathf.Max(1, ally.max_poise()), "架势条上限 = 架势上限");
-        CheckEq((int)poise.Value, ally.poise, "架势条读数 = 当前架势");
+        CheckNull(
+            battle.FindChild($"QiBar_{_Actor(battle.enemies[0]).actor_id}", true, false),
+            "敌方不画内力条（内力是我方的资源）");
 
         // 界面要真的跟着状态刷新：掉血之后重建的行里，气血条是新值（_refresh 是重建行，不是就地改）
         ally.take_damage(5);
@@ -532,34 +551,39 @@ public partial class TestBattleUi : TestCase
         CheckNotNull(hp_after, "刷新后气血条还在");
         CheckEq((int)hp_after.Value, ally.hp, $"掉血后气血条跟着变（{ally.hp}）");
         CheckEq((int)hp_after.MaxValue, Mathf.Max(1, ally.max_hp()), "气血条上限 = 气血上限");
-        // 架势条的「即将破防」（15 §4.5）：条本身的颜色归代码，美术那两张贴图只管「加什么」——
-        // 低于临界线叠 `poise_critical`（裂纹），打空那一帧换成 `poise_break`（横条压亮＋炸光）。
-        // 贴图原生 32×12，比 8px 的条上下各溢 2px，是**表现**、不进版式预算。
-        CheckNull(
-            battle.FindChild($"PoiseFx_{ally_id}", true, false),
-            "架势还满着时不摆临界表现（只在低架势／破防时才加）");
-        ally.poise = 2;
+        // 架势刻度（22 §1.2.1 第四版／§八）：**亮格数 ＝ 还差几下打空**，格值固定取自
+        // `combat_const.poise_grid`，不足一格按比例点亮末格——断言「亮格数 × 格值 ＋ 末格比例
+        // ＝ 结算里的剩余架势」，这一条把表现与判定钉在一起。
+        var grid_row = (TableDb)battle.db;
+        int grid = (int)((CombatConstRow)grid_row.get_row("combat_const", "poise_grid")).value;
+        CheckGt(grid, 0.0, $"格值落在 combat_const.poise_grid（{grid}）");
+        ally.poise = (grid * 2) + (grid / 2);
         battle._refresh();
-        var critical = battle.FindChild($"PoiseFx_{ally_id}", true, false) as TextureRect;
-        CheckNotNull(critical, "架势压到临界线以下 → 叠上临界贴图");
-        if (critical != null)
+        var ticks = battle.FindChild($"PoiseBar_{ally_id}", true, false) as Control;
+        CheckNotNull(ticks, "架势是刻度格，不是一条连续色块");
+        if (ticks != null)
         {
-            CheckTrue(
-                critical.Texture.ResourcePath.Contains("poise_critical"),
-                $"用的是 poise_critical：{critical.Texture.ResourcePath}");
+            CheckEq((int)ticks.GetMeta("grid"), grid, "格值取自 combat_const.poise_grid");
+            CheckEq((int)ticks.GetMeta("lit"), 3, $"亮格数 ＝ 还差几下打空（架势 {ally.poise}）");
+            CheckFloat((double)ticks.GetMeta("partial"), 0.5, "不足一格按比例点亮末格");
+            CheckEq(
+                ticks.GetChildCount(), (int)ticks.GetMeta("cells"),
+                "刻度格数 = ceil(架势上限 / 格值)（受画框宽度上限夹住）");
         }
 
+        // 破架势那一帧：亮格数 = 0，且该单位身上有「破绽」字标（与顿帧／震屏／白闪同一拍）
         ally.take_poise_damage(999);
         CheckTrue(ally.is_broken(), "架势打空 → 进入破绽");
         battle._refresh();
-        var broken = battle.FindChild($"PoiseFx_{ally_id}", true, false) as TextureRect;
-        CheckNotNull(broken, "破防那一帧叠的是爆发贴图");
-        if (broken != null)
+        var broken_ticks = battle.FindChild($"PoiseBar_{ally_id}", true, false) as Control;
+        CheckNotNull(broken_ticks, "破防后刻度还在");
+        if (broken_ticks != null)
         {
-            CheckTrue(
-                broken.Texture.ResourcePath.Contains("poise_break"),
-                $"用的是 poise_break：{broken.Texture.ResourcePath}");
+            CheckEq((int)broken_ticks.GetMeta("lit"), 0, "破架势那一帧亮格数 = 0");
         }
+
+        CheckNotNull(
+            battle.FindChild($"BrokenMark_{ally_id}", true, false), "破防那一帧身上有「破绽」字标");
     }
 
     /// <summary>

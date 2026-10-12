@@ -35,7 +35,9 @@ public partial class TestBattleUi
         battle.save_store_override = store;
         Tree.Root.AddChild(battle);
         battle.setup();
-        battle.press_next_round(); // 推进到我方行动，招式行才会建出来
+        battle.press_next_round(); // 推进到我方行动
+        // 22 §1.6：招式不再是卡片里常驻的一行，改挂在**贴底展开浮层**里——先展开才有按钮
+        battle.press_skill_list();
         BattleActor actor = _Sim(battle).current_actor() as BattleActor;
         CheckTrue(
             actor != null && actor.side == BattleActor.SIDE_ALLY,
@@ -86,6 +88,7 @@ public partial class TestBattleUi
         Tree.Root.AddChild(battle);
         battle.setup();
         battle.press_next_round();
+        battle.press_skill_list(); // 招式在贴底展开浮层里（22 §1.6）
         BattleActor actor = _Sim(battle).current_actor() as BattleActor;
         CheckTrue(actor != null && actor.side == BattleActor.SIDE_ALLY, "轮到我方");
         var button = battle.FindChild("SkillButton_sk_drunk_zuibu", true, false) as Button;
@@ -168,9 +171,16 @@ public partial class TestBattleUi
         CheckNotNull(yunqi_chip, "增益面板列出运功");
         if (yunqi_chip != null)
         {
-            CheckTrue(yunqi_chip.Text.Contains("增"), $"增益用「增」字标极性：{yunqi_chip.Text}");
-            CheckTrue(yunqi_chip.Text.Contains("▲"), $"增益还带形状（色盲可辨，不只看红蓝）：{yunqi_chip.Text}");
-            CheckTrue(yunqi_chip.Text.Contains("3"), $"标出剩余回合数：{yunqi_chip.Text}");
+            // 22 §1.2.3：图标只画 20×20，细节全进 tooltip——极性／剩余回合从 Text 改读 TooltipText
+            CheckTrue(yunqi_chip.TooltipText.Contains("增益"), $"增益写清极性：{yunqi_chip.TooltipText}");
+            var yunqi_style = yunqi_chip.GetThemeStylebox("normal") as StyleBoxFlat;
+            CheckNotNull(yunqi_style, "图标带自己的框（色盲可辨：极性靠形状＋色，不只看字）");
+            if (yunqi_style != null)
+            {
+                CheckEq(yunqi_style.BorderColor, UiKit.color("mp"), $"增益用蓝框：{yunqi_style.BorderColor}");
+            }
+
+            CheckTrue(yunqi_chip.TooltipText.Contains("剩余 3"), $"标出剩余回合数：{yunqi_chip.TooltipText}");
         }
 
         // 主动防御：上 buff 后面板上能悬浮看到它给了什么
@@ -187,7 +197,7 @@ public partial class TestBattleUi
         CheckNotNull(chip, "增益减益面板出现防御姿态");
         if (chip != null)
         {
-            CheckTrue(chip.Text.Contains("防御姿态"), $"条目写清名字：{chip.Text}");
+            CheckTrue(chip.TooltipText.Contains("防御姿态"), $"条目写清名字：{chip.TooltipText}");
             CheckTrue(
                 chip.TooltipText.Contains("外防") || chip.TooltipText.Contains("减伤"),
                 $"悬浮说明给数值：{chip.TooltipText}");
@@ -221,28 +231,37 @@ public partial class TestBattleUi
         CheckNotNull(rusty, "常驻 buff 也进面板");
         if (rusty != null)
         {
-            CheckTrue(rusty.Text.Contains("∞"), $"常驻显示 ∞（不是 0 回合）：{rusty.Text}");
+            CheckTrue(rusty.TooltipText.Contains("∞"), $"常驻显示 ∞（不是 0 回合）：{rusty.TooltipText}");
         }
 
         var poison = battle.FindChild($"Buff_{label_enemy}_poison", true, false) as Button;
         CheckNotNull(poison, "异常状态进同一条合并列表（status_effect 也在面板上）");
         if (poison != null)
         {
-            CheckTrue(poison.Text.Contains("▼") && poison.Text.Contains("减"), $"减益用 ▼／减 标极性：{poison.Text}");
-            CheckTrue(poison.Text.Contains("中毒"), $"写中文名而不是 status_id：{poison.Text}");
-            CheckTrue(poison.Text.Contains("×2"), $"标出层数：{poison.Text}");
-            CheckTrue(poison.Text.Contains("敌"), $"合并列表里写清挂在谁身上：{poison.Text}");
+            CheckTrue(poison.TooltipText.Contains("减益"), $"减益写清极性：{poison.TooltipText}");
+            CheckTrue(poison.TooltipText.Contains("中毒"), $"写中文名而不是 status_id：{poison.TooltipText}");
+            CheckTrue(poison.TooltipText.Contains("×2"), $"标出层数：{poison.TooltipText}");
+            // 「挂在谁身上」不用再写在字里——图标就挂在**那个人**的头顶排下面
+            CheckEq(
+                poison.GetParent().Name.ToString(), $"StatusIcons_{label_enemy}",
+                "图标挂在它自己那一排（谁身上的不用再写「敌」）");
             CheckTrue(poison.TooltipText.Contains("减益"), $"悬浮说明给极性：{poison.TooltipText}");
         }
 
-        // 排序：减益在前（玩家先看到危机），同类按剩余回合升序——这里比两个条目的先后
-        var panel = battle.FindChild("BuffPanel", true, false) as HFlowContainer;
-        CheckNotNull(panel, "增益减益面板是场景节点");
-        if (panel != null && poison != null && rusty != null)
+        // 排序：减益在前（22 §1.2.3）——同一个人的图标排里，减益排在增益前面
+        ally.add_status("poison", "test", 5.0, 5, 3, "", true);
+        battle._refresh();
+        CheckNotNull(
+            battle.FindChild($"StatusIcons_{label_ally}", true, false),
+            "状态图标排挂在头顶条下面（原「增减益面板」整块删掉）");
+        var ally_debuff = battle.FindChild($"Buff_{label_ally}_poison", true, false) as Button;
+        var ally_buff = battle.FindChild($"Buff_{label_ally}_buff_yunqi", true, false) as Button;
+        CheckNotNull(ally_debuff, "我方身上的减益也进同一排");
+        if (ally_debuff != null && ally_buff != null)
         {
             CheckLt(
-                poison.GetIndex(), rusty.GetIndex(),
-                $"减益排在增益前面（{poison.GetIndex()} < {rusty.GetIndex()}）");
+                ally_debuff.GetIndex(), ally_buff.GetIndex(),
+                $"减益排在增益前面（{ally_debuff.GetIndex()} < {ally_buff.GetIndex()}）");
         }
 
         _DropBattle(battle);
@@ -269,15 +288,16 @@ public partial class TestBattleUi
             actor != null && actor.side == BattleActor.SIDE_ALLY,
             "第 1 回合预兆已给，轮到我方行动");
         BattleActor enemy = _Actor(battle.enemies[0]);
-        var intent = battle.FindChild($"Intent_{enemy.actor_id}", true, false) as Label;
-        CheckNotNull(intent, "敌人卡片上有预兆行");
+        // 22 §1.2.4：横带整条删掉——预兆改成敌人**头顶那一枚签**，而且**点签＝拆招**
+        var intent = battle.FindChild($"Intent_{enemy.actor_id}", true, false) as Button;
+        CheckNotNull(intent, "敌人头顶有预兆签");
         if (intent != null)
         {
-            CheckTrue(intent.Text.Contains("预兆："), $"预兆行写清出什么招：{intent.Text}");
+            CheckTrue(intent.Text.Contains("将用"), $"预兆签写清出什么招：{intent.Text}");
         }
 
-        var parry = battle.FindChild($"ParryButton_{enemy.actor_id}", true, false) as Button;
-        CheckNotNull(parry, "敌人卡片上有拆招按钮");
+        var parry = intent;
+        CheckNotNull(parry, "预兆签本身就能拆招（横带上的按钮随之取消）");
         if (parry != null)
         {
             CheckFalse(parry.Disabled, $"轮到我方时拆招按钮可用（原因：{parry.TooltipText}）");
@@ -294,7 +314,7 @@ public partial class TestBattleUi
             CheckGt(
                 ally.poise, poise_before,
                 $"拆招后我方架势反涨（{poise_before} → {ally.poise}）");
-            var after = battle.FindChild($"Intent_{enemy.actor_id}", true, false) as Label;
+            var after = battle.FindChild($"Intent_{enemy.actor_id}", true, false) as Button;
             CheckNotNull(after, "拆招后预兆行还在");
             if (after != null)
             {
@@ -412,25 +432,219 @@ public partial class TestBattleUi
         battle.encounter_override = encounter;
         Tree.Root.AddChild(battle);
         battle.setup();
-        Godot.Collections.Array<Node> thug_rows = battle.FindChildren("Actor_en_bd_thug*", "VBoxContainer", true, false);
-        CheckEq(thug_rows.Count, 1, "山寨喽啰那一行在（美术已交付剪影）");
+        Godot.Collections.Array<Node> thug_rows = battle.FindChildren("Actor_en_bd_thug*", "Control", true, false);
+        CheckEq(thug_rows.Count, 1, "山寨喽啰在战场上（美术已交付剪影）");
         if (thug_rows.Count == 1)
         {
             CheckEq(
                 thug_rows[0].FindChildren("Sprite_*", "TextureRect", true, false).Count, 1,
-                "有剪影的敌人行前面挂着图");
+                "有剪影的敌人挂着那张图");
         }
 
-        Godot.Collections.Array<Node> wolf_rows = battle.FindChildren("Actor_en_wolf*", "VBoxContainer", true, false);
-        CheckEq(wolf_rows.Count, 1, "野狼那一行在（美术还没出它的剪影）");
+        Godot.Collections.Array<Node> wolf_rows = battle.FindChildren("Actor_en_wolf*", "Control", true, false);
+        CheckEq(wolf_rows.Count, 1, "野狼在战场上（美术还没出它的剪影）");
         if (wolf_rows.Count == 1)
         {
+            // 没交图也不留空位：走 `BattleAvatarArt` 的程序占位剪影（有真图才换）
             CheckEq(
-                wolf_rows[0].FindChildren("Sprite_*", "TextureRect", true, false).Count, 0,
-                "没图的敌人行不留空位");
+                wolf_rows[0].FindChildren("Sprite_*", "TextureRect", true, false).Count, 1,
+                "没图的敌人也有程序占位剪影");
         }
 
         _DropBattle(battle);
+    }
+
+    /// <summary>
+    /// 暂停条（22 §1.6）：**长按战场 0.4s（或 Esc）呼出**，与指令行、展开浮层三者互斥，用完就收。
+    /// 这一段钉的是「删掉工具行」与「功能一个没少」之间的那条缝——自动／速度／策略／战报四个按钮
+    /// 从常驻改成呼出之后，**没有入口就等于把它们一起删了**（这正是它们上一版的状态）。
+    /// </summary>
+    private void _CheckPauseUi(TableDb db)
+    {
+        CheckFloat(
+            BattleScreen.PAUSE_HOLD_SECONDS, 0.4,
+            "长按判定 0.4 秒（22 §1.6：长按战场呼出暂停条）", 0.0001);
+        GodotObject state = SoloState(db);
+        var store = SaveStore.create(CommandUiDir, 3);
+        store.ensure_dir();
+        BattleScreen battle = _MakeBattle(state);
+        battle.save_store_override = store;
+        Tree.Root.AddChild(battle);
+        battle.setup();
+        battle.press_next_round();
+
+        var pause = battle.GetNodeOrNull<Control>("PauseBar");
+        var row = battle.GetNodeOrNull<Control>("CommandRow");
+        CheckNotNull(pause, "暂停条是场景节点");
+        CheckNotNull(row, "指令行是场景节点");
+        if (pause == null || row == null)
+        {
+            _DropBattle(battle);
+            return;
+        }
+
+        CheckFalse(pause.Visible, "进去时暂停条收着（它是呼出式，不常驻）");
+        CheckTrue(row.Visible, "常驻的是指令行");
+
+        // 长按：按下 → 计时 → 够 0.4s 才呼出
+        _LeftClick(battle, true);
+        battle._Process(0.25);
+        CheckFalse(pause.Visible, "不到 0.4s 不呼出");
+        battle._Process(0.25);
+        CheckTrue(pause.Visible, "长按够 0.4s 呼出暂停条");
+        CheckFalse(row.Visible, "暂停条与指令行互斥（同位置同高度，不同时在场）");
+
+        // 抬手只结束手势：第六版起点战场**不再推进**，抬手自然也不推进
+        int rounds_after_hold = _Sim(battle).rounds_played();
+        _LeftClick(battle, false);
+        CheckEq(
+            _Sim(battle).rounds_played(), rounds_after_hold,
+            "抬手不推进（第六版：点战场空白处不再推进）");
+
+        // 用完就收：按暂停条里那枚速度按钮，它自己收起来
+        var speed = battle.GetNodeOrNull<Button>("PauseBar/SpeedButton");
+        CheckNotNull(speed, "暂停条里有速度按钮");
+        if (speed != null)
+        {
+            speed.EmitSignal(Button.SignalName.Pressed);
+            CheckFalse(pause.Visible, "按了里面一下，暂停条自己收起来（用完就收）");
+            CheckTrue(row.Visible, "收起来之后指令行回来");
+        }
+
+        // 第六版（22 §1.6）：短点战场空白处**不再是推进**——这一屏没有任何手动推进入口
+        CheckTrue(_EnsureAllyTurn(battle), "短点那条断言要先轮到我方");
+        CheckTrue(battle.press_basic_attack()["ok"].AsBool(), "普攻把这一次行动用掉");
+        string before = _TurnMark(battle);
+        _LeftClick(battle, true);
+        _LeftClick(battle, false);
+        string after = _TurnMark(battle);
+        CheckEq(after, before, $"短点战场不推进（第六版删掉了这条输入路径）：{before} → {after}");
+
+        // Esc：没有浮层时开合暂停条
+        battle._UnhandledInput(new InputEventAction { Action = "ui_cancel", Pressed = true });
+        CheckTrue(pause.Visible, "Esc 也能呼出暂停条");
+        battle._UnhandledInput(new InputEventAction { Action = "ui_cancel", Pressed = true });
+        CheckFalse(pause.Visible, "再按一次 Esc 收起来");
+
+        // 第六版（22 §1.6）：Enter **也不再推进**——这条输入路径整个删掉了
+        CheckTrue(_EnsureAllyTurn(battle), "Enter 那条断言要先轮到我方");
+        CheckTrue(battle.press_basic_attack()["ok"].AsBool(), "普攻把这一次行动用掉");
+        string enter_before = _TurnMark(battle);
+        battle._UnhandledInput(new InputEventAction { Action = "ui_accept", Pressed = true });
+        string enter_after = _TurnMark(battle);
+        CheckEq(enter_after, enter_before, $"Enter 不推进（第六版删掉了这条输入路径）：{enter_before} → {enter_after}");
+
+        // 暂停条 × 展开浮层：互斥（开一个就收另一个）
+        CheckTrue(_EnsureAllyTurn(battle), "展开浮层那条断言要先轮到我方");
+
+        battle.press_skill_list();
+        var layer = battle.GetNodeOrNull<Control>("Layer");
+        CheckNotNull(layer, "展开浮层是场景节点");
+        if (layer != null)
+        {
+            CheckTrue(layer.Visible, "招式浮层能开");
+            battle.toggle_pause();
+            CheckTrue(pause.Visible, "暂停条能开");
+            CheckFalse(layer.Visible, "开暂停条＝收展开浮层（三者互斥）");
+            CheckFalse(row.Visible, "暂停条开着时指令行不在");
+        }
+
+        _DropBattle(battle);
+    }
+
+    /// <summary>
+    /// 流程自动推进（22 §1.6 第六版 ＋ §八 那条新增断言）：**没有任何手动推进入口**——
+    /// ① 没有「▶ 推进」节点、离场只剩结算卡那枚「确定」；② 轮到我方时 tick **停下来等指令**；
+    /// ③ 暂停条呼出＝流程停住（口径注 ③）；④ 收起即继续——**不按任何键**，流程自己往下走。
+    /// </summary>
+    private void _CheckAutoAdvance(TableDb db)
+    {
+        GodotObject state = SoloState(db);
+        var store = SaveStore.create(AutoAdvanceDir, 3);
+        store.ensure_dir();
+        BattleScreen battle = _MakeBattle(state);
+        battle.save_store_override = store;
+        Tree.Root.AddChild(battle);
+        battle.setup();
+
+        CheckTrue(
+            battle.GetNodeOrNull("CommandRow/NextRoundButton") == null,
+            "没有「▶ 推进」节点（第六版：流程自动推进）");
+        CheckNotNull(battle.GetNodeOrNull("ResultConfirm"), "结算卡有「确定」钮（＝返回）");
+        CheckFalse(
+            battle.GetNodeOrNull<Control>("ResultConfirm").Visible,
+            "没打完时「确定」钮不出现");
+
+        // ② 轮到我方：tick 停在那里等指令（自动推进不代玩家出招——那是「自动战斗」的事）
+        CheckTrue(_EnsureAllyTurn(battle), "自动推进那条断言要先轮到我方");
+        string ally_mark = _TurnMark(battle);
+        battle._Process(BattleScreen.AUTO_INTERVAL);
+        CheckEq(_TurnMark(battle), ally_mark, "轮到我方时 tick 停下来等指令");
+
+        // ③ 给一次玩家指令之后，暂停条一开，流程就**停住**（口径注 ③）
+        CheckTrue(battle.press_basic_attack()["ok"].AsBool(), "给一次玩家指令（普攻）");
+        battle.toggle_pause();
+        CheckTrue(battle.pause_open(), "暂停条能开");
+        string frozen = _TurnMark(battle);
+        for (int i = 0; i < 4; i++)
+        {
+            battle._Process(BattleScreen.AUTO_INTERVAL);
+        }
+
+        CheckEq(_TurnMark(battle), frozen, $"暂停条开着期间 tick 不推进：{frozen}");
+
+        // ④ 收起即继续：**不按任何键**，流程自己往下走（敌方行动／回合末结算全自动）
+        battle.toggle_pause();
+        CheckFalse(battle.pause_open(), "收起暂停条");
+        bool moved = false;
+        for (int i = 0; i < 40 && !_Sim(battle).finished(); i++)
+        {
+            battle._Process(BattleScreen.AUTO_INTERVAL);
+            if (_TurnMark(battle) != frozen)
+            {
+                moved = true;
+                break;
+            }
+        }
+
+        CheckTrue(moved, $"收起暂停条后不按任何键，流程自己往下走：{frozen} → {_TurnMark(battle)}");
+        _DropBattle(battle);
+    }
+
+    /// <summary>一次左键按下／抬起（走 `_GuiInput`，与真鼠标同一条路）。</summary>
+    private static void _LeftClick(BattleScreen battle, bool pressed) =>
+        battle._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed });
+
+    /// <summary>
+    /// 推进到轮到我方（已经在就原地不动），返回「现在确实是我方回合」。
+    /// **一次 `press_next_round()` 可能正好把这一回合的所有人跑完**（它只推进到本回合的下一个我方，
+    /// 跑完了就停在没有出手者的空档），所以给它几次机会——不然这条辅助自己会时红时绿。
+    /// </summary>
+    private static bool _EnsureAllyTurn(BattleScreen battle)
+    {
+        BattleSimulator sim = _Sim(battle);
+        BattleActor actor = sim.in_round() ? sim.current_actor() as BattleActor : null;
+        int guard = 0;
+        while ((actor == null || actor.side != BattleActor.SIDE_ALLY) && guard < 4)
+        {
+            battle.press_next_round();
+            sim = _Sim(battle);
+            actor = sim.in_round() ? sim.current_actor() as BattleActor : null;
+            guard += 1;
+        }
+
+        return actor != null && actor.side == BattleActor.SIDE_ALLY;
+    }
+
+    /// <summary>
+    /// 「回合数／当前行动者」——比单看回合数稳：同一回合里推进到另一个人**也算推进**，
+    /// 而「点下一回合」的语义正是这两件事之一。
+    /// </summary>
+    private static string _TurnMark(BattleScreen battle)
+    {
+        BattleSimulator sim = _Sim(battle);
+        BattleActor actor = sim.in_round() ? sim.current_actor() as BattleActor : null;
+        return $"{sim.rounds_played()}/{actor?.actor_id ?? "-"}";
     }
 
     private static string _D(Godot.Collections.Dictionary dict, string key) =>

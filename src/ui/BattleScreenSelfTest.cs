@@ -44,12 +44,9 @@ public partial class BattleScreen
         ok = ok && mirror_ok;
         lines.Add($"切磋镜像（照自己现造·敌方·满血·无收益）={_bool(mirror_ok)}");
 
-        // 版式预算：整页要塞得进设计分辨率（曾经最小高度 711 > 648，标题被裁掉半行）
-        ok = ok && LayoutBudget.fits(this);
-        lines.Add(LayoutBudget.ascii_line(this));
-        // 卡片列表在只滚竖向的滚动区里：横滚关着，卡片宽了就被裁掉——而上面那行 LAYOUT 只量到外壳
-        ok = ok && LayoutBudget.content_fits(this);
-        lines.Add(LayoutBudget.ascii_content_line(this));
+        // 版式（22 §八）：整屏·无壳之后不再有「整页最小尺寸」这回事，要量的是
+        // **所有可见挂件都留在画框里** ＋ 第五版那条让位（顺序条右缘 ＜ 我方最左单位头顶条左缘）。
+        ok = ok && _check_stage_layout(lines);
         // 自动战斗策略按钮（设计 04：保守／均衡／全力）——按钮在、能轮换、写的和实际一致
         bool strategy_ok = _strategy_button != null && strategy_text().Contains("均衡");
         ok = ok && strategy_ok;
@@ -61,20 +58,75 @@ public partial class BattleScreen
         ok = ok && strategy_ok;
         lines.Add($"策略按钮 ok={_bool(strategy_ok)}（当前 {strategy_text()}）");
 
-        // 敌方预兆横带（设计 14 §四要点一：预兆必须显眼、占一整条横带）：
-        // 预兆是**开回合时**掷的，所以这里先确保有一个进行中的回合，再看这一行写的是什么
-        // （这一行以前显示「最后一条日志」，与下面的日志区重复）。
+        // 暂停条（22 §1.6）：**长按战场 0.4s（或 Esc）呼出**，与指令行互斥、用完就收。
+        // 工具行整条删掉之后，自动／速度／策略／战报就住在这里——没有入口等于把它们一起删了。
+        bool pause_ok = _pause_bar != null && !_pause_bar.Visible && !pause_open();
+        lines.Add($"进战斗时暂停条收着（它是呼出式，不常驻）={_bool(pause_ok)}");
+        toggle_pause();
+        pause_ok = pause_ok && pause_open() && _pause_bar.Visible;
+        lines.Add($"长按／Esc 呼得出暂停条={_bool(pause_ok)}");
+        toggle_pause();
+        pause_ok = pause_ok && !pause_open() && !_pause_bar.Visible;
+        lines.Add($"再呼一次收起来={_bool(pause_ok)}");
+        ok = ok && pause_ok;
+
+        // 流程自动推进（22 §1.6／§八 第六版）：**没有推进钮节点**、也没有「点战场空白处／Enter 推进」
+        // 这条输入路径；**不按任何键** tick 也自己把回合推到我方；**暂停条呼出＝流程停住**（口径注 ③）。
+        bool advance_ok = GetNodeOrNull("CommandRow/NextRoundButton") == null
+            && GetNodeOrNull("ResultConfirm") != null;
+        ok = ok && advance_ok;
+        lines.Add($"没有推进钮、结算卡有「确定」={_bool(advance_ok)}");
+        if (!_sim_finished())
+        {
+            // 只让 tick 走：没人下指令，流程也得自己推到「轮到我方」为止（进场那一拍不算卡住）
+            int advance_guard = 0;
+            while (!_sim_finished() && advance_guard < 12 && !_is_ally_turn())
+            {
+                _Process(AUTO_INTERVAL);
+                advance_guard += 1;
+            }
+
+            bool waits = _is_ally_turn() || _sim_finished();
+            // 口径注 ③：暂停条开着时 tick 不推进（量「回合数／出手者」这一对，收起再继续）
+            toggle_pause();
+            string frozen = _turn_mark();
+            for (int i = 0; i < 4; i++)
+            {
+                _Process(AUTO_INTERVAL);
+            }
+
+            bool paused_still = _turn_mark() == frozen;
+            toggle_pause();
+            ok = ok && waits && paused_still;
+            lines.Add($"不按任何键自己推到我方={_bool(waits)}（{_turn_mark()}，走了 {advance_guard} 拍）；"
+                + $"暂停条开着 tick 不推进={_bool(paused_still)}");
+        }
+
+        // 敌方预兆签（22 §1.2.4：横带整条删掉，改成敌人**头顶那一枚签**，**点签＝拆招**）：
+        // 预兆是**开回合时**掷的，所以这里先确保有一个进行中的回合，再看每个敌人头上的签。
         if (!sim.Call("in_round").AsBool() && !_sim_finished())
         {
             sim.Call("begin_round");
             _refresh();
         }
 
-        bool band_ok = _action_label != null
-            && _action_label.Text.StartsWith("敌方预兆：", System.StringComparison.Ordinal)
-            && _action_label.Text.Contains("将用");
+        var sign_texts = new System.Collections.Generic.List<string>();
+        bool band_ok = enemies.Count > 0;
+        foreach (Variant enemy_variant in enemies)
+        {
+            GodotObject enemy = enemy_variant.AsGodotObject();
+            if (!enemy.Call("is_alive").AsBool())
+            {
+                continue;
+            }
+
+            var sign = FindChild($"Intent_{enemy.Get("actor_id").AsString()}", true, false) as Button;
+            band_ok = band_ok && sign != null && sign.TooltipText.Contains("将用");
+            sign_texts.Add(sign != null ? sign.Text : "-");
+        }
+
         ok = ok && band_ok;
-        lines.Add($"敌方预兆横带={_bool(band_ok)}（{(_action_label != null ? _action_label.Text : "-")}）");
+        lines.Add($"敌方预兆签（挂头顶·点签拆招）={_bool(band_ok)}（{string.Join("｜", sign_texts)}）");
         // 我方单位详情那一行（设计 14 §四：左侧 = 气血／内力／架势 ＋ 武器与已装内功）——
         // 前三条在名字与两根条上，这一行补武器与内功。
         var gear = FindChild($"Gear_{_prop_str(allies[0], "actor_id")}", true, false) as Label;
@@ -196,9 +248,8 @@ public partial class BattleScreen
         ok = ok && log_tail;
         lines.Add($"日志跟随到底：{_bool(log_tail)}（value "
             + $"{(log_bar != null ? log_bar.Value : 0.0):F0}，底 {log_bottom:F0}）");
-        // 结算之后版式还得塞得进：结算文案会变长（经验／铜钱／掉落／领悟都在这里）
-        ok = ok && LayoutBudget.fits(this);
-        lines.Add(LayoutBudget.ascii_line_tagged(this, "settled"));
+        // 结算之后挂件还得全在画框里：结算文案会变长（经验／铜钱／掉落／领悟都在这里）
+        ok = ok && _check_clip("settled", lines);
         // 极端长掉落文案：卡片行数固定三行，但**每一行都会换行**（`Result` 是普通 Label、不在滚动区里），
         // 一长就顶破 648（当年「711 > 648、标题被裁掉半行」就是这么坏的）。
         // 这里**走真实生成路径**（`_describe_drops_card`）造一段「多件掉落 + 带词条装备」的文案，
@@ -242,12 +293,12 @@ public partial class BattleScreen
             await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         }
 
-        bool long_text_ok = LayoutBudget.fits(this);
+        bool long_text_ok = _clip_size().Y <= _stage_size().Y + 1.0f;
         ok = ok && long_text_ok;
         // 自动换行的 Label 在最小尺寸里不一定算得准换行；**直接量它换了几个视觉行**更实在
         int card_lines = _result_label.GetLineCount();
         ok = ok && card_lines <= SETTLE_CARD_LINES + 1;
-        lines.Add($"{LayoutBudget.ascii_line_tagged(this, "长文案")}（卡片视觉行数 {card_lines}）");
+        lines.Add($"{_clip_ascii("长文案")}（结算卡片视觉行数 {card_lines}）");
         // 上面三次量法都可能量在「技能行恰好是空的」那一帧——而真实对局里只要轮到我方，这一行就在。
         // 2026-10-03 正是踩了这个：4 人队时多出来的 31px 全部来自这一行，1 人队却碰巧量在空帧、一路绿
         // （见框架说明决策 162）。现在补一次**最坏情况**：把技能行按上限撑满按钮，两个方向一起量。
@@ -272,9 +323,9 @@ public partial class BattleScreen
             await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         }
 
-        bool full_row_ok = LayoutBudget.fits(this);
+        bool full_row_ok = _clip_size().X <= _stage_size().X + 1.0f;
         ok = ok && full_row_ok;
-        lines.Add($"{LayoutBudget.ascii_line_tagged(this, "满招式")}（技能行按上限 {slot_cap} 个按钮撑满）");
+        lines.Add($"{_clip_ascii("满招式")}（展开浮层按上限 {slot_cap} 个按钮撑满）");
         foreach (Button temp_button in temp_buttons)
         {
             temp_button.QueueFree();
@@ -314,9 +365,13 @@ public partial class BattleScreen
             }));
         }
 
+        // 状态图标就挂在**我方第一个人的头顶条下方**（22 §1.2.3）——所以直接塞进他那一行，
+        // 加满之后量的是「牌子上多了一排图标还塞不塞得下」，不是另一块面板。
+        var icon_row = FindChild(
+            $"StatusIcons_{_prop_str(allies[0], "actor_id")}", true, false) as HBoxContainer;
         foreach (Button chip in temp_chips)
         {
-            _buff_panel.AddChild(chip);
+            icon_row?.AddChild(chip);
         }
 
         if (tree != null)
@@ -324,7 +379,7 @@ public partial class BattleScreen
             await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         }
 
-        bool with_status_ok = LayoutBudget.fits(this);
+        bool with_status_ok = _clip_size().X <= _stage_size().X + 1.0f;
         ok = ok && with_status_ok;
         int icon_chips = 0;
         foreach (Button chip in temp_chips)
@@ -335,7 +390,7 @@ public partial class BattleScreen
             }
         }
 
-        lines.Add($"{LayoutBudget.ascii_line_tagged(this, "带状态")}（带状态：{temp_chips.Count} 枚 chip，"
+        lines.Add($"{_clip_ascii("带状态")}（带状态：{temp_chips.Count} 枚 chip，"
             + $"其中 {icon_chips} 枚真的带图）");
         foreach (Button chip in temp_chips)
         {
@@ -348,8 +403,6 @@ public partial class BattleScreen
         }
 
         _result_label.Text = saved_result;
-        ok = ok && LayoutBudget.content_fits(this);
-        lines.Add(LayoutBudget.ascii_content_line(this));
         // 浮层与全局快捷键（设计 14 §二／§八）：**战斗中 Tab 开角色面板属于「浮层盖场景层」**，
         // 再按一次是「弹回它」而不是叠第二份；Esc 一次弹一层。
         bool overlay_ok = true;
@@ -442,6 +495,148 @@ public partial class BattleScreen
             tween.Parallel().TweenProperty(item, "modulate", new Color(1, 1, 1, 1), 0.27);
         }
     }
+
+    /// <summary>
+    /// 22 §八 的界面验收（**量节点，不量截图**）。整屏·无壳之后没有「整页最小尺寸」这回事了，
+    /// 要量的是四件事：① 所有可见挂件都留在画框里；② 顺序条**让开人与条**（贴左缘、宽 ≤40、
+    /// 右缘 ＜ 我方最左单位头顶条左缘、整条不与贴顶长血条相交）；③ 每个存活单位（Boss 除外）
+    /// 都有头顶条，且整块信息牌落在形象框上方 8px；④ **非 Boss 战里贴顶长血条必须不存在**。
+    /// </summary>
+    private bool _check_stage_layout(System.Collections.Generic.List<string> lines)
+    {
+        bool ok = true;
+        Vector2 world = _stage_size();
+        Vector2 clip = _clip_size();
+        bool inside = clip.X <= world.X + 1.0f && clip.Y <= world.Y + 1.0f;
+        ok = ok && inside;
+        lines.Add($"LAYOUT min_width={clip.X:0} min_height={clip.Y:0}"
+            + $" limit={(int)world.X}x{(int)world.Y} ok={_bool(inside)}（所有可见挂件的包围盒）");
+
+        // 顺序条：贴左缘 2px、整条 ≤40px（第五版为什么必须压到 40——旧版 76px 会压进我方第一人头顶条）
+        var turn = GetNodeOrNull<VBoxContainer>("TurnBar");
+        bool turn_ok = turn != null && turn.Visible;
+        double turn_right = 0.0;
+        double leftmost_ally_bar = double.MaxValue;
+        double boss_overlap = 0.0;
+        if (turn != null)
+        {
+            Rect2 rect = turn.GetGlobalRect();
+            turn_right = rect.End.X;
+            turn_ok = turn_ok && rect.Position.X <= 4.0 && rect.Size.X <= 40.0;
+            if (_boss_bar != null && _boss_bar.Visible)
+            {
+                boss_overlap = rect.Intersection(_boss_bar.GetGlobalRect()).Size.X;
+                turn_ok = turn_ok && boss_overlap <= 0.0;
+            }
+        }
+
+        // 每个单位：头顶条在、信息牌贴在头顶上方 8px（Boss 不画头顶条——它走贴顶长血条）
+        bool bars_ok = true;
+        bool gap_ok = true;
+        foreach (Godot.Collections.Array group in new[] { allies, enemies })
+        {
+            foreach (Variant actor_variant in group)
+            {
+                GodotObject actor = actor_variant.AsGodotObject();
+                string actor_id = actor.Get("actor_id").AsString();
+                bool is_boss = _boss_actor() == actor;
+                var bar = FindChild($"HpBar_{actor_id}", true, false) as ProgressBar;
+                var plate = FindChild($"Plate_{actor_id}", true, false) as Control;
+                var unit = FindChild($"Actor_{actor_id}", true, false) as Control;
+                if (is_boss)
+                {
+                    bars_ok = bars_ok && bar == null;
+                    continue;
+                }
+
+                bars_ok = bars_ok && bar != null && plate != null && unit != null;
+                if (bar == null || plate == null || unit == null)
+                {
+                    continue;
+                }
+
+                if (actor.Get("side").AsInt32() == _side_ally())
+                {
+                    leftmost_ally_bar = System.Math.Min(leftmost_ally_bar, bar.GetGlobalRect().Position.X);
+                }
+
+                double gap = unit.GetGlobalRect().Position.Y - plate.GetGlobalRect().End.Y;
+                gap_ok = gap_ok && gap <= PLATE_GAP + 1.0 && gap >= -1.0;
+            }
+        }
+
+        turn_ok = turn_ok && leftmost_ally_bar < double.MaxValue && turn_right < leftmost_ally_bar;
+        ok = ok && turn_ok && bars_ok && gap_ok;
+        lines.Add($"顺序条让位（贴左缘 ≤40、右缘 {turn_right:0} ＜ 我方最左头顶条 {leftmost_ally_bar:0}、"
+            + $"与贴顶长血条相交 {boss_overlap:0}）={_bool(turn_ok)}");
+        lines.Add($"头顶条（每个存活单位都有·Boss 除外）={_bool(bars_ok)}；"
+            + $"信息牌贴头顶 8px={_bool(gap_ok)}");
+        bool boss_bar_ok = _boss_actor() != null || (_boss_bar != null && !_boss_bar.Visible);
+        ok = ok && boss_bar_ok;
+        lines.Add($"非 Boss 战里没有贴顶长血条={_bool(boss_bar_ok)}");
+        return ok;
+    }
+
+    /// <summary>所有**可见**挂件的包围盒（跳过整屏的底与浮层：它们本来就铺满整个画框）。</summary>
+    private Vector2 _clip_size()
+    {
+        Vector2 world = _stage_size();
+        Vector2 max = Vector2.Zero;
+        foreach (Node node in FindChildren("*", "Control", true, false))
+        {
+            if (node is not Control control || !control.IsVisibleInTree() || control == this)
+            {
+                continue;
+            }
+
+            string name = control.Name.ToString();
+            if (name == "Backdrop" || name == "FloatLayer" || name == "StageRoot")
+            {
+                continue;
+            }
+
+            Rect2 rect = control.GetGlobalRect();
+            if (rect.Size.DistanceTo(world) < 1.0f)
+            {
+                continue;
+            }
+
+            max.X = System.Math.Max(max.X, rect.End.X);
+            max.Y = System.Math.Max(max.Y, rect.End.Y);
+        }
+
+        return max;
+    }
+
+    /// <summary>挂件包围盒的一行（机器可读，`check_scene.bat` 按 `LAYOUT` 抓它）。</summary>
+    private string _clip_ascii(string tag)
+    {
+        Vector2 world = _stage_size();
+        Vector2 clip = _clip_size();
+        bool ok = clip.X <= world.X + 1.0f && clip.Y <= world.Y + 1.0f;
+        return $"LAYOUT[{tag}] min_width={clip.X:0} min_height={clip.Y:0}"
+            + $" limit={(int)world.X}x{(int)world.Y} ok={_bool(ok)}";
+    }
+
+    private bool _check_clip(string tag, System.Collections.Generic.List<string> lines)
+    {
+        Vector2 world = _stage_size();
+        Vector2 clip = _clip_size();
+        bool ok = clip.X <= world.X + 1.0f && clip.Y <= world.Y + 1.0f;
+        lines.Add(_clip_ascii(tag));
+        return ok;
+    }
+
+    /// <summary>「回合数／当前出手者」——比只看回合数稳：同一回合里推进到另一个人也算推进。</summary>
+    private string _turn_mark() =>
+        $"{sim.Call("rounds_played").AsInt32()}/"
+        + (sim.Call("in_round").AsBool() ? _prop_str(sim.Call("current_actor"), "actor_id") : "-");
+
+    /// <summary>现在轮到我方出手吗（推进停止点就是这个状态）。</summary>
+    private bool _is_ally_turn() =>
+        sim.Call("in_round").AsBool()
+        && sim.Call("current_actor").AsGodotObject() is BattleActor actor
+        && actor.side == _side_ally();
 
     /// <summary>
     /// 结算里的掉落明细：「掉落：草药 ×2、铁剑（力+3、外功攻击+7）」

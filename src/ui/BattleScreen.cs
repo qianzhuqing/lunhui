@@ -64,6 +64,9 @@ public partial class BattleScreen : Control
     private const string WORLD_SCENE = "res://scenes/world_run.tscn";
     private const string LOCAL_SCENE = "res://scenes/local_run.tscn";
     public const double AUTO_INTERVAL = 0.8;
+
+    /// <summary>长按战场多久算「长按」（22 §1.6：按住 0.4 秒呼出暂停条）</summary>
+    public const double PAUSE_HOLD_SECONDS = 0.4;
     private static readonly double[] SPEED_STEPS = { 1.0, 2.0, 4.0 };
 
     /// <summary>
@@ -159,33 +162,61 @@ public partial class BattleScreen : Control
     /// <summary>`encounter` 的强类型视图（同上：类内部一律走它，导出字段只负责给 GDScript 看）。</summary>
     private Encounter Enc => encounter as Encounter;
 
-    private Label _headline;
-    private VBoxContainer _allies_box;
-    [Export] public VBoxContainer _enemies_box;
+    /// <summary>镜头层（22 §1.4）：战场上所有单位（含头顶条／状态图标／预兆签／相性行）都挂在它下面。</summary>
+    private Node2D _stage_root;
+
+    /// <summary>战场上的单位（`actor_id` → 节点）：跳字／出手／选人按它定位。</summary>
+    private readonly System.Collections.Generic.Dictionary<string, Control> _units_by_id = new();
+
+    /// <summary>整屏之后「敌方列表」就是 `StageRoot` 本身——用例按名字找战场单位要走这里。</summary>
+    [Export] public Node _enemies_box;
+
     private Label _round_label;
-    private Label _action_label;
     [Export] public RichTextLabel _log;
-    private HBoxContainer _skill_row;
-    private HFlowContainer _buff_panel;
+    private GridContainer _skill_row;
     private Button _basic_button;
+    private Button _skill_button;
     private Button _inner_button;
     private Button _item_button;
     private Button _defend_button;
 
-    /// <summary>招式行当前显示哪一组：skills（招式）／inner（内功列表）／items（道具列表）</summary>
-    private string _panel_mode = "skills";
+    /// <summary>展开浮层显示哪一组：空＝收起（指令行常驻）／skills／inner／items（22 §1.6：三者互斥）</summary>
+    private string _panel_mode = "";
+
+    /// <summary>暂停条开着吗（22 §1.6：与指令行／展开浮层三者互斥，**呼出式、不常驻**）</summary>
+    private bool _pause_open;
+
+    /// <summary>长按战场的手势：按下起算，够 `PAUSE_HOLD_SECONDS` 就呼出暂停条（第六版起只有这一种手势）</summary>
+    private double _hold_time;
+    private bool _holding;
 
     /// <summary>指令类按钮的公共开场日志（开新回合、推进到轮到我方）</summary>
     private Godot.Collections.Array _command_lines = new();
 
     private Label _result_label;
     private Label _status;
-    private Button _next_button;
+    private Button _result_confirm;
     private Button _auto_button;
     private Button _speed_button;
     private Button _strategy_button;
     private Button _flee_button;
-    private Button _return_button;
+    private Button _log_button;
+    private Button _report_button;
+    private PanelContainer _log_panel;
+    private PanelContainer _layer;
+    private HBoxContainer _command_row;
+    private HBoxContainer _pause_bar;
+    private Control _boss_bar;
+    private Label _boss_name;
+    private Label _boss_phase;
+    private Label _boss_poise_label;
+    private HBoxContainer _boss_aff;
+    private HBoxContainer _boss_seg;
+    private HBoxContainer _boss_poise;
+    private VBoxContainer _turn_bar;
+
+    /// <summary>指令行上方那一行播报的淡出补间（22 §1.6：3 秒后收）</summary>
+    private Tween _status_tween;
 
     /// <summary>场景里的节点只绑定一次（setup() 可能被外部再调一次）</summary>
     private bool _ui_bound;
@@ -226,7 +257,13 @@ public partial class BattleScreen : Control
     {
         if (@event.IsActionPressed("ui_cancel"))
         {
-            close_top_overlay();
+            // Esc 两层语义（14 §八 ＋ 22 §1.6）：**有浮层先弹浮层**（战斗中开角色面板那一层），
+            // 没有浮层才轮到暂停条——不然浮层盖着的时候 Esc 会去开合底下那一条。
+            if (!close_top_overlay())
+            {
+                toggle_pause();
+            }
+
             return;
         }
 
@@ -393,7 +430,14 @@ public partial class BattleScreen : Control
         if (_b(settings().load_auto_battle(), "enabled"))
         {
             auto_enabled = true;
-            _auto_advance();
+            _auto_advance(); // 0 ＝ 这一拍就开始打
+        }
+        else
+        {
+            // 第六版（流程自动推进）也**进场先留一拍**（`AUTO_INTERVAL`）再开打：
+            // 一是玩家先看清场上站了谁，二是开场别让敌方抢在第一帧动手——
+            // 跨场景闭环那几段（`CheckLoopRunner` 验结算与记录、不是验打得赢打不赢）也靠这一拍。
+            auto_timer = AUTO_INTERVAL;
         }
 
         _refresh();
@@ -592,10 +636,31 @@ public partial class BattleScreen : Control
         return out_actors;
     }
 
+    /// <summary>
+    /// 流程自动推进（22 §1.6 第六版）：**没有手动推进入口**——一条指令结算完就走到下一个出手的人；
+    /// 玩家只在**轮到自己的人出手**时下指令，其余（敌人行动、回合末结算、DoT 跳字、演出）自己往下走。
+    /// 口径注 ③：**暂停条呼出＝流程停住**（条开着时 tick 不推进），收起即继续。
+    /// 自动战斗（`auto_enabled`）时连我方的招也自己出——那一层在 `press_next_round()` 里面。
+    /// </summary>
     public override void _Process(double delta)
     {
-        if (!auto_enabled || sim == null || _sim_finished())
+        _tick_hold(delta);
+        if (sim == null || _sim_finished())
         {
+            return;
+        }
+
+        // 口径注 ③：不然玩家正调速度／翻战报，回合就自己推过去了。
+        if (_pause_open)
+        {
+            return;
+        }
+
+        // 轮到我方就**停住等指令**（自动战斗才替他出招）：`press_next_round()` 在这儿本来就是空转，
+        // 提前 return 只是不白跑计时器，顺便把节拍压回满值——玩家一出手，下一步隔一拍再走。
+        if (!auto_enabled && _current_ally_actor() != null)
+        {
+            auto_timer = AUTO_INTERVAL;
             return;
         }
 

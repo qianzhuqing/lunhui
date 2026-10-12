@@ -128,6 +128,7 @@ public partial class BattleScreen
         lines.AddRange(sim.Call("act", actor, chosen, target).AsGodotArray());
         Godot.Collections.Array events = sim.Call("take_events").AsGodotArray();
         _append_log(lines);
+        _panel_mode = "";
         if (_sim_finished())
         {
             _settle();
@@ -171,15 +172,7 @@ public partial class BattleScreen
             return new Godot.Collections.Dictionary { { "ok", false }, { "error", "现在不是我方行动" } };
         }
 
-        GodotObject target = null;
-        foreach (Variant enemy_variant in enemies)
-        {
-            if (_prop_str(enemy_variant, "actor_id") == enemy_id)
-            {
-                target = enemy_variant.AsGodotObject();
-                break;
-            }
-        }
+        GodotObject target = _enemy_by_id(enemy_id);
 
         Godot.Collections.Dictionary result = sim.Call("parry", actor, target).AsGodotDictionary();
         lines.AddRange(_v(result, "lines").AsGodotArray());
@@ -216,31 +209,19 @@ public partial class BattleScreen
         return out_lines;
     }
 
-    /// <summary>
-    /// 敌方预兆**横带**（设计 14 §四 要点一：「预兆必须显眼——藏在角落等于这套机制没做，
-    /// 它要占一整条横带」）。
-    ///
-    /// 这一条以前只贴在敌人卡片里、再往日志里写一行，玩家得在两处找；现在 `Action` 这个
-    /// 整宽标签就是预兆带：一条一句，把这一回合**所有活着的敌人**要出的招并排写出来。
-    /// 日志仍照常记（回看用），但**不再用它顶这一行**——两处显示同一件事没有必要。
-    /// </summary>
-    private void _refresh_intent_band()
+    /// <summary>某个敌人（按 `actor_id` 找，用来拆招／选目标）；找不到返回 null。</summary>
+    private GodotObject _enemy_by_id(string actor_id)
     {
-        if (_action_label == null)
+        foreach (Variant enemy_variant in enemies)
         {
-            return;
+            GodotObject enemy = enemy_variant.AsGodotObject();
+            if (enemy.Get("actor_id").AsString() == actor_id)
+            {
+                return enemy;
+            }
         }
 
-        if (sim == null || _sim_finished())
-        {
-            _action_label.Text = "";
-            return;
-        }
-
-        string[] lines = sim.Call("intent_lines").AsStringArray();
-        _action_label.Text = lines.Length == 0
-            ? "敌方预兆：这一回合没有敌人要出招"
-            : $"敌方预兆：{string.Join("　｜　", lines)}";
+        return null;
     }
 
     /// <summary>
@@ -356,7 +337,7 @@ public partial class BattleScreen
     public Godot.Collections.Dictionary press_inner_list()
     {
         take_over();
-        _panel_mode = _panel_mode == "inner" ? "skills" : "inner";
+        _panel_mode = _panel_mode == "inner" ? "" : "inner";
         _refresh_skills();
         return new Godot.Collections.Dictionary { { "ok", true }, { "mode", _panel_mode } };
     }
@@ -365,7 +346,16 @@ public partial class BattleScreen
     public Godot.Collections.Dictionary press_item_list()
     {
         take_over();
-        _panel_mode = _panel_mode == "items" ? "skills" : "items";
+        _panel_mode = _panel_mode == "items" ? "" : "items";
+        _refresh_skills();
+        return new Godot.Collections.Dictionary { { "ok", true }, { "mode", _panel_mode } };
+    }
+
+    /// <summary>招式指令：把**贴底展开浮层**切出来（22 §1.6：与指令行互斥，用完就收）</summary>
+    public Godot.Collections.Dictionary press_skill_list()
+    {
+        take_over();
+        _panel_mode = _panel_mode == "skills" ? "" : "skills";
         _refresh_skills();
         return new Godot.Collections.Dictionary { { "ok", true }, { "mode", _panel_mode } };
     }
@@ -387,7 +377,7 @@ public partial class BattleScreen
         _set_status(_b(result, "ok")
             ? $"{actor.Get("display_name").AsString()} 催动内功（运功 buff 已生效）"
             : $"催不动：{_s(result, "error")}");
-        _panel_mode = "skills";
+        _panel_mode = "";
         if (_sim_finished())
         {
             _settle();

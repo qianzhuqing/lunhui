@@ -219,6 +219,19 @@ UiKit/colors/mp = Color(0.243137, 0.431373, 0.541176, 1)
 ; **它是单一出处**——`UiKit.paint_backdrop()` 按名字找到浮层的 `Backdrop` 刷上去，
 ; 面板的 `.tscn` 里不再各写一份色值。
 UiKit/colors/backdrop = Color(0.85098, 0.811765, 0.705882, 0.97)
+; 战斗战场那一屏的色（15 §4.4 的「战斗战场底／战场地形剪影／我方轮廓光／敌方轮廓光」三行）：
+; 全游戏唯一压暗的一屏（22 §1.5）。**轮廓光是「亮描边」**——暗底上墨色描边等于没描边。
+UiKit/colors/stage_top = Color(0.164706, 0.164706, 0.180392, 1)
+UiKit/colors/stage_mid = Color(0.105882, 0.105882, 0.121569, 1)
+UiKit/colors/stage_bottom = Color(0.0666667, 0.0666667, 0.0784314, 1)
+UiKit/colors/stage_ridge = Color(0.117647, 0.117647, 0.133333, 1)
+UiKit/colors/rim_ally = Color(0.941176, 0.905882, 0.823529, 1)
+UiKit/colors/rim_foe = Color(0.556863, 0.592157, 0.639216, 1)
+; 战场上的字（名字／数值）：比纸白冷一点，免得跟轮廓光抢
+UiKit/colors/stage_text = Color(0.956863, 0.92549, 0.85098, 1)
+UiKit/colors/stage_dim = Color(0.85098, 0.803922, 0.698039, 1)
+; 头顶条／刻度格的底槽（半透明黑，压在暗底上）
+UiKit/colors/track = Color(0, 0, 0, 0.55)
 Button/colors/font_color = Color(0.196078, 0.180392, 0.14902, 1)
 Button/colors/font_disabled_color = Color(0.541176, 0.501961, 0.439216, 1)
 Button/colors/font_hover_color = Color(0.0901961, 0.0823529, 0.0588235, 1)

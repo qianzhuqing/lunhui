@@ -11,146 +11,287 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_battle_screen")
 
-[node name="Margin" type="MarginContainer" parent="."]
+[node name="StageRoot" type="Node2D" parent="."]
+
+[node name="BossBar" type="Control" parent="."]
+visible = false
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
+offset_bottom = 40.0
 grow_horizontal = 2
-grow_vertical = 1
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+mouse_filter = 2
 
-[node name="Column" type="VBoxContainer" parent="Margin"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Headline" type="Label" parent="Margin/Column"]
-layout_mode = 2
+[node name="BossName" type="Label" parent="BossBar"]
+layout_mode = 1
+offset_left = 12.0
+offset_top = 0.0
+offset_right = 260.0
+offset_bottom = 40.0
 theme_override_font_sizes/font_size = 24
-text = "遭遇"
+vertical_alignment = 1
+mouse_filter = 2
 
-[node name="Front" type="HBoxContainer" parent="Margin/Column"]
-layout_mode = 2
-theme_override_constants/separation = 16
+[node name="BossPhase" type="Label" parent="BossBar"]
+layout_mode = 1
+offset_left = 268.0
+offset_top = 3.0
+offset_right = 540.0
+offset_bottom = 21.0
+theme_override_font_sizes/font_size = 12
+vertical_alignment = 1
+mouse_filter = 2
 
-[node name="TeamAllies" type="VBoxContainer" parent="Margin/Column/Front"]
-custom_minimum_size = Vector2(360, 0)
-layout_mode = 2
+[node name="BossPoiseLabel" type="Label" parent="BossBar"]
+layout_mode = 1
+offset_left = 546.0
+offset_top = 3.0
+offset_right = 720.0
+offset_bottom = 21.0
+theme_override_font_sizes/font_size = 12
+vertical_alignment = 1
+mouse_filter = 2
+
+[node name="BossAff" type="HBoxContainer" parent="BossBar"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -420.0
+offset_top = 3.0
+offset_right = -12.0
+offset_bottom = 21.0
+grow_horizontal = 0
+theme_override_constants/separation = 4
+mouse_filter = 2
+
+[node name="BossSeg" type="HBoxContainer" parent="BossBar"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 12.0
+offset_top = 22.0
+offset_right = -12.0
+offset_bottom = 32.0
+grow_horizontal = 2
 theme_override_constants/separation = 2
+mouse_filter = 2
 
-[node name="TeamTitle" type="Label" parent="Margin/Column/Front/TeamAllies"]
-layout_mode = 2
-text = "我方"
-
-[node name="AllyScroll" type="ScrollContainer" parent="Margin/Column/Front/TeamAllies"]
-custom_minimum_size = Vector2(360, 185)
-layout_mode = 2
-horizontal_scroll_mode = 0
-size_flags_vertical = 3
-
-[node name="ListAllies" type="VBoxContainer" parent="Margin/Column/Front/TeamAllies/AllyScroll"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="TeamEnemies" type="VBoxContainer" parent="Margin/Column/Front"]
-custom_minimum_size = Vector2(360, 0)
-layout_mode = 2
+[node name="BossPoise" type="HBoxContainer" parent="BossBar"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 12.0
+offset_top = 34.0
+offset_right = -12.0
+offset_bottom = 38.0
+grow_horizontal = 2
 theme_override_constants/separation = 2
+mouse_filter = 2
 
-[node name="TeamTitle" type="Label" parent="Margin/Column/Front/TeamEnemies"]
-layout_mode = 2
-text = "敌方"
+[node name="TurnBar" type="VBoxContainer" parent="."]
+layout_mode = 1
+offset_left = 2.0
+offset_top = 180.0
+offset_right = 42.0
+offset_bottom = 300.0
+theme_override_constants/separation = 2
+mouse_filter = 2
 
-[node name="EnemyScroll" type="ScrollContainer" parent="Margin/Column/Front/TeamEnemies"]
-custom_minimum_size = Vector2(360, 185)
-layout_mode = 2
-horizontal_scroll_mode = 0
-size_flags_vertical = 3
+[node name="LogButton" type="Button" parent="."]
+layout_mode = 1
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -50.0
+offset_top = -28.0
+offset_right = -6.0
+offset_bottom = 28.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "战报"
 
-[node name="ListEnemies" type="VBoxContainer" parent="Margin/Column/Front/TeamEnemies/EnemyScroll"]
-layout_mode = 2
-size_flags_horizontal = 3
+[node name="LogPanel" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -324.0
+offset_top = 96.0
+offset_right = -56.0
+offset_bottom = 300.0
+grow_horizontal = 0
 
-[node name="Round" type="Label" parent="Margin/Column"]
+[node name="Log" type="RichTextLabel" parent="LogPanel"]
+custom_minimum_size = Vector2(0, 180)
 layout_mode = 2
-
-[node name="BuffPanel" type="HFlowContainer" parent="Margin/Column"]
-layout_mode = 2
-theme_override_constants/h_separation = 4
-theme_override_constants/v_separation = 2
-
-[node name="Action" type="Label" parent="Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-
-[node name="Log" type="RichTextLabel" parent="Margin/Column"]
-custom_minimum_size = Vector2(0, 64)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
 bbcode_enabled = true
 scroll_following = true
+mouse_filter = 2
 
-[node name="SkillRow" type="HBoxContainer" parent="Margin/Column"]
+[node name="RoundLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -76.0
+offset_right = 170.0
+offset_bottom = -54.0
+grow_horizontal = 1
+grow_vertical = 0
+theme_override_font_sizes/font_size = 12
+mouse_filter = 2
+
+[node name="MsgLine" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 176.0
+offset_top = -76.0
+offset_right = -24.0
+offset_bottom = -54.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_font_sizes/font_size = 12
+mouse_filter = 2
+
+[node name="Result" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -176.0
+offset_right = -24.0
+offset_bottom = -82.0
+grow_horizontal = 2
+grow_vertical = 0
+horizontal_alignment = 1
+vertical_alignment = 2
+autowrap_mode = 3
+mouse_filter = 2
+
+[node name="ResultConfirm" type="Button" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 456.0
+offset_top = -48.0
+offset_right = -456.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "确定"
+
+[node name="Layer" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -170.0
+offset_right = -12.0
+offset_bottom = -54.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="LayerScroll" type="ScrollContainer" parent="Layer"]
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="SkillRow" type="GridContainer" parent="Layer/LayerScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 2
+
+[node name="CommandRow" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -48.0
+offset_right = -12.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 0
 theme_override_constants/separation = 6
 
-[node name="CommandRow" type="HBoxContainer" parent="Margin/Column"]
+[node name="BasicAttackButton" type="Button" parent="CommandRow"]
 layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="BasicAttackButton" type="Button" parent="Margin/Column/CommandRow"]
-layout_mode = 2
+size_flags_horizontal = 3
 text = "普通攻击"
 
-[node name="InnerButton" type="Button" parent="Margin/Column/CommandRow"]
+[node name="SkillButton" type="Button" parent="CommandRow"]
 layout_mode = 2
+size_flags_horizontal = 3
+text = "招式"
+
+[node name="InnerButton" type="Button" parent="CommandRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "内功"
 
-[node name="ItemButton" type="Button" parent="Margin/Column/CommandRow"]
+[node name="ItemButton" type="Button" parent="CommandRow"]
 layout_mode = 2
+size_flags_horizontal = 3
 text = "道具"
 
-[node name="DefendButton" type="Button" parent="Margin/Column/CommandRow"]
+[node name="DefendButton" type="Button" parent="CommandRow"]
 layout_mode = 2
+size_flags_horizontal = 3
 text = "主动防御"
 
-[node name="Buttons" type="HBoxContainer" parent="Margin/Column"]
+[node name="FleeButton" type="Button" parent="CommandRow"]
 layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="NextRoundButton" type="Button" parent="Margin/Column/Buttons"]
-layout_mode = 2
-text = "下一回合"
-
-[node name="AutoButton" type="Button" parent="Margin/Column/Buttons"]
-layout_mode = 2
-text = "自动战斗"
-
-[node name="SpeedButton" type="Button" parent="Margin/Column/Buttons"]
-layout_mode = 2
-text = "速度 1x"
-
-[node name="StrategyButton" type="Button" parent="Margin/Column/Buttons"]
-layout_mode = 2
-text = "策略：均衡"
-
-[node name="FleeButton" type="Button" parent="Margin/Column/Buttons"]
-layout_mode = 2
+size_flags_horizontal = 3
 disabled = true
 text = "逃跑"
 
-[node name="ReturnButton" type="Button" parent="Margin/Column/Buttons"]
-layout_mode = 2
-text = "返回大地图"
+[node name="PauseBar" type="HBoxContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -48.0
+offset_right = -12.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 6
 
-[node name="Result" type="Label" parent="Margin/Column"]
+[node name="AutoButton" type="Button" parent="PauseBar"]
 layout_mode = 2
-autowrap_mode = 3
+size_flags_horizontal = 3
+text = "自动战斗"
 
-[node name="Status" type="Label" parent="Margin/Column"]
+[node name="SpeedButton" type="Button" parent="PauseBar"]
 layout_mode = 2
-autowrap_mode = 3
+size_flags_horizontal = 3
+text = "速度 1x"
+
+[node name="StrategyButton" type="Button" parent="PauseBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "策略：均衡"
+
+[node name="ReportButton" type="Button" parent="PauseBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "战报"

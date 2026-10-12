@@ -21,8 +21,8 @@ public abstract partial class TestHandshake
             new CheckFloor
             {
                 Pattern = "ok = ok &&",
-                Floor = 24,
-                Why = "战斗自检的聚合断言（2026-10-11 由 .gd 搬 C#，同一批 24 条原样搬过来——含 Q88 的「切磋镜像」一条）",
+                Floor = 28,
+                Why = "战斗自检的聚合断言（2026-10-11 由 .gd 搬 C#，24 条原样搬过来——含 Q88 的「切磋镜像」一条；第五版 +2 → 26；2026-10-12 第六版 +2：「没有推进钮、结算卡有确定」与「轮到我方 tick 停下／暂停条开着 tick 不推进」→ 28）",
             }
         },
         {

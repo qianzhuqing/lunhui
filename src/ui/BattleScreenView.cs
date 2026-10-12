@@ -4,11 +4,13 @@ using Lunhui.Core;
 namespace Lunhui.Ui;
 
 /// <summary>
-/// `BattleScreen` 的界面绑定与刷新（招式行／内功行／道具行／增益减益 chip）——从
-/// `BattleScreen.cs` 拆出来的 partial（那份要守 800 行硬上限）。
+/// `BattleScreen` 的界面绑定与刷新（partial，守 800 行硬上限）。
 ///
-/// 界面骨架在 `scenes/battle_screen.tscn` 里（真实节点树，编辑器/MCP 可直接调版式与皮肤），
-/// 这里只做查找与接线。卡牌行、跳字仍是运行时生成的动态内容。
+/// 骨架在 `scenes/battle_screen.tscn` 里（真实节点树，编辑器／MCP 可直接调版式与皮肤），
+/// 这里只做查找、接线与刷新。单位与头顶信息是运行时生成的动态内容，见 `BattleScreenActors.cs`。
+///
+/// 这一版是**整屏 · 无壳**（22 §1.1）：没有顶栏、没有两侧卡片列表、没有增减益面板、
+/// 没有预兆横带、没有日志区、没有工具行——只有战场 ＋ 贴底那一条指令行。
 /// </summary>
 public partial class BattleScreen
 {
@@ -21,48 +23,66 @@ public partial class BattleScreen
 
         _ui_bound = true;
         SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _headline = _require_node("Margin/Column/Headline") as Label;
-        _allies_box = _require_node("Margin/Column/Front/TeamAllies/AllyScroll/ListAllies") as VBoxContainer;
-        _enemies_box = _require_node("Margin/Column/Front/TeamEnemies/EnemyScroll/ListEnemies") as VBoxContainer;
-        _round_label = _require_node("Margin/Column/Round") as Label;
-        _action_label = _require_node("Margin/Column/Action") as Label;
-        _log = _require_node("Margin/Column/Log") as RichTextLabel;
-        _skill_row = _require_node("Margin/Column/SkillRow") as HBoxContainer;
-        _buff_panel = _require_node("Margin/Column/BuffPanel") as HFlowContainer;
-        _basic_button = _require_node("Margin/Column/CommandRow/BasicAttackButton") as Button;
-        _inner_button = _require_node("Margin/Column/CommandRow/InnerButton") as Button;
-        _item_button = _require_node("Margin/Column/CommandRow/ItemButton") as Button;
-        _defend_button = _require_node("Margin/Column/CommandRow/DefendButton") as Button;
-        _result_label = _require_node("Margin/Column/Result") as Label;
-        _status = _require_node("Margin/Column/Status") as Label;
-        _next_button = _require_node("Margin/Column/Buttons/NextRoundButton") as Button;
-        _auto_button = _require_node("Margin/Column/Buttons/AutoButton") as Button;
-        _speed_button = _require_node("Margin/Column/Buttons/SpeedButton") as Button;
-        _strategy_button = _require_node("Margin/Column/Buttons/StrategyButton") as Button;
-        _flee_button = _require_node("Margin/Column/Buttons/FleeButton") as Button;
-        _return_button = _require_node("Margin/Column/Buttons/ReturnButton") as Button;
-        // 回调返回非 void 的那些要包一层 lambda：`Pressed += press_next_round;` 是 CS0407
-        _next_button.Pressed += () => press_next_round();
-        _auto_button.Pressed += press_auto;
-        _speed_button.Pressed += () => toggle_speed();
-        _strategy_button.Pressed += () => press_strategy();
+        _stage_root = _require_node("StageRoot") as Node2D;
+        _boss_bar = _require_node("BossBar") as Control;
+        _boss_name = _require_node("BossBar/BossName") as Label;
+        _boss_phase = _require_node("BossBar/BossPhase") as Label;
+        _boss_poise_label = _require_node("BossBar/BossPoiseLabel") as Label;
+        _boss_aff = _require_node("BossBar/BossAff") as HBoxContainer;
+        _boss_seg = _require_node("BossBar/BossSeg") as HBoxContainer;
+        _boss_poise = _require_node("BossBar/BossPoise") as HBoxContainer;
+        _turn_bar = _require_node("TurnBar") as VBoxContainer;
+        _log_button = _require_node("LogButton") as Button;
+        _log_panel = _require_node("LogPanel") as PanelContainer;
+        _log = _require_node("LogPanel/Log") as RichTextLabel;
+        _round_label = _require_node("RoundLabel") as Label;
+        _status = _require_node("MsgLine") as Label;
+        _result_label = _require_node("Result") as Label;
+        _layer = _require_node("Layer") as PanelContainer;
+        _skill_row = _require_node("Layer/LayerScroll/SkillRow") as GridContainer;
+        _command_row = _require_node("CommandRow") as HBoxContainer;
+        _pause_bar = _require_node("PauseBar") as HBoxContainer;
+        _basic_button = _require_node("CommandRow/BasicAttackButton") as Button;
+        _skill_button = _require_node("CommandRow/SkillButton") as Button;
+        _inner_button = _require_node("CommandRow/InnerButton") as Button;
+        _item_button = _require_node("CommandRow/ItemButton") as Button;
+        _defend_button = _require_node("CommandRow/DefendButton") as Button;
+        _flee_button = _require_node("CommandRow/FleeButton") as Button;
+        _result_confirm = _require_node("ResultConfirm") as Button;
+        _auto_button = _require_node("PauseBar/AutoButton") as Button;
+        _speed_button = _require_node("PauseBar/SpeedButton") as Button;
+        _strategy_button = _require_node("PauseBar/StrategyButton") as Button;
+        _report_button = _require_node("PauseBar/ReportButton") as Button;
+        // `_enemies_box` 是给用例按名字找战场单位用的（整屏之后"敌方列表"就是 `StageRoot` 本身）
+        _enemies_box = _stage_root;
+        // 结算卡的「确定」＝离场（用户口径：点确定就等于返回）；`press_return()` 是 void，直连即可。
+        // 其余回调返回非 void 的那些要包一层 lambda（CS0407）。
+        _result_confirm.Pressed += press_return;
+        // 「用完就收」（22 §1.6）：暂停条里按了任何一下，它自己收起来，不占着地方
+        _auto_button.Pressed += () => { press_auto(); close_pause(); };
+        _speed_button.Pressed += () => { toggle_speed(); close_pause(); };
+        _strategy_button.Pressed += () => { press_strategy(); close_pause(); };
         _flee_button.Pressed += () => press_flee();
-        _return_button.Pressed += press_return;
         _basic_button.Pressed += () => press_basic_attack();
+        _skill_button.Pressed += () => press_skill_list();
         _inner_button.Pressed += () => press_inner_list();
         _item_button.Pressed += () => press_item_list();
         _defend_button.Pressed += () => press_defend();
+        _log_button.Pressed += toggle_log_panel;
+        _report_button.Pressed += () => { toggle_log_panel(); close_pause(); };
         // 六指令的说明写在 meta 上（`_refresh_buttons()` 每次会按当前状态覆盖 tooltip）
         _basic_button.SetMeta("hint", "六指令之一：不耗内力、不看武器，打当前目标");
+        _skill_button.SetMeta("hint", "六指令之一：展开已装配的招式，选一招打出去");
         _inner_button.SetMeta("hint", "六指令之一：查看已装内功，催动一次换运功 buff");
         _item_button.SetMeta("hint", "六指令之一：战斗中可用的道具");
         _defend_button.SetMeta("hint", "六指令之一：本回合减伤、架势回复、下回合先手");
         _flee_button.Disabled = true;
-        _headline.Text = Enc.headline();
+        _result_confirm.TooltipText = "离开结算，回到刚才那张地图";
         _log.Clear();
-        _action_label.Text = "";
+        _status.Text = Enc != null ? Enc.headline() : "";
         _result_label.Text = "";
-        _status.Text = "";
+        // 战报面板默认**开着**：它就是示意源里右上那块「近 5 条」，勾掉的只是常驻的一整条日志区
+        _log_panel.Visible = true;
     }
 
     /// <summary>场景里少一个节点就应该炸得很响（而不是界面上静悄悄缺一块）</summary>
@@ -92,54 +112,85 @@ public partial class BattleScreen
 
     public void _refresh()
     {
-        _clear(_allies_box);
-        _clear(_enemies_box);
-        foreach (Variant actor in allies)
-        {
-            _allies_box.AddChild(_make_actor_row(actor));
-        }
-
-        foreach (Variant actor in enemies)
-        {
-            _enemies_box.AddChild(_make_actor_row(actor));
-        }
-
-        _round_label.Text = $"第 {System.Math.Max(sim.Call("rounds_played").AsInt32(), 1)} 回合　"
-            + $"{(_sim_finished() ? "已结束" : "进行中")}";
+        _build_backdrop();
+        _refresh_units();
+        _round_label.Text = $"第 {System.Math.Max(sim != null ? sim.Call("rounds_played").AsInt32() : 1, 1)} 回合"
+            + $"　{(_sim_finished() ? "已结束" : "进行中")}";
         _refresh_buttons();
         _refresh_skills();
-        _refresh_buffs();
-        _refresh_intent_band();
+        _refresh_boss_bar();
+        _refresh_turn_bar();
     }
 
-    /// <summary>这一行按当前模式显示：招式（默认）／已装内功／战斗道具</summary>
+    /// <summary>把战场上的单位按版式重摆一遍（节点是每次刷新重建的，与以前的卡片同一套口径）。</summary>
+    private void _refresh_units()
+    {
+        if (_stage_root == null)
+        {
+            return;
+        }
+
+        foreach (Node child in _stage_root.GetChildren())
+        {
+            if (child is Control unit && unit.Name.ToString().StartsWith("Actor_", System.StringComparison.Ordinal))
+            {
+                _stage_root.RemoveChild(unit);
+                unit.QueueFree();
+            }
+        }
+
+        _units_by_id.Clear();
+        foreach ((GodotObject actor, Vector2 position, int size) in _placements())
+        {
+            Control unit = _make_unit(actor, size);
+            unit.Position = position;
+            _stage_root.AddChild(unit);
+            _units_by_id[actor.Get("actor_id").AsString()] = unit;
+        }
+
+        _stage_reset(false);
+    }
+
+    /// <summary>
+    /// 招式／内功／道具的**展开浮层**（22 §1.6：贴底浮层 120 高、两列格、可滚动，
+    /// 与指令行**互斥**）。`_panel_mode` 为空就是收起——收起时指令行常驻。
+    /// </summary>
     private void _refresh_skills()
     {
-        if (_skill_row == null)
+        if (_skill_row == null || _layer == null || _command_row == null || _pause_bar == null
+            || _result_confirm == null)
         {
             return;
         }
 
+        // 对位 `_refresh_buttons()` 的同名量：**没开局（sim == null）不算打完**——
+        // 不然 `_bind_ui()` 那一下会先把指令行收掉、把「确定」露出来（结算屏在开局前不该在）。
+        bool done = sim != null && _sim_finished();
+        if (done)
+        {
+            _pause_open = false; // 打完了就把暂停条收掉（结算屏上它没意义）
+        }
+
+        bool open = _panel_mode.Length > 0 && !_pause_open && sim != null && !done;
+        _layer.Visible = open;
+        // 打完之后指令行整条退场，画面下缘换成结算卡那一枚「确定」（用户口径：点确定＝返回）
+        _command_row.Visible = !open && !_pause_open && !done;
+        _pause_bar.Visible = _pause_open;
+        _result_confirm.Visible = done;
         _clear(_skill_row);
-        if (sim == null || _sim_finished())
+        if (!open)
         {
             return;
         }
 
-        if (!sim.Call("in_round").AsBool())
-        {
-            // 不在这里偷偷开回合（会让「下一回合」的计数对不上）：等玩家点「下一回合」或直接点招式
-            _skill_row.AddChild(new Label
-            {
-                Name = "SkillHint",
-                Text = "点「下一回合」开打，或直接点招式先手出招",
-            });
-            return;
-        }
-
-        GodotObject actor = sim.Call("current_actor").AsGodotObject();
+        GodotObject actor = sim.Call("in_round").AsBool()
+            ? sim.Call("current_actor").AsGodotObject()
+            : null;
         if (actor == null)
         {
+            _panel_mode = "";
+            _layer.Visible = false;
+            _command_row.Visible = !_pause_open;
             return;
         }
 
@@ -156,15 +207,13 @@ public partial class BattleScreen
         }
 
         bool ally_turn = actor.Get("side").AsInt32() == _side_ally();
-        _skill_row.AddChild(new Label
-        {
-            Name = "SkillHint",
-            Text = ally_turn
-                ? $"{actor.Get("display_name").AsString()} 行动："
-                : "敌方行动中（点「下一回合」自动推进）",
-        });
         if (!ally_turn)
         {
+            _skill_row.AddChild(new Label
+            {
+                Name = "SkillHint",
+                Text = "敌方行动中（点 ▶ 推进）",
+            });
             return;
         }
 
@@ -251,87 +300,25 @@ public partial class BattleScreen
             string item_id = _s(option, "item_id");
             string text = $"{_s(option, "name")} ×{_i(option, "qty")}（{_s(option, "desc")}）"
                 + $"　— {_s(option, "reason")}";
+            // 道具的效果数值列还没配（设计 08 Q89 的读取端等 Q33），所以按钮一律置灰、
+            // 理由写在按钮上——但**列表照样列出来**，玩家看得见自己有什么。
             _skill_row.AddChild(_make_button(
                 $"ItemButton_{item_id}", text, () => press_item_list(), true));
         }
     }
 
-    /// <summary>
-    /// 增益减益面板（08 UI 要求）：`status_effect` 与 `buff_def` **合并成一条列表**，
-    /// 减益在前、按剩余回合升序；常驻／整场显示 ∞，可叠层的显示 ×N；悬浮给名称与效果。
-    /// </summary>
-    private void _refresh_buffs()
+    /// <summary>战报面板：右侧居中的那枚钮开合它（默认收起——整屏战场不摆常驻日志）。</summary>
+    public void toggle_log_panel()
     {
-        if (_buff_panel == null)
+        if (_log_panel == null)
         {
             return;
         }
 
-        _clear(_buff_panel);
-        // 先把**所有单位**的条目合成一条列表再排一次：08 的排序是全局的
-        // （减益在前、同类按剩余回合升序）——各排各的会让敌方的减益被我方增益压到下面。
-        var rows = new Godot.Collections.Array();
-        foreach (Godot.Collections.Array group in new[] { allies, enemies })
+        _log_panel.Visible = !_log_panel.Visible;
+        if (_log_panel.Visible)
         {
-            foreach (Variant actor_variant in group)
-            {
-                GodotObject actor = actor_variant.AsGodotObject();
-                foreach (Variant row_variant in actor.Call("effect_rows", db).AsGodotArray())
-                {
-                    Godot.Collections.Dictionary entry = row_variant.AsGodotDictionary().Duplicate();
-                    entry["actor_id"] = actor.Get("actor_id");
-                    entry["actor_name"] = actor.Get("display_name");
-                    entry["side_mark"] = actor.Get("side").AsInt32() == _side_ally() ? "我" : "敌";
-                    rows.Add(entry);
-                }
-            }
+            _log_panel.MoveToFront();
         }
-
-        foreach (Variant row_variant in BattleActor.sort_effect_rows(rows))
-        {
-            _buff_panel.AddChild(_make_effect_chip(row_variant.AsGodotDictionary()));
-        }
-    }
-
-    public Button _make_effect_chip(Godot.Collections.Dictionary row)
-    {
-        var chip = new Button
-        {
-            Name = $"Buff_{_s(row, "actor_id", "?")}_{(_s(row, "entry_id").Length > 0 ? _s(row, "entry_id") : _s(row, "buff_id", "?"))}",
-            Flat = true,
-            FocusMode = Control.FocusModeEnum.None,
-        };
-        chip.AddThemeFontSizeOverride("font_size", 12);
-        bool is_debuff = _b(row, "is_debuff");
-        int remaining = _i(row, "remaining");
-        string time_text = _b(row, "permanent") || remaining < 0 ? "∞" : remaining.ToString();
-        int stacks = _i(row, "stacks", 1);
-        // 图标（15 §4.3 的「增益减益 19／异常状态 4」）：**优先表里的 `icon`，空则退回行 id**
-        // ——与 `item_base.icon` 同一套优先级，所以美术按哪个名字交都能对上。
-        // **有图才摆**：一张都还没交付时 `icon` 留 null，卡片尺寸与以前一模一样（不占空位）。
-        string icon_id = _s(row, "icon").Trim();
-        if (icon_id.Length == 0)
-        {
-            icon_id = _s(row, "entry_id").Length > 0 ? _s(row, "entry_id") : _s(row, "buff_id");
-        }
-
-        string icon_path = _s(row, "kind") == "status" ? IconPaths.status(icon_id) : IconPaths.buff(icon_id);
-        chip.SetMeta("icon_path", icon_path);
-        Texture2D icon_texture = IconPaths.load_icon(icon_path);
-        if (icon_texture != null)
-        {
-            chip.Icon = icon_texture;
-        }
-
-        // 极性用「形状 + 字」两重编码（08 要求色盲可辨：光靠红蓝不够）
-        // 名字要带上是谁的（合并列表里不写归属，玩家不知道这条 buff 挂在谁身上）
-        chip.Text = $"{_s(row, "side_mark")} {(is_debuff ? "▼" : "▲")}{(is_debuff ? "减" : "增")}"
-            + $"·{_s(row, "name")} {time_text}{(stacks <= 1 ? "" : $" ×{stacks}")}";
-        // 极性配色（08：增益蓝、减益红）——另配「增／减」字标，色盲也能分辨
-        chip.AddThemeColorOverride(
-            "font_color", is_debuff ? new Color("#e57373") : new Color("#64b5f6"));
-        chip.TooltipText = $"{_s(row, "actor_name")}·{_s(row, "name")}"
-            + $"（{(is_debuff ? "减益" : "增益")}，剩余 {time_text}）{_s(row, "desc")}";
-        return chip;
     }
 }

@@ -4,204 +4,424 @@ using Lunhui.Core;
 namespace Lunhui.Ui;
 
 /// <summary>
-/// `BattleScreen` 的单位卡片、血条／内力条／架势条与日志——从 `BattleScreen.cs` 拆出来的
-/// partial（那份要守 800 行硬上限）。
+/// `BattleScreen` 的**单位**与**挂在人身上的信息**（partial，守 800 行硬上限）：
+/// 形象、头顶条、架势刻度、相性行、状态图标、预兆签，外加日志与六指令按钮的刷新。
 ///
-/// 卡片是运行时生成的动态内容（骨架在 `.tscn` 里）；节点名 `Actor_<id>`／`Name_<id>`／
-/// `HpBar_<id>` 就是用例与自检的接口，别改。
+/// 节点名 `Actor_&lt;id&gt;`／`Name_&lt;id&gt;`／`HpBar_&lt;id&gt;` 是用例与自检的接口，别改；
+/// 版式常量与站位在 `BattleScreenStage.cs`，这里只管「一个单位长什么样」。
+///
+/// 这一版的核心动作（22 §1.2）：**没有卡片了——战场就是唯一的选人界面**，
+/// 信息全挂人身上：头顶条／状态图标／预兆签／相性行。
 /// </summary>
 public partial class BattleScreen
 {
-    public Control _make_actor_row(Variant actor_variant)
+    /// <summary>
+    /// 一个单位：形象 ＋ 站位影 ＋ 头顶信息牌。`size` 是形象框的边长（远景敌 96／近景我方 128／Boss 176）。
+    /// 挂牌子的位置要等排完版才知道，所以先建出来、`ResetSize()` 之后再挪。
+    /// </summary>
+    public Control _make_unit(Variant actor_variant, int size)
     {
         GodotObject actor = actor_variant.AsGodotObject();
         string actor_id = actor.Get("actor_id").AsString();
+        var unit = new Control
+        {
+            Name = $"Actor_{actor_id}",
+            CustomMinimumSize = new Vector2(size, size),
+            Size = new Vector2(size, size),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+
+        var shadow = _shadow((int)(size * 0.72f));
+        shadow.Position = new Vector2(size * 0.14f, size - 7.0f);
+        unit.AddChild(shadow);
+
+        bool dead = !actor.Call("is_alive").AsBool();
+        var sprite = new TextureRect
+        {
+            Name = $"Sprite_{actor_id}",
+            Texture = _unit_texture(actor),
+            Position = Vector2.Zero,
+            Size = new Vector2(size, size),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        unit.AddChild(sprite);
+        if (dead)
+        {
+            // 阵亡：压暗 ＋ 倒下（转 90 度）——比在名字后面写「（倒）」直观
+            sprite.Modulate = new Color(1, 1, 1, 0.45f);
+            sprite.PivotOffset = new Vector2(size * 0.5f, size * 0.9f);
+            sprite.Rotation = Mathf.DegToRad(78.0f);
+        }
+
+        Control plate = _make_plate(actor, size);
+        plate.ResetSize();
+        plate.Position = new Vector2((size - plate.Size.X) * 0.5f, -plate.Size.Y - PLATE_GAP);
+        unit.AddChild(plate);
+        return unit;
+    }
+
+    /// <summary>
+    /// 形象：**有图才摆**——美术的动作表（A6）一交就用它，没交才用程序占位剪影
+    /// （`BattleAvatarArt`；这块一交图就自动退休）。
+    /// </summary>
+    private Texture2D _unit_texture(GodotObject actor)
+    {
         bool is_ally = actor.Get("side").AsInt32() == _side_ally();
-        var row = new VBoxContainer { Name = $"Actor_{actor_id}" };
-        row.AddThemeConstantOverride("separation", 2);
-        // 名字与「选为目标」同一行：卡片矮一点，多几个敌人也不用滚
-        var head = new HBoxContainer { Name = $"Head_{actor_id}" };
-        head.AddThemeConstantOverride("separation", 6);
-        row.AddChild(head);
-        // 敌人剪影（15 六：`assets/sprites/<faction>/<enemy_id>.png`）——**有图才摆**。
-        // 美术先出了两条做对照（山寨喽啰／别派弟子），其余还没出；我方那一侧不放
-        // （角色的形象在角色面板的立绘里，战斗卡片只列数值，免得卡片变高）。
+        string source_id = actor.Get("source_id").AsString();
+        string actor_id = actor.Get("actor_id").AsString();
+        string faction = is_ally
+            ? "characters"
+            : (actor.Get("tags").AsGodotDictionary().ContainsKey("faction")
+                ? actor.Get("tags").AsGodotDictionary()["faction"].AsString()
+                : "");
+        Texture2D texture = IconPaths.load_icon(IconPaths.actor(faction, source_id));
+        if (texture != null)
+        {
+            return texture;
+        }
+
+        string weapon = _weapon_type(actor);
+        return is_ally
+            ? BattleAvatarArt.ally_figure(actor_id, weapon, false)
+            : BattleAvatarArt.foe_figure(actor_id, weapon, false);
+    }
+
+    /// <summary>
+    /// 这个单位手上是什么兵器——只用来挑占位剪影那一笔（我方读装配的武器、敌方读它第一招的武器类型）。
+    /// 表里没有敌人的武器列（`enemy_base` 只有招式），所以从招式反推，读不到就当空手。
+    /// </summary>
+    private string _weapon_type(GodotObject actor)
+    {
+        if (actor.Get("side").AsInt32() == _side_ally())
+        {
+            Resource weapon = PartyBuilder.equipped_weapon(Db, state, actor.Get("actor_id").AsString());
+            return weapon != null ? weapon.Get("weapon_type").AsString() : "";
+        }
+
+        foreach (string skill_id in actor.Get("skills").AsStringArray())
+        {
+            Resource skill = Db?.get_row("skill_base", skill_id);
+            if (skill == null)
+            {
+                continue;
+            }
+
+            string weapon = skill.Get("weapon_type").AsString();
+            if (weapon.Length > 0 && weapon != "any")
+            {
+                return weapon;
+            }
+        }
+
+        return "";
+    }
+
+    /// <summary>
+    /// 头顶信息牌（22 §1.2.1–§1.2.5）：敌我自上而下——
+    /// **预兆签（只敌方）／名字／气血条＋数值／架势刻度／内力条（只我方）／相性行（只敌方）／状态图标**。
+    /// 牌子水平居中在单位头顶 8px 处（位置由调用方在 `ResetSize()` 之后摆）。
+    /// </summary>
+    private Control _make_plate(GodotObject actor, int size)
+    {
+        string actor_id = actor.Get("actor_id").AsString();
+        bool is_ally = actor.Get("side").AsInt32() == _side_ally();
+        var plate = new VBoxContainer
+        {
+            Name = $"Plate_{actor_id}",
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        plate.AddThemeConstantOverride("separation", 2);
+        string rim = is_ally ? "rim_ally" : "rim_foe";
+        int bar_width = is_ally ? 72 : (size >= ALLY_W ? 96 : 56);
+
         if (!is_ally)
         {
-            Godot.Collections.Dictionary tags = actor.Get("tags").AsGodotDictionary();
-            string faction = tags.ContainsKey("faction") ? tags["faction"].AsString() : "";
-            string sprite_path = IconPaths.actor(faction, actor.Get("source_id").AsString());
-            TextureRect sprite = IconPaths.make_icon(sprite_path, $"Sprite_{actor_id}");
-            if (sprite != null)
+            Control sign = _intent_sign(actor);
+            if (sign != null)
             {
-                head.AddChild(sprite);
+                plate.AddChild(sign);
             }
         }
 
-        var label = new Label { Name = $"Name_{actor_id}" };
-        bool is_target = !is_ally && actor_id == selected_target_id;
-        label.Text = $"{(is_target ? "▶ " : "")}{actor.Get("display_name").AsString()}　"
-            + $"Lv{actor.Get("level").AsInt32()}　气血 {actor.Get("hp").AsInt32()}/"
-            + $"{actor.Call("max_hp").AsInt32()}　内力 {actor.Get("qi").AsInt32()}";
-        label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        // 阵亡：卡片压暗并标「（倒）」，还带一点点倒下的位移（跳字与血条都跟着暗下去）
-        bool dead = !actor.Call("is_alive").AsBool();
-        if (dead)
+        var name = new Label
         {
-            label.Text = $"{label.Text}　（倒）";
-            row.Modulate = new Color(1, 1, 1, 0.45f);
-            row.Position = new Vector2(-6.0f, row.Position.Y);
-            Tween fall = CreateTween();
-            fall.TweenProperty(row, "position:x", 0.0, 0.25);
-        }
-
-        if (is_target)
+            Name = $"Name_{actor_id}",
+            Text = actor.Get("display_name").AsString(),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        name.AddThemeFontSizeOverride("font_size", 12);
+        name.AddThemeColorOverride("font_color", UiKit.color("stage_text"));
+        if (!actor.Call("is_alive").AsBool())
         {
-            label.AddThemeColorOverride("font_color", new Color("ffd24a"));
+            name.Text = $"{name.Text}（倒）";
         }
-
-        if (dead)
-        {
-            label.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
-        }
-        else if (is_ally
-            && actor.Get("hp").AsInt32() * 4 <= System.Math.Max(1, actor.Call("max_hp").AsInt32()))
+        else if (is_ally && actor.Get("hp").AsInt32() * 4 <= System.Math.Max(1, actor.Call("max_hp").AsInt32()))
         {
             // 濒死提示：血量 ≤25% 时名字转红，玩家一眼看到要救
-            label.AddThemeColorOverride("font_color", new Color("eb5757"));
-            label.Text += "　（危急）";
+            name.AddThemeColorOverride("font_color", UiKit.color("cinnabar"));
+            name.Text = $"{name.Text}（危急）";
         }
 
-        head.AddChild(label);
-        if (!is_ally && actor.Call("is_alive").AsBool())
+        plate.AddChild(name);
+
+        var hp_row = new HBoxContainer
         {
-            var pick = new Button
-            {
-                Name = $"TargetButton_{actor_id}",
-                Text = is_target ? "▶ 已选中" : "选为目标",
-                CustomMinimumSize = new Vector2(88, 24),
-            };
-            string wanted = actor_id;
-            pick.Pressed += () => select_target(wanted);
-            head.AddChild(pick);
-            // 拆招按钮：预兆已给，玩家在本回合自己的行动里可以「花一次行动读破它」
-            var parry = new Button
-            {
-                Name = $"ParryButton_{actor_id}",
-                Text = sim.Call("is_parried", actor_id).AsBool() ? "已拆招" : "拆招",
-                CustomMinimumSize = new Vector2(72, 24),
-            };
-            GodotObject ally = _current_ally_actor();
-            string reason = sim.Call("parry_block_reason", ally, actor).AsString();
-            parry.Disabled = reason.Length > 0;
-            if (parry.Disabled)
-            {
-                parry.TooltipText = reason;
-            }
-            else if (!sim.Call("is_parried", actor_id).AsBool())
-            {
-                // 能拆的时候把**效果**写清楚——三条都是已实现的行为（那一招伤害按 `parry_damage_mult`
-                // 打折、架势反涨、花掉这次行动），跟逃跑那个成功率提示同一类：信息就在代码里，
-                // 别让玩家靠试。数字**现算**（`combat_const.parry_damage_mult`），设计改表这里自动跟着变。
-                parry.TooltipText = "读破这一招：它这次伤害按 "
-                    + $"{sim.Call("parry_damage_mult").AsDouble() * 100.0:F0}% 结算，"
-                    + "自己反涨架势（要花掉这次行动）";
-            }
-
-            string parry_target = actor_id;
-            parry.Pressed += () => press_parry(parry_target);
-            head.AddChild(parry);
-        }
-
-        // 预兆行：敌人这一回合要出什么招，界面上要先看得见（设计 04 的核心循环）
-        if (!is_ally && actor.Call("is_alive").AsBool())
-        {
-            string intent_id = sim.Call("intent_of", actor_id).AsString();
-            if (intent_id.Length > 0)
-            {
-                var intent = new Label { Name = $"Intent_{actor_id}" };
-                if (sim.Call("is_parried", actor_id).AsBool())
-                {
-                    intent.Text = $"预兆：{sim.Call("skill_display_name", intent_id).AsString()}（已被拆招，伤害减半）";
-                    intent.AddThemeColorOverride("font_color", new Color("9a9a9a"));
-                }
-                else
-                {
-                    intent.Text = $"预兆：{sim.Call("skill_display_name", intent_id).AsString()}";
-                    intent.AddThemeColorOverride("font_color", new Color("c9a0ff"));
-                }
-
-                intent.AddThemeFontSizeOverride("font_size", 12);
-                row.AddChild(intent);
-            }
-        }
-
-        var bar = new ProgressBar
-        {
-            Name = $"HpBar_{actor_id}",
-            MaxValue = System.Math.Max(1.0, actor.Call("max_hp").AsDouble()),
-            Value = actor.Get("hp").AsDouble(),
-            CustomMinimumSize = new Vector2(320, 10),
-            ShowPercentage = false,
+            Name = $"HpRow_{actor_id}",
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        row.AddChild(bar);
-        // 内力条与架势条：手选招式要看内力，破绽机制要看架势
-        var bars = new HBoxContainer { Name = $"Bars_{actor_id}" };
-        bars.AddThemeConstantOverride("separation", 6);
-        row.AddChild(bars);
-        bars.AddChild(_make_bar(
-            $"QiBar_{actor_id}",
-            actor.Get("qi").AsDouble(),
-            System.Math.Max(1, actor.Call("max_qi").AsInt32()),
-            new Color("5aa9e6"),
-            150));
-        ProgressBar poise_bar = _make_bar(
-            $"PoiseBar_{actor_id}",
-            actor.Get("poise").AsDouble(),
-            System.Math.Max(1, actor.Call("max_poise").AsInt32()),
-            actor.Call("is_broken").AsBool() ? new Color("eb5757") : new Color("e0a13c"),
-            160);
-        bars.AddChild(poise_bar);
-        _decorate_poise_bar(poise_bar, actor);
+        hp_row.AddThemeConstantOverride("separation", 5);
+        hp_row.AddChild(_status_bar(
+            $"HpBar_{actor_id}", actor.Get("hp").AsDouble(), actor.Call("max_hp").AsDouble(),
+            "hp", bar_width, 6, rim));
+        var hp_text = new Label
+        {
+            Name = $"HpText_{actor_id}",
+            Text = $"{actor.Get("hp").AsInt32()}/{actor.Call("max_hp").AsInt32()}",
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        hp_text.AddThemeFontSizeOverride("font_size", 12);
+        hp_text.AddThemeColorOverride("font_color", UiKit.color("stage_dim"));
+        hp_row.AddChild(hp_text);
+        plate.AddChild(hp_row);
+
+        plate.AddChild(_poise_ticks(actor, bar_width, rim));
+
+        if (is_ally)
+        {
+            plate.AddChild(_status_bar(
+                $"QiBar_{actor_id}", actor.Get("qi").AsDouble(), actor.Call("max_qi").AsDouble(),
+                "mp", bar_width, 3, rim));
+        }
+        else
+        {
+            var affinity = new HBoxContainer
+            {
+                Name = $"Affinity_{actor_id}",
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            affinity.AddThemeConstantOverride("separation", 4);
+            foreach (string mark in _affinity_marks(actor))
+            {
+                affinity.AddChild(_affinity_chip(mark));
+            }
+
+            if (affinity.GetChildCount() > 0)
+            {
+                plate.AddChild(affinity);
+            }
+        }
+
+        plate.AddChild(_status_icons(actor));
         if (actor.Call("is_broken").AsBool())
         {
             var mark = new Label
             {
                 Name = $"BrokenMark_{actor_id}",
-                Text = "破绽！",
+                Text = "破绽",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            mark.AddThemeColorOverride("font_color", new Color("eb5757"));
-            bars.AddChild(mark);
+            mark.AddThemeFontSizeOverride("font_size", 24);
+            mark.AddThemeColorOverride("font_color", UiKit.color("cinnabar"));
+            plate.AddChild(mark);
         }
 
-        // 我方单位详情（设计 14 §四：左侧那一栏 = 气血／内力／架势 ＋ **武器与已装内功**）。
-        // 前三条已经在上面（名字里的气血／内力 ＋ 两根条 ＋ 架势条），缺的是这一行。
+        if (!is_ally)
+        {
+            // 点敌人本体＝选它（22 §1.3：战场就是唯一的选人界面）
+            string wanted = actor_id;
+            var pick = new Button
+            {
+                Name = $"TargetButton_{actor_id}",
+                Text = actor_id == selected_target_id ? "▶ 已选中" : "选为目标",
+                CustomMinimumSize = new Vector2(88, 22),
+            };
+            pick.AddThemeFontSizeOverride("font_size", 12);
+            pick.Pressed += () => select_target(wanted);
+            plate.AddChild(pick);
+        }
+
         if (is_ally)
         {
             var gear = new Label
             {
                 Name = $"Gear_{actor_id}",
                 Text = _gear_text(actor),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
             };
             gear.AddThemeFontSizeOverride("font_size", 12);
-            gear.AddThemeColorOverride("font_color", new Color(0.78f, 0.83f, 0.9f));
-            row.AddChild(gear);
+            gear.AddThemeColorOverride("font_color", UiKit.color("stage_dim"));
+            plate.AddChild(gear);
         }
 
-        // 异常状态：中毒/灼伤/流血/内伤，颜色取 damage_type.display_color
-        string status_text = _status_text(actor);
-        if (status_text.Length > 0)
+        return plate;
+    }
+
+    /// <summary>
+    /// 预兆签（22 §1.2.4）：敌人头顶那一枚朱红签，**点签＝拆招**（横带上的按钮随之取消）。
+    /// 拆过之后签转灰写「已被拆招 · 伤害减半」——判定与以前一字不差。
+    /// </summary>
+    private Control _intent_sign(GodotObject actor)
+    {
+        if (sim == null || _sim_finished() || !actor.Call("is_alive").AsBool())
         {
-            var status_label = new Label
-            {
-                Name = $"Status_{actor_id}",
-                Text = status_text,
-            };
-            status_label.AddThemeColorOverride("font_color", _status_color(actor));
-            bars.AddChild(status_label);
+            return null;
         }
 
-        return row;
+        string actor_id = actor.Get("actor_id").AsString();
+        string skill_id = sim.Call("intent_of", actor_id).AsString();
+        if (skill_id.Length == 0)
+        {
+            return null;
+        }
+
+        Resource skill = Db?.get_row("skill_base", skill_id);
+        string skill_name = skill != null ? skill.Get("name_cn").AsString() : skill_id;
+        bool parried = sim.Call("is_parried", actor_id).AsBool();
+        // 能拆时把**效果**说清楚（22 §1.2.4：点签＝拆招）——折扣现算自 `combat_const.parry_damage_mult`，
+        // 改表这里跟着变，别把 50% 写死在字里。
+        Resource parry_const = Db?.get_row("combat_const", "parry_damage_mult");
+        string parry_hint = parry_const != null
+            ? $"——点这枚签＝拆招（伤害打到 {parry_const.Get("value").AsDouble() * 100:F0}%、我方架势反涨）"
+            : "——点这枚签＝拆招";
+        var sign = new Button
+        {
+            Name = $"Intent_{actor_id}",
+            Text = parried ? "已被拆招 · 伤害减半" : $"{skill_name} · 将用",
+            CustomMinimumSize = new Vector2(120, 22),
+            TooltipText = parried
+                ? $"{actor.Get("display_name").AsString()} 这一招已被拆招，伤害减半"
+                : $"{actor.Get("display_name").AsString()} 将用 {skill_name}{parry_hint}",
+        };
+        sign.AddThemeFontSizeOverride("font_size", 12);
+        sign.AddThemeColorOverride(
+            "font_color", parried ? UiKit.color("rim_foe") : UiKit.color("stage_text"));
+        sign.AddThemeStyleboxOverride(
+            "normal", _stage_box(parried ? new Color(0.25f, 0.25f, 0.27f, 0.9f)
+                : new Color(UiKit.color("cinnabar"), 0.88f), 2, 1));
+        string wanted = actor_id;
+        sign.Pressed += () => press_parry(wanted);
+        return sign;
+    }
+
+    /// <summary>
+    /// 状态图标（22 §1.2.3）：挂在头顶血条**正下方**一排，**减益在前**（红框）、增益在后（蓝框），
+    /// 每个 20×20；最多 6 个，超了末位写「+N」。剩余回合写图标右下角小数字，常驻（∞）不写。
+    /// </summary>
+    private Control _status_icons(GodotObject actor)
+    {
+        string actor_id = actor.Get("actor_id").AsString();
+        var box = new HBoxContainer
+        {
+            Name = $"StatusIcons_{actor_id}",
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        box.AddThemeConstantOverride("separation", 2);
+        if (!actor.HasMethod("effect_rows"))
+        {
+            return box;
+        }
+
+        Godot.Collections.Array rows = BattleActor.sort_effect_rows(
+            actor.Call("effect_rows", db).AsGodotArray());
+        int shown = 0;
+        foreach (Variant row_variant in rows)
+        {
+            // 行里补上归属：图标就挂在**这个人**的头上，用例与自检按 `Buff_<actor>_<id>` 找它
+            Godot.Collections.Dictionary row = row_variant.AsGodotDictionary().Duplicate();
+            row["actor_id"] = actor_id;
+            if (rows.Count > 6 && shown == 5)
+            {
+                var more = new Label
+                {
+                    Name = $"StatusMore_{actor_id}",
+                    Text = $"＋{rows.Count - 5}",
+                    MouseFilter = Control.MouseFilterEnum.Ignore,
+                };
+                more.AddThemeFontSizeOverride("font_size", 12);
+                more.AddThemeColorOverride("font_color", UiKit.color("stage_text"));
+                box.AddChild(more);
+                break;
+            }
+
+            if (shown >= 6)
+            {
+                break;
+            }
+
+            box.AddChild(_make_effect_chip(row));
+            shown += 1;
+        }
+
+        return box;
+    }
+
+    /// <summary>
+    /// 一件事的一枚图标（增益／减益／异常状态）：**有图用图**（`icons/buff` 与 `icons/status`），
+    /// 没图退回一个字（色盲可辨：极性还要靠「形状」，光红蓝不够——设计 08）。
+    /// 悬浮给全名、剩余回合、层数、效果。
+    /// </summary>
+    public Button _make_effect_chip(Godot.Collections.Dictionary row)
+    {
+        string actor_id = _s(row, "actor_id", "?");
+        string entry_id = _s(row, "entry_id").Length > 0 ? _s(row, "entry_id") : _s(row, "buff_id", "?");
+        var chip = new Button
+        {
+            Name = $"Buff_{actor_id}_{entry_id}",
+            CustomMinimumSize = new Vector2(20, 20),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        chip.AddThemeFontSizeOverride("font_size", 12);
+        bool is_debuff = _b(row, "is_debuff");
+        int remaining = _i(row, "remaining");
+        string time_text = _b(row, "permanent") || remaining < 0 ? "∞" : remaining.ToString();
+        int stacks = _i(row, "stacks", 1);
+
+        // 图标优先表里的 `icon`，空则退回行 id——与 `item_base.icon` 同一套优先级，
+        // 美术按哪个名字交都能对上。**有图才摆**：没交付时退回一个字，不占空位。
+        string icon_id = _s(row, "icon").Trim();
+        if (icon_id.Length == 0)
+        {
+            icon_id = entry_id;
+        }
+
+        string icon_path = _s(row, "kind") == "status" ? IconPaths.status(icon_id) : IconPaths.buff(icon_id);
+        chip.SetMeta("icon_path", icon_path);
+        Texture2D icon_texture = IconPaths.load_icon(icon_path);
+        string name = _s(row, "name");
+        if (icon_texture != null)
+        {
+            chip.Icon = icon_texture;
+        }
+        else
+        {
+            chip.Text = name.Length > 0 ? name.Substring(0, 1) : "?";
+        }
+
+        // 极性用「形状 + 字」两重编码（08 要求色盲可辨：光靠红蓝不够），
+        // 形状走边框色（减益红／增益蓝），字走 tooltip 与溢出时那一位。
+        chip.AddThemeStyleboxOverride(
+            "normal", _stage_box(new Color(0, 0, 0, 0.62f), 2, 1));
+        chip.AddThemeStyleboxOverride(
+            "hover", _stage_box(new Color(0, 0, 0, 0.62f), 2, 1));
+        foreach (string state in new[] { "normal", "hover", "pressed", "disabled", "focus" })
+        {
+            var style = (StyleBoxFlat)chip.GetThemeStylebox(state).Duplicate();
+            style.BorderColor = is_debuff ? UiKit.color("cinnabar") : UiKit.color("mp");
+            chip.AddThemeStyleboxOverride(state, style);
+        }
+
+        chip.AddThemeColorOverride(
+            "font_color", is_debuff ? new Color("#F0B7A6") : new Color("#A8CFE4"));
+        string stack_text = stacks <= 1 ? "" : $" ×{stacks}";
+        chip.TooltipText = $"{name}（{(is_debuff ? "减益" : "增益")}，剩余 {time_text}{stack_text}）"
+            + _s(row, "desc");
+        return chip;
     }
 
     /// <summary>
@@ -224,102 +444,6 @@ public partial class BattleScreen
         return $"武器：{weapon_name}　内功：{inner}";
     }
 
-    /// <summary>一行状态摘要：「中毒×3（2回合）、灼伤×1」；没有状态返回空串</summary>
-    private string _status_text(GodotObject actor)
-    {
-        if (!actor.HasMethod("status_rows"))
-        {
-            return "";
-        }
-
-        var parts = new System.Collections.Generic.List<string>();
-        foreach (Variant row_variant in actor.Call("status_rows", db).AsGodotArray())
-        {
-            Godot.Collections.Dictionary row = row_variant.AsGodotDictionary();
-            parts.Add($"{_s(row, "name")}×{_i(row, "stacks")}（{_i(row, "remaining")}回合）");
-        }
-
-        return string.Join("、", parts);
-    }
-
-    /// <summary>状态行用第一条状态的伤害类型颜色（DoT 的颜色在 damage_type.display_color 里）</summary>
-    private Color _status_color(GodotObject actor)
-    {
-        if (!actor.HasMethod("status_rows"))
-        {
-            return new Color(1, 1, 1);
-        }
-
-        Godot.Collections.Array rows = actor.Call("status_rows", db).AsGodotArray();
-        return rows.Count == 0
-            ? new Color(1, 1, 1)
-            : new Color(rows[0].AsGodotDictionary()["color"].AsString());
-    }
-
-    private static ProgressBar _make_bar(
-        string node_name, double value, double maximum, Color color, int width)
-    {
-        var bar = new ProgressBar
-        {
-            Name = node_name,
-            MaxValue = System.Math.Max(1.0, maximum),
-            Value = value,
-            CustomMinimumSize = new Vector2(width, 8),
-            ShowPercentage = false,
-        };
-        var style = new StyleBoxFlat { BgColor = color };
-        bar.AddThemeStyleboxOverride("fill", style);
-        return bar;
-    }
-
-    /// <summary>
-    /// 架势条的「即将破防」（设计 15 §4.5：这是核心循环的爽点，不能只是一条会变短的色块）。
-    ///
-    /// 分工（美术在 `tools/artgen/ui.js` 里写死的那句话）：**条的颜色仍由这里按色值表刷**，
-    /// 两张贴图只管「加什么」——架势低于临界线叠 `poise_critical.png`（裂纹），打空那一刻
-    /// 换成 `poise_break.png`（横条压亮 ＋ 四道炸开的短光）。
-    ///
-    /// 贴图原生 32×12（15 §4.4 的状态条高度），比这根 8px 的条高 2px，所以上下各溢 2px；
-    /// **不影响版式**：子 Control 不计入父级最小尺寸，`满招式`那档 636/648 的预算照旧。
-    /// 临界线是开发侧定的**表现**阈值（设计只写了"要有临界表现"、没给数值），
-    /// 与判定无关，因此不进变异探针的手感常量清单。
-    /// </summary>
-    private const string POISE_CRITICAL_TEXTURE = "res://assets/ui/battle/poise_critical.png";
-    private const string POISE_BREAK_TEXTURE = "res://assets/ui/battle/poise_break.png";
-    private const double POISE_CRITICAL_RATIO = 0.3;
-
-    private void _decorate_poise_bar(ProgressBar bar, GodotObject actor)
-    {
-        string file = "";
-        if (actor.Call("is_broken").AsBool())
-        {
-            file = POISE_BREAK_TEXTURE;
-        }
-        else if (actor.Get("poise").AsDouble() / System.Math.Max(1.0, actor.Call("max_poise").AsDouble())
-                 <= POISE_CRITICAL_RATIO)
-        {
-            file = POISE_CRITICAL_TEXTURE;
-        }
-
-        if (file.Length == 0 || !ResourceLoader.Exists(file))
-        {
-            return; // 美术还没交图时不摆这一层（有图才加，与敌人剪影同一口径）
-        }
-
-        var overlay = new TextureRect
-        {
-            Name = $"PoiseFx_{actor.Get("actor_id").AsString()}",
-            Texture = GD.Load<Texture2D>(file),
-            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-            StretchMode = TextureRect.StretchModeEnum.Scale,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        overlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        overlay.OffsetTop = -2.0f;
-        overlay.OffsetBottom = 2.0f;
-        bar.AddChild(overlay);
-    }
-
     private static void _clear(Node box)
     {
         if (box == null)
@@ -340,7 +464,6 @@ public partial class BattleScreen
         {
             string text = line.AsString();
             _log.AppendText($"{_colored_line(text)}\n");
-            // 预兆带由 `_refresh_intent_band()` 单独维护——日志不再往那儿写字
         }
     }
 
@@ -380,8 +503,6 @@ public partial class BattleScreen
     {
         // 对位 GDScript 的 `sim != null and sim.finished()`：没开局时按钮是**可按**的（点了会自己开场）
         bool done = sim != null && _sim_finished();
-        _next_button.Disabled = done;
-        _auto_button.Disabled = done;
         _auto_button.Text = auto_enabled && !done ? "自动战斗中…" : "自动战斗";
         _speed_button.Text = $"速度 {(int)speed()}x";
         // 策略按钮：把当前策略写在按钮上，玩家不用记
@@ -390,11 +511,13 @@ public partial class BattleScreen
         _strategy_button.TooltipText =
             "自动战斗策略（保守省内力／均衡期望伤害／全力单发最高倍率），点一下轮换";
         _strategy_button.Disabled = done;
+        _auto_button.Disabled = done;
+        _speed_button.Disabled = done;
         // 六指令里的四条（招式那一行与逃跑各自管自己）：战斗没结束就能按——
-        // 没在回合里点一下会自己开回合（与「直接点招式先手出招」同一套行为）
+        // 没在回合里点一下会自己开回合（与「直接点招式先手出招」同一条行为）
         GodotObject actor = _current_ally_actor();
         bool command_disabled = done || sim == null;
-        foreach (Button button in new[] { _basic_button, _inner_button, _item_button, _defend_button })
+        foreach (Button button in new[] { _basic_button, _skill_button, _inner_button, _item_button, _defend_button })
         {
             if (button == null)
             {
@@ -428,8 +551,7 @@ public partial class BattleScreen
         string reason = sim.Call("flee_block_reason", _current_ally_actor()).AsString();
         _flee_button.Disabled = reason.Length != 0;
         // 能撤的时候把**成功率**写进 tooltip：soft 判定面板早就如实显示成功率，逃跑是同一类掷点
-        // （公式在 `flee_chance`，系数落在 `combat_const`），没道理让玩家摸黑——
-        // 而且它是**现算的**，设计改了公式或系数这里自动跟着变。
+        // （公式在 `flee_chance`，系数落在 `combat_const`），没道理让玩家摸黑——而且它是**现算的**。
         _flee_button.TooltipText = reason.Length > 0
             ? reason
             : $"掷点判定：成功率 {System.Math.Round(
@@ -439,9 +561,17 @@ public partial class BattleScreen
 
     private void _set_status(string text)
     {
-        if (_status != null)
+        if (_status == null)
         {
-            _status.Text = text;
+            return;
         }
+
+        _status.Text = text;
+        // 播报只留 3 秒：长内容进战报，屏幕上那一行是给"刚刚发生了什么"用的（22 §1.6）
+        _status.Modulate = new Color(1, 1, 1, 1);
+        _status_tween?.Kill();
+        _status_tween = CreateTween();
+        _status_tween.TweenInterval(3.0);
+        _status_tween.TweenProperty(_status, "modulate:a", 0.0, 0.6);
     }
 }
