@@ -11,6 +11,9 @@ namespace Lunhui.Ui;
 /// **装备页那一块 2026-10-12 又拆出去一份**（`CharacterScreenEquip.cs`：七槽视图／换上之后／
 /// 详情／可换四块）。
 ///
+/// **武学页那一块同日也拆出去一份**（`CharacterScreenSkill.cs`：招式格／心法占格／详情／内力参数＋
+/// 被动＋套装四块）——**一个批次拆一个文件**，两批各拆一处。
+///
 /// 这一份只干一件事：按 bCharacterSheetb／bInventoryb 给的数据**摆控件**。
 /// 名字（bSlotButtonweapon_0b 这种）就是用例与自检的接口，别改。
 /// </summary>
@@ -148,34 +151,8 @@ public partial class CharacterScreen
 
         // 武学（学 ＋ 装）在 2026-10-11 搬进了它自己的「武学」页（清单 §二-6 那一屏），
         // 见 `_rebuild_skills()`——留在这里的话，底栏那个「武学」入口就没有落点。
-    }
-
-    /// <summary>
-    /// 「武学」页（清单 §二-6）：招式槽与内功格分开摆，顶部写占用。
-    /// 数值全部来自 `CharacterSheet.skill_rows()`／`slot_summary()`，界面不自己算。
-    /// </summary>
-    private void _rebuild_skills()
-    {
-        _clear(_skill_box);
-        GodotObject st = current_state();
-        CharacterSheet panel = sheet();
-        if (st == null || panel == null || !panel.valid())
-        {
-            _skill_box.AddChild(_make_label("SkillEmpty", "没有会话状态"));
-            return;
-        }
-
-        Godot.Collections.Dictionary summary = panel.slot_summary();
-        _skill_box.AddChild(_section(
-            "SkillSection", "SkillHeader", "武学",
-            $"招式 {_i(summary, "active_used")}/{_i(summary, "active_slots")}"
-                + $"　内功 {_i(summary, "passive_used")}/{_i(summary, "passive_capacity")} 格"));
-
-        // 装／卸都要能按段找得到：招式在前、内功在后（`skill_rows()` 就是按这个顺序给的）
-        foreach (Variant row_value in panel.skill_rows())
-        {
-            _skill_box.AddChild(_make_skill_row(row_value.AsGodotDictionary()));
-        }
+        // 2026-10-12：那一页整块搬进了 `CharacterScreenSkill.cs`（招式格／心法占格／详情／右侧三段的
+        // 排法摆在那里会顶破 800 行硬上限）。
     }
 
     /// <summary>
@@ -453,75 +430,6 @@ public partial class CharacterScreen
                 $"{_s(row, "name")} {_i(row, "level")}/{_i(row, "max_level")}"
                     + $"　判定 {_i(row, "check_value")}（{_s(row, "related_attr_name")}）"));
         }
-    }
-
-    /// <summary>
-    /// 一行武学：名字／星级色 + 数值摘要 + 装配（卸下）按钮。
-    /// 装不下的按钮置灰，原因写在旁边——玩家不用猜为什么点不动。
-    /// </summary>
-    private Control _make_skill_row(Godot.Collections.Dictionary row)
-    {
-        string skill_id = _s(row, "skill_id");
-        bool equipped = _b(row, "equipped");
-        bool is_active = _s(row, "kind") == "active";
-        string kind_text = is_active ? "招式" : $"内功 {_i(row, "slot_cost")} 格";
-        string detail;
-        if (is_active)
-        {
-            detail = $"倍率 {_f2(_f(row, "power_ratio"))}　内力 {_i(row, "qi_cost")}";
-            // 效果没配的招式（战斗里没有按钮、用不出来）如实写一句：玩家能装它占一个招式槽，
-            // 不写清楚他就只会觉得「点了没反应」。
-            string battle_note = _s(row, "battle_note");
-            if (battle_note.Length > 0)
-            {
-                detail += $"　—　{battle_note}";
-            }
-        }
-        else
-        {
-            detail = _s(row, "bonus_summary");
-            // 内功填了「特殊效果 id」但设计还没给效果表（4 部高星内功都是这样）——如实写一句，
-            // 不显示 id（界面不许出现表内英文 id，文案审计盯着）。
-            if (_b(row, "special_effect_pending"))
-            {
-                detail += "　—　带一条特殊效果，暂未生效（设计未给效果表）";
-            }
-        }
-
-        // 修习门槛（属性不够时写出来，玩家知道该练哪一项）
-        string req_reason = _s(row, "learn_req_reason");
-        if (req_reason.Length > 0)
-        {
-            detail += $"　门槛 {req_reason}";
-        }
-
-        string equip_error = _s(row, "equip_error");
-        string suffix = equipped ? "　▶ 已装配" : $"　{equip_error}";
-        var line = new HBoxContainer { Name = $"SkillRow{skill_id}" };
-        line.AddThemeConstantOverride("separation", 6);
-        // 武学图标（15 §六：bassets/icons/skill/<skill_id>.pngb）——**有图才摆**，
-        // 美术那 65 张只到了一部分，没图的行照旧从文字开始（不是错，别刷引擎错误）
-        TextureRect skill_icon = IconPaths.make_icon(IconPaths.skill(skill_id), $"SkillIcon{skill_id}");
-        if (skill_icon != null)
-        {
-            line.AddChild(skill_icon);
-        }
-
-        Label label = _make_label(
-            $"Skill{skill_id}",
-            $"{_s(row, "star_name")}★　{_s(row, "name")}　{kind_text}"
-                + $"　熟练 {_i(row, "mastery")}/{_i(row, "mastery_max")}"
-                + $"（×{_f2(_f(row, "mastery_multiplier"))}）　{detail}{suffix}",
-            0,
-            _s(row, "star_color"));
-        label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        line.AddChild(label);
-        line.AddChild(_make_button(
-            $"LoadoutButton{skill_id}",
-            equipped ? "卸下" : "装配",
-            () => { toggle_skill(skill_id); },
-            !equipped && equip_error.Length > 0));
-        return line;
     }
 
     // ------------------------------------------------------------------ 装备页

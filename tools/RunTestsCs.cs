@@ -398,7 +398,11 @@ public partial class RunTestsCs : Node
 /// 装备需求那一问的回执（2026-10-12 小策划 P19 ②）：`TestCharacterUi` 补「武器槽需求行写 `Lv N（剑）`／
 /// 已满足／类型不匹配时写「本角色只能用剑」且不漏表内 id」那三条（装备页那一簇随文件拆分搬进
 /// `tests/TestCharacterEquipUi.cs`）。于是实测 **11828**，MinAssertions 11811 → **11818**（total−10）。
-private const int MinAssertions = 11818;
+/// 武学页（2026-10-12 UI 清单 §二-6）：`TestCharacterUi` 那一簇按职责再拆一份
+/// `tests/TestCharacterSkillUi.cs`（三栏／顶部切人／「N / M 槽（悟性 X）」／点一格出详情／
+/// 附加效果一句白话／招式槽满了「装备到快捷键」置灰并写原因／被动与套装段／整页不漏表内 id）。
+/// 于是实测 **11867**，MinAssertions 11818 → **11857**（total−10）。
+private const int MinAssertions = 11857;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

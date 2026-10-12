@@ -53,6 +53,16 @@ public partial class CharacterScreen
         refresh();
     }
 
+    /// <summary>
+    /// 在武学页点一格（清单 §二-6：点一格＝选中，右栏写出它的详情）。**只改选中态**——
+    /// 装／卸是格子上那枚「装配」或详情里的「装备到快捷键」（`toggle_skill`）。
+    /// </summary>
+    public void select_skill(string skill_id)
+    {
+        _selected_skill = skill_id;
+        refresh();
+    }
+
     /// <summary>把背包里的装备穿上</summary>
     public Godot.Collections.Dictionary equip_instance(string instance_id)
     {

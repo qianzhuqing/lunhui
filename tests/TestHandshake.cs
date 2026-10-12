@@ -67,6 +67,7 @@ public abstract partial class TestHandshake : TestCase
         "TestBattleUiCommands.cs", "TestBattleUiSettles.cs", "TestMapAssetsAssets.cs",
         "TestCharacterBagUi.cs",
         "TestCharacterEquipUi.cs",
+        "TestCharacterSkillUi.cs",
         "TestSaveMigrationBase.cs", "TestTablePipelineBase.cs",
         "FailingProbe.cs", "FailingSaveStore.cs", "UnwritableSaveStore.cs",
     };

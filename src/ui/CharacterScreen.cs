@@ -87,6 +87,11 @@ public partial class CharacterScreen : Control
     /// 这条路的中枢**：候选被穿上去、或者换了槽位／换了人之后就不再存在，页面重建时会把它清掉。
     /// </summary>
     private string _selected_candidate = "";
+    /// <summary>
+    /// 武学页里选中的那一招／那部内功（清单 §二-6：点一格＝选中，右边那栏写出它的详情）。
+    /// 与装备页的候选同一个写法：换人、卸下之后页面重建时会把它清掉（选中的那条不在列表里了）。
+    /// </summary>
+    private string _selected_skill = "";
     private string _filter = "all";
 
     /// <summary>
@@ -219,6 +224,7 @@ public partial class CharacterScreen : Control
         _selected_char = char_id;
         _selected_slot = "";
         _selected_candidate = "";
+        _selected_skill = "";
         refresh();
     }
 

@@ -14,8 +14,9 @@ namespace Lunhui.Tests;
 /// 「钥匙道具丢弃被拒且写明原因」「没图的行走文字、有图的才摆图标」这些**玩家看得见**的口径。
 /// 数据那一半在 `tests/TestCharacterSheet.cs`。
 ///
-/// **两份 partial**（都是顶到 800 行硬上限后按职责拆出去的，只挪位置不改行为）：
-/// `TestCharacterBagUi.cs`（行囊页 ＋ 秘籍研读，2026-10-12）与 `TestCharacterEquipUi.cs`（装备页 §二-5，同日）。
+/// **三份 partial**（都是顶到 800 行硬上限后按职责拆出去的，只挪位置不改行为）：
+/// `TestCharacterBagUi.cs`（行囊页 ＋ 秘籍研读，2026-10-12）、`TestCharacterEquipUi.cs`（装备页 §二-5，同日）
+/// 与 `TestCharacterSkillUi.cs`（武学页 §二-6，同日）。
 /// </summary>
 public partial class TestCharacterUi : TestCase
 {
@@ -48,6 +49,8 @@ public partial class TestCharacterUi : TestCase
         _CheckIcons(db, screen, state);
         _CheckSkillbook(db, screen, state);
         _CheckBack(screen, back_calls);
+        // 武学页排在最后：它要把招式槽填满来验「满了就置灰」，别让那一步影响前面的剧本
+        _CheckSkillPage(db, screen, state);
 
         _DropScreen(screen);
 

@@ -210,6 +210,50 @@ public partial class CharacterScreen
 
         ok = ok && loadout_ok;
 
+        // 4b. 武学页（UI 清单 §二-6）：三栏 ＋ 顶部切人 ＋「N / M 槽（悟性 X）」＋ 槽满置灰并写原因。
+        // 这一页的数值一个都不在界面里算（`slot_summary()`／`total_attrs()` 给什么就写什么），
+        // 所以这里拿同一对接口反着读回来比。
+        select_tab(UiNav.char_tab_of(UiNav.SKILL));
+        CharacterSheet skill_panel = sheet();
+        Godot.Collections.Dictionary slots = skill_panel.slot_summary();
+        bool skill_page_ok = FindChild("SkillGridColumn", true, false) != null
+            && FindChild("SkillPassiveColumn", true, false) != null
+            && FindChild("SkillInfoColumn", true, false) != null
+            && FindChild($"SkillMemberButton{skill_panel.char_id}", true, false) != null;
+        ok = ok && skill_page_ok;
+        lines.Add($"武学页三栏＋顶部切人 ok={_bool(skill_page_ok)}");
+        var slots_hint = (FindChild("ActiveSection", true, false) as Node)?.FindChild(
+            "SectionHint", true, false) as Label;
+        string slots_text = $"{_i(slots, "active_used")} / {_i(slots, "active_slots")} 槽"
+            + $"（悟性 {_i(skill_panel.total_attrs(), "wu")}）";
+        bool slots_ok = slots_hint != null && slots_hint.Text == slots_text;
+        ok = ok && slots_ok;
+        lines.Add($"招式格占用数「{slots_text}」={_bool(slots_ok)}");
+        // 把招式槽填满，看「装备到快捷键」那一枚置灰且原因写在悬浮里（清单 §二-6 那一行的口径）
+        foreach (string probe in new[] { "sk_xuanwei_02", "sk_xuanwei_03", "sk_xuanwei_04" })
+        {
+            if (!st.Call("is_learned", skill_panel.char_id, probe).AsBool())
+            {
+                st.Call("learn_skill", skill_panel.char_id, probe);
+            }
+        }
+
+        foreach (string probe in new[] { "sk_xuanwei_02", "sk_xuanwei_03" })
+        {
+            if (sheet().loadout().active_used() < sheet().loadout().active_slots())
+            {
+                toggle_skill(probe);
+            }
+        }
+
+        select_skill("sk_xuanwei_04");
+        Button full_equip = FindChild("SkillEquipButtonsk_xuanwei_04", true, false) as Button;
+        bool slot_full_ok = sheet().loadout().active_used() == sheet().loadout().active_slots()
+            && full_equip != null && full_equip.Disabled
+            && full_equip.TooltipText.Contains("招式槽已满");
+        ok = ok && slot_full_ok;
+        lines.Add($"招式槽满了置灰并写原因={_bool(slot_full_ok)}");
+
         // 5. 秘籍研读：门槛不够不消耗，学会才消耗一本
         Inventory inventory = st.Get("inventory").As<Inventory>();
         string char_id = st.Get("char_ids").AsStringArray()[0];
