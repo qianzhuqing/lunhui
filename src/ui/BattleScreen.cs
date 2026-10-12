@@ -76,23 +76,18 @@ public partial class BattleScreen : Control
     /// </summary>
     public const int SELFTEST_SEED = 20261003;
 
-    /// <summary>结算卡片最多几行：多一行就顶出设计分辨率（版式预算靠 --battle-selftest 守着），放不下的进战报。优先级：战果 → 掉落 → 升级 → 领悟 → 熟练度 → 暂缓规则。</summary>
-    public const int SETTLE_CARD_LINES = 3;
-
     /// <summary>
-    /// 结算卡片上「掉落」那一行最多列几件、最多多少字。
-    /// 起因：卡片行数固定三行，但**每行都会换行**——章节 Boss 多件掉落 + 带词条装备时整页会顶到 663 > 648
-    /// （`--battle-selftest` 的「长文案」一档量出来的）。超出的部分进战报，与「放不下的行进战报」同一口径。
+    /// 结算面板的掉落块最多摆几格（**两列往外铺**，第八版口径：「不再压成一件」）。
+    ///
+    /// 旧版「三行卡片 ＋ 48 字」那套硬挤压随第八版面一起退休（口径②：面板按区铺、每区不限行）；
+    /// 这个格数上限是「实在放不下的仍进战报」那条的落点——`_describe_drops()` 那一行始终是全量。
     /// </summary>
-    public const int SETTLE_DROP_ITEMS = 3;
-    public const int SETTLE_DROP_MAX_CHARS = 48;
+    public const int SETTLE_DROP_ITEMS = 8;
 
     // GDScript 读不到 C# 的 `const`（坑⑩），这几个取值口是给用例钉绝对值的（现由 `tests/TestBattleUi.cs` 用）。
     public static double auto_interval() => AUTO_INTERVAL;
     public static int selftest_seed() => SELFTEST_SEED;
-    public static int settle_card_lines() => SETTLE_CARD_LINES;
     public static int settle_drop_items() => SETTLE_DROP_ITEMS;
-    public static int settle_drop_max_chars() => SETTLE_DROP_MAX_CHARS;
 
     // `TEAM_WIN_FLAGS` 的取值口：GDScript 读不到 C# 的「静态 readonly」（坑⑩），
     // 而 `tests/test_recruit.gd` 要拿它验「两支队伍的旗标来源都在」。
@@ -193,7 +188,11 @@ public partial class BattleScreen : Control
     /// <summary>指令类按钮的公共开场日志（开新回合、推进到轮到我方）</summary>
     private Godot.Collections.Array _command_lines = new();
 
-    private Label _result_label;
+    /// <summary>结算面板那一颗「确定」的焦点抢过一次没有（抢第二次会把焦点从别处拽回来）</summary>
+    private bool _settle_focus_taken;
+    /// <summary>结算那一帧的挂件收拾（收起战报、把「战报」钮提到压暗底之上）只做一次</summary>
+    private bool _settle_hud_applied;
+
     private Label _status;
     private Button _result_confirm;
     private Button _auto_button;
@@ -481,7 +480,35 @@ public partial class BattleScreen : Control
 
     public bool auto_running() => auto_enabled;
 
-    public string result_label_text() => _result_label != null ? _result_label.Text : "";
+    /// <summary>
+    /// 结算面板上**看得见的字**（自上而下一行行拼起来）：第八版起面板替掉了那个三行卡片 Label，
+    /// 这个口子的含义跟着变成"面板上写了什么"。**直接走节点树**，不另存一份副本——副本会与实际显示漂开。
+    /// </summary>
+    public string result_label_text()
+    {
+        if (_settle_column == null)
+        {
+            return "";
+        }
+
+        var parts = new System.Collections.Generic.List<string>();
+        _collect_text(_settle_column, parts);
+        return string.Join("\n", parts);
+    }
+
+    /// <summary>把一棵子树里的 Label 文本按顺序收起来（`result_label_text()` 用）</summary>
+    private static void _collect_text(Node node, System.Collections.Generic.List<string> parts)
+    {
+        foreach (Node child in node.GetChildren())
+        {
+            if (child is Label label && label.Text.Length > 0)
+            {
+                parts.Add(label.Text);
+            }
+
+            _collect_text(child, parts);
+        }
+    }
 
     // ------------------------------------------------------------------ 环境
 

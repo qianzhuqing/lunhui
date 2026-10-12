@@ -236,6 +236,15 @@ public partial class BattleScreen
         lines.Add($"推进步数：{guard}");
         lines.Add($"结果：{sim.Call("winner").AsString()}（{sim.Call("rounds_played").AsInt32()} 回合）");
         lines.Add(result_label_text());
+        // 结算那一帧战报会自己收起来（第八版 `_apply_settle_hud()`：它从压暗底下面透出来像残留 UI）。
+        // 而下面要量的正是「日志自动跟到底」——先把面板露出来再量。**直接给 `Visible`，别走
+        // `toggle_log_panel()`**：那条会 `MoveToFront()` 把战报盖到结算面板之上，后面两档包围盒
+        // 与截图都会被它遮住。
+        if (_log_panel != null && !_log_panel.Visible)
+        {
+            _log_panel.Visible = true;
+        }
+
         // 日志要自动跟到底：不然打到第 9 回合，日志还停在第一回合那几行
         if (tree != null)
         {
@@ -248,12 +257,13 @@ public partial class BattleScreen
         ok = ok && log_tail;
         lines.Add($"日志跟随到底：{_bool(log_tail)}（value "
             + $"{(log_bar != null ? log_bar.Value : 0.0):F0}，底 {log_bottom:F0}）");
-        // 结算之后挂件还得全在画框里：结算文案会变长（经验／铜钱／掉落／领悟都在这里）
+        // 结算之后挂件还得全在画框里。**结算面板整块在滚动区里**（内容可以比视口高，
+        // 包围盒量不出"顶没顶出画框"），所以它走 `_check_settle_panel` 单独量自己的高与宽。
         ok = ok && _check_clip("settled", lines);
-        // 极端长掉落文案：卡片行数固定三行，但**每一行都会换行**（`Result` 是普通 Label、不在滚动区里），
-        // 一长就顶破 648（当年「711 > 648、标题被裁掉半行」就是这么坏的）。
-        // 这里**走真实生成路径**（`_describe_drops_card`）造一段「多件掉落 + 带词条装备」的文案，
-        // 等一帧再量——直接手写长文字会绕过截断，量到的就不是线上会出现的形态（第一版就这么写错了）。
+        ok = ok && _check_settle_panel(
+            "结算", sim.Call("winner").AsString() == _winner_ally(), -1, lines);
+        // **最坏一档**（第八版）：掉落按格数上限撑满 ＋ 四件带词条装备 ＋ 两条没捡起，
+        // 走真实生成路径（`_drop_cells`）把面板撑起来，等一帧再量。
         var many = new Godot.Collections.Dictionary
         {
             { "items", new Godot.Collections.Array() },
@@ -283,22 +293,37 @@ public partial class BattleScreen
             new Godot.Collections.Dictionary { { "item_id", "item_iron" }, { "qty", 2 } });
         many["overflow"].AsGodotArray().Add(
             new Godot.Collections.Dictionary { { "item_id", "item_pelt" }, { "qty", 4 } });
-        string card_drops = _describe_drops_card(many);
-        ok = ok && card_drops.Contains("明细见战报");
-        lines.Add($"长文案下的卡片掉落行（{card_drops.Length} 字）：{card_drops}");
-        string saved_result = _result_label.Text;
-        _result_label.Text = $"胜利！经验 +1280　铜钱 +256\n掉落：{card_drops}\n升级：书生 3 → 5（+6 点）";
+        Godot.Collections.Array worst_cells = _settle_drop_cells(many);
+        bool cap_ok = worst_cells.Count == SETTLE_DROP_ITEMS && _drop_cells(many).Count > SETTLE_DROP_ITEMS;
+        ok = ok && cap_ok;
+        lines.Add($"长文案档的掉落：面板 {worst_cells.Count} 格 / 共 {_drop_cells(many).Count} 件，"
+            + $"放不下的进战报（战报那一行 {_describe_drops(many).Length} 字）={_bool(cap_ok)}");
+        // 面板整体重建一次（两条升级 → 两行）再量：面板自身高 ≤ 设计高减掉「确定」那一带
+        _refresh_settle_panel(new Godot.Collections.Dictionary
+        {
+            { "title", "胜利" },
+            { "harvest", true },
+            { "exp", 1280 },
+            { "money", 256 },
+            {
+                "levels", new Godot.Collections.Array
+                {
+                    _level_change("scholar_fallen", "家道失落的书生", 3, 4, 6),
+                    _level_change("ch_ci", "燕小七", 2, 3, 5),
+                }
+            },
+            { "drops", worst_cells },
+            // 掉落总件数也要喂：面板只摆 8 格，多出来的那句「还有 N 件放不下（见战报）」跟着出来
+            { "drops_total", _drop_cells(many).Count },
+            { "martial", new Godot.Collections.Array { "领悟：玄微剑法", "熟练度：玄微剑法 1 → 2" } },
+            { "notes", new Godot.Collections.Array { "暂缓规则：本局不可撤退" } },
+        });
         if (tree != null)
         {
             await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         }
 
-        bool long_text_ok = _clip_size().Y <= _stage_size().Y + 1.0f;
-        ok = ok && long_text_ok;
-        // 自动换行的 Label 在最小尺寸里不一定算得准换行；**直接量它换了几个视觉行**更实在
-        int card_lines = _result_label.GetLineCount();
-        ok = ok && card_lines <= SETTLE_CARD_LINES + 1;
-        lines.Add($"{_clip_ascii("长文案")}（结算卡片视觉行数 {card_lines}）");
+        ok = ok && _check_settle_panel("长文案", true, 2, lines);
         // 上面三次量法都可能量在「技能行恰好是空的」那一帧——而真实对局里只要轮到我方，这一行就在。
         // 2026-10-03 正是踩了这个：4 人队时多出来的 31px 全部来自这一行，1 人队却碰巧量在空帧、一路绿
         // （见框架说明决策 162）。现在补一次**最坏情况**：把技能行按上限撑满按钮，两个方向一起量。
@@ -402,7 +427,6 @@ public partial class BattleScreen
             await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         }
 
-        _result_label.Text = saved_result;
         // 浮层与全局快捷键（设计 14 §二／§八）：**战斗中 Tab 开角色面板属于「浮层盖场景层」**，
         // 再按一次是「弹回它」而不是叠第二份；Esc 一次弹一层。
         bool overlay_ok = true;
@@ -595,6 +619,13 @@ public partial class BattleScreen
                 continue;
             }
 
+            // 结算面板整块跳过：它内部是滚动区（内容可以比视口高），包围盒量出来的东西不代表
+            // "顶出画框"——面板自己的高与宽由 `_check_settle_panel` 直接量。
+            if (_settle_root != null && (_settle_root == control || _settle_root.IsAncestorOf(control)))
+            {
+                continue;
+            }
+
             Rect2 rect = control.GetGlobalRect();
             if (rect.Size.DistanceTo(world) < 1.0f)
             {
@@ -627,6 +658,59 @@ public partial class BattleScreen
         return ok;
     }
 
+    /// <summary>
+    /// 结算面板的版式（22 §1.6 第八版 ＋ §八「结算面板＝整屏分区」）：面板**自身**高 ≤ 设计高减掉
+    /// 贴底那枚「确定」那一带（口径②：真超出由滚动区整块滚）、宽 ≤ 设计宽、且不与「确定」叠在一起；
+    /// `harvest` 时那几块该在的都在（战果标题／经验／铜钱／掉落／武学），零收获时四块**都不在**（口径③）。
+    /// `level_rows` &lt; 0 表示这一档不查升级行数（真打那场升了几级取决于经验，不是这一档要钉的）。
+    /// </summary>
+    private bool _check_settle_panel(
+        string tag, bool harvest, int level_rows, System.Collections.Generic.List<string> lines)
+    {
+        var panel = GetNodeOrNull<Control>("SettleRoot/SettlePanel");
+        var confirm = GetNodeOrNull<Control>("ResultConfirm");
+        if (panel == null || confirm == null)
+        {
+            lines.Add($"结算面板缺节点（{tag}）");
+            return false;
+        }
+
+        double limit = _settle_max_height();
+        bool size_ok = panel.Size.Y <= limit + 1.0 && panel.Size.X <= _stage_size().X;
+        bool apart_ok = panel.GetGlobalRect().End.Y <= confirm.GetGlobalRect().Position.Y + 1.0;
+        bool blocks_ok = panel.FindChild("SettleTitleBox", true, false) != null;
+        if (harvest)
+        {
+            blocks_ok = blocks_ok && panel.FindChild("SettleExp", true, false) != null
+                && panel.FindChild("SettleMoneyRow", true, false) != null
+                && panel.FindChild("SettleDrops", true, false) != null
+                && panel.FindChild("SettleMartial", true, false) != null;
+        }
+        else
+        {
+            blocks_ok = blocks_ok && panel.FindChild("SettleExp", true, false) == null
+                && panel.FindChild("SettleMoneyRow", true, false) == null
+                && panel.FindChild("SettleDrops", true, false) == null
+                && panel.FindChildren("SettleLevelRow*", "Label", true, false).Count == 0;
+        }
+
+        int rows = panel.FindChildren("SettleLevelRow*", "Label", true, false).Count;
+        bool rows_ok = level_rows < 0 || rows == level_rows;
+        bool ok = size_ok && apart_ok && blocks_ok && rows_ok;
+        lines.Add($"LAYOUT[{tag}] 面板 {panel.Size.X:0}x{panel.Size.Y:0}（上限 {limit:0}）={_bool(size_ok)}；"
+            + $"与「确定」不叠={_bool(apart_ok)}；块齐={_bool(blocks_ok)}；升级 {rows} 行={_bool(rows_ok)}");
+        return ok;
+    }
+
+    /// <summary>造一条升级记录（形状与 `LevelService.apply_available_levels()` 里那一项一致）</summary>
+    private static Godot.Collections.Dictionary _level_change(
+        string char_id, string name, int from, int to, int points) =>
+        new()
+        {
+            { "char_id", char_id }, { "name", name }, { "from", from }, { "to", to },
+            { "points", points },
+        };
+
     /// <summary>「回合数／当前出手者」——比只看回合数稳：同一回合里推进到另一个人也算推进。</summary>
     private string _turn_mark() =>
         $"{sim.Call("rounds_played").AsInt32()}/"
@@ -639,72 +723,19 @@ public partial class BattleScreen
         && actor.side == _side_ally();
 
     /// <summary>
-    /// 结算里的掉落明细：「掉落：草药 ×2、铁剑（力+3、外功攻击+7）」
+    /// 结算里那条掉落明细（进战报「掉落：…」那一行）：「草药 ×2、铁剑（力+3、外功攻击+7）」。
     /// 以前只写「物品 2 种 装备 1 件」，玩家还得去背包翻。
+    /// **全量**（不吃格数上限）：面板那两列读 `_settle_drop_cells()`，两边共用 `_drop_cells()` 这一份。
     /// </summary>
-    public string _describe_drops(Godot.Collections.Dictionary applied) =>
-        string.Join("、", _drop_parts(applied));
-
-    /// <summary>卡片上的掉落行：最多 SETTLE_DROP_ITEMS 件、最多 SETTLE_DROP_MAX_CHARS 字，其余进战报</summary>
-    public string _describe_drops_card(Godot.Collections.Dictionary applied)
-    {
-        string[] parts = _drop_parts(applied);
-        if (parts.Length <= SETTLE_DROP_ITEMS)
-        {
-            string short_text = string.Join("、", parts);
-            return short_text.Length <= SETTLE_DROP_MAX_CHARS
-                ? short_text
-                : $"{short_text.Substring(0, SETTLE_DROP_MAX_CHARS)}…";
-        }
-
-        var shown = new System.Collections.Generic.List<string>();
-        for (int index = 0; index < SETTLE_DROP_ITEMS; index++)
-        {
-            shown.Add(parts[index]);
-        }
-
-        string text = string.Join("、", shown);
-        if (text.Length > SETTLE_DROP_MAX_CHARS)
-        {
-            text = text.Substring(0, SETTLE_DROP_MAX_CHARS);
-        }
-
-        return $"{text}…（共 {parts.Length} 件，明细见战报）";
-    }
-
-    /// <summary>掉落清单的每一项（卡片行与战报明细共用一份，免得两边写法漂）</summary>
-    private string[] _drop_parts(Godot.Collections.Dictionary applied)
+    public string _describe_drops(Godot.Collections.Dictionary applied)
     {
         var parts = new System.Collections.Generic.List<string>();
-        foreach (Variant entry_variant in _arr_of(applied, "items"))
+        foreach (Variant cell_variant in _drop_cells(applied))
         {
-            Godot.Collections.Dictionary entry = entry_variant.AsGodotDictionary();
-            string item_id = _s(entry, "item_id");
-            Resource row = Db.get_row("item_base", item_id);
-            parts.Add($"{(row != null ? row.Get("name_cn").AsString() : item_id)} ×{_i(entry, "qty", 1)}");
+            parts.Add(cell_variant.AsGodotDictionary()["text"].AsString());
         }
 
-        foreach (Variant instance_variant in _arr_of(applied, "equipment"))
-        {
-            string instance_id = instance_variant.AsString();
-            GodotObject inventory = state.Get("inventory").AsGodotObject();
-            string base_id = inventory.Call("base_of", instance_id).AsString();
-            Resource base_row = Db.get_row("equip_base", base_id);
-            string text = base_row != null ? base_row.Get("name_cn").AsString() : base_id;
-            string affix = _affix_text(instance_id);
-            parts.Add(affix.Length > 0 ? $"{text}（{affix}）" : text);
-        }
-
-        foreach (Variant entry_variant in _arr_of(applied, "overflow"))
-        {
-            Godot.Collections.Dictionary entry = entry_variant.AsGodotDictionary();
-            string item_id = _s(entry, "item_id");
-            Resource item = Db.get_row("item_base", item_id);
-            parts.Add($"{(item != null ? item.Get("name_cn").AsString() : item_id)}"
-                + $"×{_i(entry, "qty", 1)} 没捡起（背包满）");
-        }
-
-        return parts.ToArray();
+        return string.Join("、", parts);
     }
 
     private string _affix_text(string instance_id)

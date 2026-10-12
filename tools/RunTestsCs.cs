@@ -379,7 +379,14 @@ public partial class RunTestsCs : Node
     /// 战斗界面第六版（2026-10-12，P15）：删掉「▶ 推进」＋流程自动推进 ＋ 结算卡那枚「确定」＝返回。
     /// 用例改指（▶ → ResultConfirm）并新增 `_CheckAutoAdvance`（没有推进钮／轮到我方 tick 停下／
     /// 暂停条开着 tick 不推进／收起即继续）。于是实测 **11746**，MinAssertions 11697 → **11736**（total−10）。
-    private const int MinAssertions = 11736;
+    /// 战斗界面第八版（2026-10-12，P17）：三行小卡片 → 整屏结算面板（六块：标题／经验＋逐人升级行／
+    /// 铜钱／掉落两列／武学／「确定」）。用例改指 `_CheckSettleCardContract` → `_CheckSettlePanelContract`
+    /// （五块都在／升级每人一行且与 `LevelService.describe` 同源／面板自身高 ≤648／口径③四块不出现），
+    /// 场景自检那两档改指 `_check_settle_panel`。于是实测 **11781**，MinAssertions 11736 → **11771**（total−10）。
+/// 第八版收口（2026-10-12 三轮）：结算那一帧其余挂件整组收起（回合标签／状态播报／Boss 长血条／战报面板，
+/// 只留「战报」那枚入口钮）＋掉落格文案不再被挤成一字一行；`TestBattleUiSettles` 补 6 条钉住它。
+/// 于是实测 **11787**，MinAssertions 11771 → **11777**（total−10）。
+private const int MinAssertions = 11777;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

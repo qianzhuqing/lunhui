@@ -91,8 +91,9 @@ $cases = @(
     @{ Name = 'DEFAULT_SLOT_COUNT 6->3'; File = 'src\core\SaveStore.cs'; Find = 'public const int DEFAULT_SLOT_COUNT = 6;'; Repl = 'public const int DEFAULT_SLOT_COUNT = 3;' },
     # 2026-10-11：CharacterSheet 搬进 C#，case 跟着改指 .cs（改 .cs 不重编 → 量不出来，见下豁免表）
     @{ Name = 'EVENT_SKILL_ATTR_DIVISOR 5->4'; File = 'src\core\CharacterSheet.cs'; Find = 'public const int EVENT_SKILL_ATTR_DIVISOR = 5;'; Repl = 'public const int EVENT_SKILL_ATTR_DIVISOR = 4;' },
-    # 2026-10-11：战斗界面搬进 C#，这 7 条 case 跟着改指 .cs（改 .cs 不重编 → 量不出来，见下豁免表）
-    @{ Name = 'SETTLE_CARD_LINES 3->4'; File = 'src\ui\BattleScreen.cs'; Find = 'public const int SETTLE_CARD_LINES = 3;'; Repl = 'public const int SETTLE_CARD_LINES = 4;' },
+    # 2026-10-11：战斗界面搬进 C#，这几条 case 跟着改指 .cs（改 .cs 不重编 → 量不出来，见下豁免表）
+    # 2026-10-12 第八版：`SETTLE_CARD_LINES`（三行小卡片）随那个 Label 一起退休，case 跟着删——
+    # 它已经不存在于源码里，留着只会报「case 失效」（同下面 encounter 的 SIDE_* 那两条）。
     # 2026-10-04 补：好感的**地板**。它决定「扣好感能不能真的扣成负数」（`npc_favor` 里陈氏初始 −10），
     #   放松/收紧它都会静默改变偷窃失手的代价手感——`test_dialogue` 钉了绝对值。
     # 2026-10-11：npc_service 搬进 C#，case 跟着改指 .cs（改 .cs 不重编 → 量不出来，见下豁免表）
@@ -148,8 +149,9 @@ $cases = @(
     @{ Name = 'TILE 32.0->38.4（揭雾门槛 · WorldMapService）'; File = 'src\core\WorldMapService.cs'; Find = 'public const double TILE = 32.0;'; Repl = 'public const double TILE = 38.4;' },
     @{ Name = 'AUTO_INTERVAL 0.8->0.96'; File = 'src\ui\BattleScreen.cs'; Find = 'public const double AUTO_INTERVAL = 0.8;'; Repl = 'public const double AUTO_INTERVAL = 0.96;' },
     @{ Name = 'SELFTEST_SEED 20261003->20261004'; File = 'src\ui\BattleScreen.cs'; Find = 'public const int SELFTEST_SEED = 20261003;'; Repl = 'public const int SELFTEST_SEED = 20261004;' },
-    @{ Name = 'SETTLE_DROP_ITEMS 3->4'; File = 'src\ui\BattleScreen.cs'; Find = 'public const int SETTLE_DROP_ITEMS = 3;'; Repl = 'public const int SETTLE_DROP_ITEMS = 4;' },
-    @{ Name = 'SETTLE_DROP_MAX_CHARS 48->49'; File = 'src\ui\BattleScreen.cs'; Find = 'public const int SETTLE_DROP_MAX_CHARS = 48;'; Repl = 'public const int SETTLE_DROP_MAX_CHARS = 49;' },
+    # 2026-10-12 第八版：这个上限成了「面板那两列摆几格」；`SETTLE_DROP_MAX_CHARS`（48 字截断）随小卡片
+    # 一起退休、case 跟着删（同上面 SETTLE_CARD_LINES 那条）。绝对值由 `tests/TestBattleUi.cs` 钉着。
+    @{ Name = 'SETTLE_DROP_ITEMS 8->9'; File = 'src\ui\BattleScreen.cs'; Find = 'public const int SETTLE_DROP_ITEMS = 8;'; Repl = 'public const int SETTLE_DROP_ITEMS = 9;' },
     # 2026-10-11：dungeon_screen 搬进 C#，case 跟着改指 .cs（改 .cs 不重编 → 量不出来，见下豁免表）
     @{ Name = 'SWEEP_ANIM_SECONDS 0.6->0.72'; File = 'src\ui\DungeonScreen.cs'; Find = 'public const double SWEEP_ANIM_SECONDS = 0.6;'; Repl = 'public const double SWEEP_ANIM_SECONDS = 0.72;' },
     @{ Name = 'DESIGN_HEIGHT 648->649'; File = 'src\ui\LayoutBudget.cs'; Find = 'public const int DESIGN_HEIGHT = 648;'; Repl = 'public const int DESIGN_HEIGHT = 649;' },

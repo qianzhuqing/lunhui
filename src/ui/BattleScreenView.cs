@@ -37,7 +37,6 @@ public partial class BattleScreen
         _log = _require_node("LogPanel/Log") as RichTextLabel;
         _round_label = _require_node("RoundLabel") as Label;
         _status = _require_node("MsgLine") as Label;
-        _result_label = _require_node("Result") as Label;
         _layer = _require_node("Layer") as PanelContainer;
         _skill_row = _require_node("Layer/LayerScroll/SkillRow") as GridContainer;
         _command_row = _require_node("CommandRow") as HBoxContainer;
@@ -49,6 +48,8 @@ public partial class BattleScreen
         _defend_button = _require_node("CommandRow/DefendButton") as Button;
         _flee_button = _require_node("CommandRow/FleeButton") as Button;
         _result_confirm = _require_node("ResultConfirm") as Button;
+        // 结算面板（22 §1.6 第八版）：面板那棵树在场景里，六块内容结算时逐块建（见 `BattleScreenSettlePanel.cs`）
+        _bind_settle_panel();
         _auto_button = _require_node("PauseBar/AutoButton") as Button;
         _speed_button = _require_node("PauseBar/SpeedButton") as Button;
         _strategy_button = _require_node("PauseBar/StrategyButton") as Button;
@@ -80,7 +81,8 @@ public partial class BattleScreen
         _result_confirm.TooltipText = "离开结算，回到刚才那张地图";
         _log.Clear();
         _status.Text = Enc != null ? Enc.headline() : "";
-        _result_label.Text = "";
+        _settle_focus_taken = false;
+        _settle_hud_applied = false;
         // 战报面板默认**开着**：它就是示意源里右上那块「近 5 条」，勾掉的只是常驻的一整条日志区
         _log_panel.Visible = true;
     }
@@ -120,6 +122,49 @@ public partial class BattleScreen
         _refresh_skills();
         _refresh_boss_bar();
         _refresh_turn_bar();
+        _apply_settle_hud();
+    }
+
+    /// <summary>
+    /// 结算屏上**只剩结算面板 ＋ 它那枚「确定」**（22 §1.6）：回合标签、那一行状态播报、Boss 长血条
+    /// 这一组整组收起——它们是从上半场留下来的，压在 66% 的压暗底下面会从面板旁边透出来
+    /// （第八版真窗口实测：「第 3 回合　已结束」与贴顶血条在结算面板边上若隐若现）。没打完照常显示。
+    ///
+    /// **战报**（面板右缘外那一条）：结算那一帧把它**收起来**，但留着右边那枚「战报」钮——面板只摆
+    /// 得下 8 格掉落，全量明细在战报里，收掉入口等于把口径②那句「放不下的进战报」变成"看不见"。
+    /// 那枚钮按下去会走 `toggle_log_panel()`，它自带的 `MoveToFront()` 把战报盖到面板**之上**，
+    /// 想要全量明细的玩家能整块读（所以钮也要提到压暗底之上，别让它在底下若隐若现看不出能按）。
+    /// </summary>
+    private void _apply_settle_hud()
+    {
+        bool done = sim != null && _sim_finished();
+        if (_round_label != null)
+        {
+            _round_label.Visible = !done;
+        }
+
+        if (_status != null)
+        {
+            _status.Visible = !done;
+        }
+
+        // Boss 长血条由 `_refresh_boss_bar()` 每次都刷成「有 Boss 就显示」，这里只在结算时压掉它
+        if (done && _boss_bar != null)
+        {
+            _boss_bar.Visible = false;
+        }
+
+        // 这两下只做一次：玩家结算后自己把战报按出来，不该被下一次 `_refresh()` 又收回去
+        if (done && !_settle_hud_applied)
+        {
+            _settle_hud_applied = true;
+            if (_log_panel != null)
+            {
+                _log_panel.Visible = false;
+            }
+
+            _log_button?.MoveToFront();
+        }
     }
 
     /// <summary>把战场上的单位按版式重摆一遍（节点是每次刷新重建的，与以前的卡片同一套口径）。</summary>
@@ -176,7 +221,19 @@ public partial class BattleScreen
         // 打完之后指令行整条退场，画面下缘换成结算卡那一枚「确定」（用户口径：点确定＝返回）
         _command_row.Visible = !open && !_pause_open && !done;
         _pause_bar.Visible = _pause_open;
+        // 打完之后整屏换成结算面板（§1.6）：指令行／暂停条／展开浮层都不在场，只剩面板 ＋ 那枚「确定」
+        if (_settle_root != null)
+        {
+            _settle_root.Visible = done;
+        }
+
         _result_confirm.Visible = done;
+        if (done && !_settle_focus_taken && _result_confirm != null)
+        {
+            // 「确定」是**默认焦点**（§1.6：确认键就等效于按它）——只抢一次，别每帧把焦点拽回来
+            _settle_focus_taken = true;
+            _result_confirm.GrabFocus();
+        }
         _clear(_skill_row);
         if (!open)
         {

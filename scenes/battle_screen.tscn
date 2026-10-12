@@ -161,22 +161,61 @@ grow_vertical = 0
 theme_override_font_sizes/font_size = 12
 mouse_filter = 2
 
-[node name="Result" type="Label" parent="."]
+; 结算面板（22 §1.6 第八版）：压暗底上的一块分区面板，六块内容由 `BattleScreenSettlePanel.cs` 逐块建，
+; 面板自身高按内容收（≤ 设计高，且让开贴底那枚「确定」）；`Result` 那个旧的三行卡片 Label 随第七版退休。
+[node name="SettleRoot" type="Control" parent="."]
+visible = false
 layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 24.0
-offset_top = -176.0
-offset_right = -24.0
-offset_bottom = -82.0
 grow_horizontal = 2
-grow_vertical = 0
-horizontal_alignment = 1
-vertical_alignment = 2
-autowrap_mode = 3
+grow_vertical = 2
 mouse_filter = 2
+
+; 压暗底的色值只在主题 `UiKit/colors/settle_dim` 一处（决策 375）——挂上屏幕时由代码刷上去
+[node name="SettleDim" type="ColorRect" parent="SettleRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+; 面板用 `Panel` 而**不是** `PanelContainer`：容器会按子节点（滚动区）的最小尺寸把自己撑大，
+; 内容一高面板就顶破 648；`Panel` 不自带排版，滚动区贴进去、内容再高也只滚动。
+[node name="SettlePanel" type="Panel" parent="SettleRoot"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -440.0
+offset_top = -260.0
+offset_right = 440.0
+offset_bottom = 260.0
+grow_horizontal = 2
+grow_vertical = 2
+
+; 滚动区自己贴进面板（内边距由 `BattleScreenSettlePanel.SETTLE_PANEL_PAD` 在代码里刷，别写两份）
+[node name="SettleScroll" type="ScrollContainer" parent="SettleRoot/SettlePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="SettleColumn" type="VBoxContainer" parent="SettleRoot/SettlePanel/SettleScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
 
 [node name="ResultConfirm" type="Button" parent="."]
 visible = false

@@ -454,11 +454,8 @@ public abstract partial class TestHandshake : TestCase
         // 界面版式／结算
         { "auto_interval", "取值口：自动战斗推进间隔" },
         { "selftest_seed", "取值口：战斗自检固定种子（决策 236）" },
-        { "settle_card_lines", "取值口：结算卡片行数" },
-        { "settle_drop_items", "取值口：结算卡片最多列几件掉落" },
-        { "settle_drop_max_chars", "取值口：结算掉落行字数上限" },
+        { "settle_drop_items", "取值口：结算面板的掉落块最多摆几格（两列往外铺）" },
         { "team_win_flags", "取值口：队伍胜利旗标表（用例钉三支队伍的心结旗标）" },
-        { "design_height", "取值口：设计分辨率高" },
         { "backdrop_min_alpha", "取值口：背板最低不透明度" },
         // 世界层交互距离
         { "portal_distance", "取值口：门户交互半径" },

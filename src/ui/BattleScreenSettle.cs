@@ -8,7 +8,8 @@ namespace Lunhui.Ui;
 /// `BattleScreen` 的结算（胜／败／撤／平局）——从 `BattleScreen.cs` 拆出来的 partial
 /// （那份要守 800 行硬上限）。
 ///
-/// 结算卡片最多 `SETTLE_CARD_LINES` 行、其余行进战报（版式预算有限，自检守着）；
+/// 第八版起结算是一块**整屏分区面板**（六块的摆法在 `BattleScreenSettlePanel.cs`）：这里把战果算清
+/// （`lines` 是**战报**、全量、顺序即优先级），并组装面板要的那份结构化内容；
 /// 落账一律走 `BattleReward.apply()` 那条唯一口径，这里只负责把结果写成人话。
 /// </summary>
 public partial class BattleScreen
@@ -45,6 +46,10 @@ public partial class BattleScreen
 
         Node session_node = _session_node();
         var lines = new Godot.Collections.Array();
+        // 面板上的另外两块（说明／武学）与收获四块分开走：`applied` 直接喂给面板（口径③：零收获时不建）。
+        var notes = new Godot.Collections.Array();
+        var martial = new Godot.Collections.Array();
+        Godot.Collections.Dictionary applied = new();
         if (winner == _winner_ally())
         {
             var drops = new Godot.Collections.Array();
@@ -121,23 +126,18 @@ public partial class BattleScreen
                 };
             }
 
-            Godot.Collections.Dictionary applied = BattleReward.apply(
+            applied = BattleReward.apply(
                 Db, state, result, drops, AffixRoller.create(Db, RngService.create(rng_seed)));
             if (state != null)
             {
                 state.Call("store_pity", pity);
             }
 
-            // 件数并进掉落明细：结算面板多一行就会顶出版式预算（自检会红），一行说清更省地方
+            // 战报照旧记全量（优先级：战果 → 掉落 → 升级 → 领悟／未习得 → 熟练度 → 暂缓规则）。
+            // 面板那边把经验与铜钱拆成两块（第八版），这一行不动——它是 `last_battle.summary` 的来源。
             lines.Add($"胜利！经验 +{_i(applied, "exp")}　铜钱 +{_i(applied, "money")}");
             string drops_detail = _describe_drops(applied);
-            string drops_card = _describe_drops_card(applied);
-            lines.Add($"掉落：{(drops_card.Length > 0 ? drops_card : "无")}");
-            if (drops_card != drops_detail)
-            {
-                // 完整清单进战报：卡片那一行只列得下 SETTLE_DROP_ITEMS 件（见常量注释里的 663 > 648）
-                lines.Add($"掉落明细：{drops_detail}");
-            }
+            lines.Add($"掉落：{(drops_detail.Length > 0 ? drops_detail : "无")}");
 
             if (_s(applied, "level_up_text").Length > 0)
             {
@@ -152,6 +152,7 @@ public partial class BattleScreen
                 if (_b(spar, "ok"))
                 {
                     lines.Add(_s(spar, "text"));
+                    notes.Add(_s(spar, "text"));
                 }
             }
 
@@ -185,7 +186,11 @@ public partial class BattleScreen
 
             Godot.Collections.Array granted =
                 SkillGrant.grant_from_defeated(Db, state, defeated_ids.ToArray());
-            lines.AddRange(SkillGrant.summarize(granted));
+            foreach (string learned_line in SkillGrant.summarize(granted))
+            {
+                lines.Add(learned_line);
+                martial.Add(learned_line);
+            }
             // 熟练度：这一场真正施放过的招式，每次施放 +mastery_combat_gain
             // （排在卡片前三行之外，进战报——它是慢成长细节，掉落与领悟更要紧）
             MasteryService mastery = MasteryService.create(Db, state);
@@ -203,19 +208,25 @@ public partial class BattleScreen
                 Godot.Collections.Array mastered = mastery.apply_combat_usage(ally_id, usage, mastery_cap);
                 if (mastered.Count > 0)
                 {
-                    lines.Add($"熟练度：{mastery.describe_usage(mastered)}");
+                    string mastery_line = $"熟练度：{mastery.describe_usage(mastered)}";
+                    lines.Add(mastery_line);
+                    martial.Add(mastery_line);
                 }
             }
 
             if (Enc.practice)
             {
-                lines.Add($"练习战：经验只算到 {PracticeService.cap_level(Db)} 级、"
-                    + $"熟练度只涨到 {PracticeService.mastery_cap(Db)} 级，无掉落与首杀");
+                string practice_note = $"练习战：经验只算到 {PracticeService.cap_level(Db)} 级、"
+                    + $"熟练度只涨到 {PracticeService.mastery_cap(Db)} 级，无掉落与首杀";
+                lines.Add(practice_note);
+                notes.Add(practice_note);
             }
 
             if (Enc.pending_rules.Length > 0)
             {
-                lines.Add($"暂缓规则：{string.Join("；", Enc.pending_rules)}");
+                string pending_note = $"暂缓规则：{string.Join("；", Enc.pending_rules)}";
+                lines.Add(pending_note);
+                notes.Add(pending_note);
             }
 
             // 练习战不写「清怪／房间」记录：它不是副本进度，也不进完成度
@@ -228,13 +239,18 @@ public partial class BattleScreen
         else if (winner == _winner_flee())
         {
             // 主动撤退：不算败北，也不结算经验／铜钱／掉落；明雷留在原地（设计 02：明雷看得见、可以绕开）
-            lines.Add("撤退：脱离了战斗（没有经验与掉落）");
+            // 口径③：零收获 → 面板上只剩标题 ＋ 说明 ＋「确定」
+            string flee_note = "撤退：脱离了战斗（没有经验与掉落）";
+            lines.Add(flee_note);
+            notes.Add(flee_note);
         }
         else if (winner == _winner_draw())
         {
             // 回合打满（MAX_ROUNDS=50）：谁也没赢。设计没写平局的后果，先按「零收获、明雷不清」处理，
             // 但**不许写「败北」**——那是假话（玩家没输，只是没打完）。口径记进交接表等设计定。
-            lines.Add("平局：回合打满了，双方都没有收获（明雷不会被清掉）");
+            string draw_note = "平局：回合打满了，双方都没有收获（明雷不会被清掉）";
+            lines.Add(draw_note);
+            notes.Add(draw_note);
         }
         else
         {
@@ -243,16 +259,22 @@ public partial class BattleScreen
             // `stay_put`），只是不设回程，也不写「被送回」。好感本来就 +0（19 §2.2 输了不罚）。
             if (Enc.spar_npc.Length > 0)
             {
-                lines.Add("切磋落败，无好感（对方是自己人，不结怨）");
+                string spar_loss = "切磋落败，无好感（对方是自己人，不结怨）";
+                lines.Add(spar_loss);
+                notes.Add(spar_loss);
             }
             else
             {
                 // 战败处理（08 已定，0.8.0 口径）：全队回到**最近到过的出生点／城镇**、气血回满、
                 // 战斗外增益全部清除；不扣铜钱不掉装备。平局不走这里（见上一分支）。
                 string shelter = session_node != null ? session_node.Get("last_shelter_name").AsString() : "";
-                lines.Add($"败北：全队被送回{(shelter.Length > 0 ? $"「{shelter}」" : "大地图")}，"
-                    + "气血已回满、战斗外增益已清除");
-                lines.Add("这一场没有收获，明雷不会被清掉");
+                string defeat_note = $"败北：全队被送回{(shelter.Length > 0 ? $"「{shelter}」" : "大地图")}，"
+                    + "气血已回满、战斗外增益已清除";
+                string no_loot_note = "这一场没有收获，明雷不会被清掉";
+                lines.Add(defeat_note);
+                lines.Add(no_loot_note);
+                notes.Add(defeat_note);
+                notes.Add(no_loot_note);
             }
         }
 
@@ -289,23 +311,31 @@ public partial class BattleScreen
         // 失败不打断结算（AGENTS：存档写入失败不允许挡住开局），但绝不能静默。
         if (!_b(save_result, "ok"))
         {
-            _append_log(new Godot.Collections.Array
-            {
-                $"自动存档失败：{_s(save_result, "error", "未知原因")}（这一场的结果只在本局里）",
-            });
+            string save_note =
+                $"自动存档失败：{_s(save_result, "error", "未知原因")}（这一场的结果只在本局里）";
+            _append_log(new Godot.Collections.Array { save_note });
+            // 面板上也要说一句：这一屏是玩家唯一会看的结算，战报不打开就看不见
+            notes.Add(save_note);
         }
 
-        // 结算卡片最多三行（版式预算有限：多一行就顶出 648，自检会红），其余行进战报。
-        // 优先级：战果 → 掉落 → 升级 → 领悟 → 熟练度 → 暂缓规则（顺序本身有断言钉着）。
-        int card_count = System.Math.Min(SETTLE_CARD_LINES, lines.Count);
-        Godot.Collections.Array card = _slice(lines, 0, card_count);
-        Godot.Collections.Array rest = _slice(lines, card_count, lines.Count);
-        if (rest.Count > 0)
+        // 结算面板（22 §1.6 第八版）：六块自上而下——战果标题／经验（含逐人升级行）／铜钱／掉落／武学／「确定」。
+        // 「确定」是场景里那枚 `ResultConfirm`（第七版），不归面板建。
+        _refresh_settle_panel(new Godot.Collections.Dictionary
         {
-            _append_log(rest);
-        }
-
-        _result_label.Text = _join_variants(card, "\n");
+            { "title", _settle_title(winner) },
+            { "harvest", winner == _winner_ally() },
+            { "exp", _i(applied, "exp") },
+            { "money", _i(applied, "money") },
+            { "levels", _arr_of(applied, "level_ups") },
+            { "drops", _settle_drop_cells(applied) },
+            // 掉落总件数：面板只摆得下 SETTLE_DROP_ITEMS 格，多出来的进战报，面板上要留一句「还有几件」
+            { "drops_total", _drop_cells(applied).Count },
+            { "martial", martial },
+            { "notes", notes },
+        });
+        // 结算全文进战报：第八版不再只塞"放不下的那几行"，`lines` 本来就是全量（掉落明细／领悟／熟练度
+        // 都还翻得到，`last_battle.summary` 也读这份）。
+        _append_log(lines);
         _refresh();
         _refresh_buttons();
     }
@@ -468,18 +498,6 @@ public partial class BattleScreen
 
         GodotObject inventory = state.Get("inventory").AsGodotObject();
         return inventory != null && inventory.Call("has", item_id, 1).AsBool();
-    }
-
-    /// <summary>对位 GDScript 的 `array.slice(from, to)`（返回新数组）</summary>
-    private static Godot.Collections.Array _slice(Godot.Collections.Array source, int from, int to)
-    {
-        var out_slice = new Godot.Collections.Array();
-        for (int index = from; index < to; index++)
-        {
-            out_slice.Add(source[index]);
-        }
-
-        return out_slice;
     }
 
     /// <summary>对位 GDScript 的 `"分隔".join(array)`</summary>

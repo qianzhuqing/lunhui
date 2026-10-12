@@ -8,41 +8,165 @@ using Lunhui.Ui;
 namespace Lunhui.Tests;
 
 /// <summary>
-/// `TestBattleUi` 的结算那一半：结算卡片契约、逃跑三态、败北／平局／练习战三支零收获、
+/// `TestBattleUi` 的结算那一半：结算面板契约、逃跑三态、败北／平局／练习战三支零收获、
 /// 自动存档失败不静默、首杀只给一次、两个 Boss 真打完才解锁绝境、打赢某支队伍置旗标。
 /// 拆文件只为不撞 800 行硬上限（施工单「二点九八」的做法）。
 /// </summary>
 public partial class TestBattleUi
 {
     /// <summary>
-    /// 结算卡片契约：最多三行，按「战果 → 掉落 → 升级 → 领悟 → 熟练度 → 暂缓规则」取前三行；
-    /// 放不下的**必须进战报**，不能被丢掉（卡片位置有限，但信息不能丢）。
+    /// 结算面板契约（22 §1.6 第八版 ＋ §八「结算面板＝整屏分区」）：打完一场**同时触发掉落／升级／武学**
+    /// 的战斗 → 面板上**五块都在**（战果标题／经验／铜钱／掉落／武学）＋ 「确定」；**升级的人每人一行**
+    /// （两条升级＝两行，不是拼成一行），那行的 `Lv a → b` 与 `+N 点` **与 `LevelService.describe` 同源**；
+    /// 面板**自身高 ≤ 设计高 648**（口径②）；零收获那四块在败北／平局／撤退三支里各自验（`_CheckNoHarvestBlocks`）。
     /// </summary>
-    private void _CheckSettleCardContract(TableDb db)
+    private void _CheckSettlePanelContract(TableDb db)
     {
-        GodotObject state = SoloState(db);
-        // 攒够升好几级的经验，让「升级」这一行真的出现，卡片才会被塞满
-        ((GameState)state).party_exp = 400;
+        // 两个人 → 「两人升级＝两行」这一条才验得出来（单人队最多一行）
+        GodotObject state = NewGame(db, "normal", new[] { "scholar_fallen", "ch_ci" });
+        // 两位各升一级正好花光（1 级那一档 100 点）：再多一点就会有人连升两级，行数不再是「两人两行」
+        ((GameState)state).party_exp = LevelService.create(db, state).exp_to_next(1) * 2;
         var store = SaveStore.create(SettleCardDir, 3);
         store.ensure_dir();
-        Godot.Collections.Dictionary settle = _SettleBoss(db, state, store);
-        string card = settle["card"].AsString();
-        string log_text = settle["log"].AsString();
-        Godot.Collections.Array lines = settle["lines"].AsGodotArray();
-        CheckEq(
-            lines.Count, BattleScreen.settle_card_lines(),
-            $"结算卡片行数 = 设定上限（{BattleScreen.settle_card_lines()}）");
-        CheckTrue(lines[0].AsString().Contains("经验"), $"第一行是战果：{lines[0].AsString()}");
-        CheckTrue(lines[1].AsString().Contains("掉落"), $"第二行是掉落：{lines[1].AsString()}");
-        CheckTrue(lines[2].AsString().Contains("升级"), $"第三行是升级：{lines[2].AsString()}");
-        // 武学那一段排在升级之后，卡片放不下 → 必须出现在战报里，且不该挤进卡片。
-        // 文字形态有两种：学得会写「领悟：…」，全被修习门槛挡住写「未习得：…」（低等级打 BOSS 就是后者）。
-        bool skill_line_shown = log_text.Contains("领悟") || log_text.Contains("未习得");
-        CheckTrue(skill_line_shown, $"卡片放不下的武学一行进了战报：{log_text}");
-        CheckFalse(
-            card.Contains("领悟") || card.Contains("未习得"),
-            $"卡片里不会挤进第四项：{card}");
+        BattleScreen battle = _MakeBattle(state);
+        battle.encounter_override = _BossEncounter();
+        battle.save_store_override = store;
+        Tree.Root.AddChild(battle);
+        battle.setup();
+        CheckEq(battle.result_label_text(), "", "开局时面板还是空的（没到结算那一屏）");
+        // 先钉住"打之前它在"——不然下面那条「结算时 Boss 长血条收起」可能只是一场没有 Boss 的空断言
+        CheckTrue(_Visible(battle, "BossBar"), "Boss 战里贴顶长血条本来在（结算那一帧才收它）");
+        foreach (BattleActor enemy in _Actors(battle.enemies))
+        {
+            enemy.hp = 0;
+        }
+
+        battle._settle();
+        var panel = battle.FindChild("SettlePanel", true, false) as Control;
+        var confirm = battle.FindChild("ResultConfirm", true, false) as Control;
+        CheckNotNull(panel, "结算面板在（第八版：整屏分区面板）");
+        CheckNotNull(battle.FindChild("SettleTitleBox", true, false), "① 战果标题块（上下细金线夹大字）");
+        CheckEq(_SettleText(battle, "SettleTitle"), "胜利", "① 标题写「胜利」");
+        CheckNotNull(battle.FindChild("SettleExp", true, false), "② 经验块");
+        CheckNotNull(battle.FindChild("SettleMoneyRow", true, false), "③ 铜钱块");
+        CheckNotNull(battle.FindChild("SettleDropGrid", true, false), "④ 掉落块（两列往外铺）");
+        CheckNotNull(battle.FindChild("SettleMartial", true, false), "⑤ 武学结算块");
+        CheckNotNull(confirm, "⑥ 「确定」（＝离场，第七版那枚不变）");
+
+        // 第八版：结算那一帧**其余挂件整组收起**——面板底下只是 66% 不透明的压暗底，留着它们会从面板
+        // 边上透出来（真窗口截图里见过「第 N 回合　已结束」、Boss 长血条与战报面板浮在结算面板旁边）。
+        // 战报**面板**收起来、**入口那枚钮留着**：面板只摆得下 8 格掉落，全量明细还得够得着。
+        CheckFalse(_Visible(battle, "RoundLabel"), "结算时回合标签收起");
+        CheckFalse(_Visible(battle, "MsgLine"), "结算时那行状态播报收起");
+        CheckFalse(_Visible(battle, "BossBar"), "结算时 Boss 长血条收起");
+        CheckFalse(_Visible(battle, "LogPanel"), "结算时战报面板收起");
+        CheckTrue(_Visible(battle, "LogButton"), "战报入口那枚钮还在（全量明细够得着）");
+
+        // 升级的人**每人一行**，而且那一行与 `LevelService.describe` 同源（不许自己再算一遍格式）
+        LevelService levels = LevelService.create(db, state);
+        System.Collections.Generic.List<Label> rows = _SettleLabels(battle, "SettleLevelRow");
+        CheckGt(rows.Count, 1, $"两位都升了级 → 每人占一行（不是拼成一行）：{rows.Count} 行");
+        var names = new System.Collections.Generic.HashSet<string>();
+        foreach (Label row in rows)
+        {
+            Godot.Collections.Dictionary entry = row.GetMeta("level_up").AsGodotDictionary();
+            names.Add(entry["name"].AsString());
+            CheckEq(
+                row.Text,
+                $"▲ {levels.describe(new Godot.Collections.Array { entry })}",
+                $"升级行与 LevelService.describe 同源：{row.Text}");
+        }
+
+        CheckEq(names.Count, 2, $"两位升级的角色各占一行：{string.Join("、", names)}");
+        // 「一条升级一行」这一条要的是"不合并"：喂两条就该出两行（口径②：每区不限行）
+        battle._refresh_settle_panel(_TwoLevelView());
+        CheckEq(_SettleLabels(battle, "SettleLevelRow").Count, 2, "两条升级 → 两行");
+
+        // 面板自身高 ≤ 设计高，且不压住贴底那枚「确定」（口径②：真超出由滚动区整块滚）
+        if (panel != null && confirm != null)
+        {
+            CheckTrue(
+                panel.Size.Y <= LayoutBudget.design_height() + 1.0,
+                $"面板自身高 ≤ 648（实际 {panel.Size.Y:0}）");
+            CheckTrue(
+                panel.Size.X <= LayoutBudget.design_width() + 1.0,
+                $"面板宽 ≤ 1152（实际 {panel.Size.X:0}）");
+            CheckTrue(
+                panel.GetGlobalRect().End.Y <= confirm.GetGlobalRect().Position.Y + 1.0,
+                "面板不压住贴底那枚「确定」");
+        }
+
+        _DropBattle(battle);
     }
+
+    /// <summary>
+    /// 口径③：零收获（败北／平局／撤退）→ 面板上**经验／铜钱／掉落／升级四块整块不出现**，
+    /// 只剩标题 ＋ 说明 ＋「确定」。
+    /// </summary>
+    private void _CheckNoHarvestBlocks(BattleScreen battle, string tag)
+    {
+        CheckNull(battle.FindChild("SettleExp", true, false), $"{tag}：经验块整块不出现（口径③）");
+        CheckNull(battle.FindChild("SettleMoneyRow", true, false), $"{tag}：铜钱块整块不出现");
+        CheckNull(battle.FindChild("SettleDrops", true, false), $"{tag}：掉落块整块不出现");
+        CheckEq(
+            battle.FindChildren("SettleLevelRow*", "Label", true, false).Count, 0,
+            $"{tag}：升级行不出现");
+        CheckNotNull(battle.FindChild("SettleTitleBox", true, false), $"{tag}：标题还在");
+        CheckNotNull(battle.FindChild("ResultConfirm", true, false), $"{tag}：「确定」还在");
+    }
+
+    /// <summary>面板上某一类行（按节点名前缀找，顺序＝节点顺序）</summary>
+    private static System.Collections.Generic.List<Label> _SettleLabels(Node root, string prefix)
+    {
+        var labels = new System.Collections.Generic.List<Label>();
+        foreach (Node node in root.FindChildren($"{prefix}*", "Label", true, false))
+        {
+            if (node is Label label)
+            {
+                labels.Add(label);
+            }
+        }
+
+        return labels;
+    }
+
+    private static string _SettleText(Node root, string node_name) =>
+        root.FindChild(node_name, true, false) is Label label ? label.Text : "";
+
+    private static bool _Visible(Node root, string node_name) =>
+        root.FindChild(node_name, true, false) is Control control && control.Visible;
+
+    /// <summary>喂给面板的最小 view：两条升级（→ 两行）＋ 一格掉落，`_CheckSettlePanelContract` 用</summary>
+    private static Godot.Collections.Dictionary _TwoLevelView() => new()
+    {
+        { "title", "胜利" },
+        { "harvest", true },
+        { "exp", 200 },
+        { "money", 30 },
+        {
+            "levels", new Godot.Collections.Array
+            {
+                new Godot.Collections.Dictionary
+                {
+                    { "char_id", "scholar_fallen" }, { "name", "家道失落的书生" },
+                    { "from", 1 }, { "to", 2 }, { "points", 5 },
+                },
+                new Godot.Collections.Dictionary
+                {
+                    { "char_id", "ch_ci" }, { "name", "燕小七" },
+                    { "from", 2 }, { "to", 3 }, { "points", 5 },
+                },
+            }
+        },
+        {
+            "drops", new Godot.Collections.Array
+            {
+                new Godot.Collections.Dictionary { { "icon", "" }, { "text", "野狼皮 ×2" } },
+            }
+        },
+        { "martial", new Godot.Collections.Array() },
+        { "notes", new Godot.Collections.Array() },
+    };
 
     /// <summary>逃跑在真实界面上的三态：开打前不可按、轮到我方可按、按下后（强制成功）撤退收场且不结算奖励。</summary>
     private void _CheckFleeUi(TableDb db)
@@ -91,6 +215,7 @@ public partial class TestBattleUi
         CheckTrue(flee.Disabled, "撤退后按钮置灰");
         bool cleared_after = session_node != null && ((GameSession)session_node).cleared_spawns.ContainsKey(spawn_key);
         CheckFalse(cleared_after && !cleared_before, "撤退不会把明雷标成已清（回来还能打）");
+        _CheckNoHarvestBlocks(battle, "撤退");
         _DropBattle(battle);
     }
 
@@ -148,6 +273,7 @@ public partial class TestBattleUi
         string card = battle.result_label_text();
         CheckTrue(card.Contains("败北"), $"结算卡片写清败北：{card}");
         CheckFalse(card.Contains("胜利"), $"败北卡片不许出现「胜利」：{card}");
+        _CheckNoHarvestBlocks(battle, "败北");
         CheckEq(inventory.money, money_before, "败北不发铜钱");
         CheckEq(game_state.party_exp, exp_before, "败北不给经验");
         CheckEq(inventory.equipment_count(), equips_before, "败北不掉装备（没有奖励入账）");
@@ -278,6 +404,7 @@ public partial class TestBattleUi
         CheckTrue(card.Contains("平局"), $"结算卡片写「平局」：{card}");
         CheckFalse(card.Contains("败北"), $"平局不许写成「败北」（玩家没输）：{card}");
         CheckFalse(card.Contains("胜利"), $"平局也不是胜利：{card}");
+        _CheckNoHarvestBlocks(battle, "平局");
         CheckEq(inventory.money, money_before, "平局不发铜钱");
         CheckEq(game_state.party_exp, exp_before, "平局不给经验");
         CheckEq(inventory.equipment_count(), equips_before, "平局不掉装备");

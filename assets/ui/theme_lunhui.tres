@@ -232,6 +232,11 @@ UiKit/colors/stage_text = Color(0.956863, 0.92549, 0.85098, 1)
 UiKit/colors/stage_dim = Color(0.85098, 0.803922, 0.698039, 1)
 ; 头顶条／刻度格的底槽（半透明黑，压在暗底上）
 UiKit/colors/track = Color(0, 0, 0, 0.55)
+; 结算面板的压暗底（22 §1.6 第八版）：整块面板压在这一层上；比 `track` 浅一档，还要看得见底下的战场
+UiKit/colors/settle_dim = Color(0.039216, 0.035294, 0.031373, 0.66)
+; 结算面板的背板：**暗底**（不用宣纸那件九宫格）——它长在战斗这一屏上（22 §1.5 全游戏唯一压暗的一屏），
+; 金色标题与战场字色都压得住；比 `stage_mid` 再深一点、留一点透，别把战场切得太生硬
+UiKit/colors/settle_panel = Color(0.086275, 0.082353, 0.078431, 0.94)
 Button/colors/font_color = Color(0.196078, 0.180392, 0.14902, 1)
 Button/colors/font_disabled_color = Color(0.541176, 0.501961, 0.439216, 1)
 Button/colors/font_hover_color = Color(0.0901961, 0.0823529, 0.0588235, 1)

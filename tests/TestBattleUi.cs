@@ -49,12 +49,11 @@ public partial class TestBattleUi : TestCase
         }
 
         TableDb db = GetDb();
-        // 战斗界面的手感／文案闸门常量（变异探针点名「没人钉」的四条）——写死绝对值。
-        // 2026-10-11 搬 C# 后 GDScript **读不到 C# 的 `const`**，所以这四个走取值口（坑⑩）。
+        // 战斗界面的手感／文案闸门常量（变异探针点名「没人钉」的那几条）——写死绝对值。
+        // 2026-10-11 搬 C# 后 GDScript **读不到 C# 的 `const`**，所以这几个走取值口（坑⑩）。
         CheckFloat(BattleScreen.auto_interval(), 0.8, "自动战斗的推进间隔 0.8 秒", 0.0001);
         CheckEq(BattleScreen.selftest_seed(), 20261003, "战斗自检的固定种子（决策 236：不固定就会时红时绿）");
-        CheckEq(BattleScreen.settle_drop_items(), 3, "结算卡片最多列 3 件掉落");
-        CheckEq(BattleScreen.settle_drop_max_chars(), 48, "结算卡片掉落行最多 48 字");
+        CheckEq(BattleScreen.settle_drop_items(), 8, "结算面板的掉落块最多摆 8 格（两列往外铺）");
 
         GodotObject state = SoloState(db);
         BattleScreen battle = _MakeBattle(state);
@@ -105,7 +104,7 @@ public partial class TestBattleUi : TestCase
         _CheckCommandUi(db);
         _CheckPauseUi(db);
         _CheckAutoAdvance(db);
-        _CheckSettleCardContract(db);
+        _CheckSettlePanelContract(db);
         _CheckAutosaveFailure(db);
         CheckTrue(store.slot_exists(1), "战斗结算后自动落盘");
         CheckEq(settle_reason, "战斗结算", "记下存档原因（设计 02：副本内自动存）");
