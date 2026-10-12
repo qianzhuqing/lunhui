@@ -36,6 +36,13 @@ public partial class TestBattleUi
         CheckEq(battle.result_label_text(), "", "开局时面板还是空的（没到结算那一屏）");
         // 先钉住"打之前它在"——不然下面那条「结算时 Boss 长血条收起」可能只是一场没有 Boss 的空断言
         CheckTrue(_Visible(battle, "BossBar"), "Boss 战里贴顶长血条本来在（结算那一帧才收它）");
+        // 跳字层：走真路径造一个伤害跳字（口径④点名要收的那个），先钉住"打的时候它在"
+        string first_ally = battle.allies[0].AsGodotObject().Get("actor_id").AsString();
+        battle._spawn_floats(new Godot.Collections.Array
+        {
+            new Godot.Collections.Dictionary { { "target", first_ally }, { "damage", 7 } },
+        });
+        CheckTrue(_Visible(battle, "FloatLayer"), "打的时候伤害跳字层在（结算那一帧才收它）");
         foreach (BattleActor enemy in _Actors(battle.enemies))
         {
             enemy.hp = 0;
@@ -96,6 +103,25 @@ public partial class TestBattleUi
                 "面板不压住贴底那枚「确定」");
         }
 
+        // 口径④：跳字层也收（它挂在结算面板**之上**，最后一下的数字会从面板上闪过去）
+        CheckFalse(_Visible(battle, "FloatLayer"), "结算帧伤害跳字层收起（口径④）");
+        // 口径④：按压暗底之上那枚「战报」，战报要盖到结算面板**之上**——面板上那句
+        // 「还有 N 件放不下（见战报）」是承诺，入口得真在、真盖得住
+        battle.toggle_log_panel();
+        var log_panel = battle.FindChild("LogPanel", true, false) as Control;
+        CheckTrue(log_panel != null && log_panel.Visible, "结算帧按「战报」能把战报按出来");
+        CheckTrue(
+            log_panel != null && log_panel.GetIndex() == battle.GetChildCount() - 1,
+            "按出来的战报盖在结算面板之上");
+        battle.toggle_log_panel();
+
+        // 掉落超过 8 格：面板上留一句「还有 N 件放不下（见战报）」（口径②「不许丢信息」要让玩家看得见）
+        battle._refresh_settle_panel(_ManyDropsView());
+        CheckNotNull(battle.FindChild("SettleDropMore", true, false), "溢出掉落有「还有 N 件放不下」那一行");
+        CheckTrue(
+            _SettleText(battle, "SettleDropMore").Contains("4"),
+            $"那一行写清还有几件：{_SettleText(battle, "SettleDropMore")}");
+
         _DropBattle(battle);
     }
 
@@ -135,6 +161,35 @@ public partial class TestBattleUi
 
     private static bool _Visible(Node root, string node_name) =>
         root.FindChild(node_name, true, false) is Control control && control.Visible;
+
+    /// <summary>
+    /// 喂给面板的「掉落溢出」view：8 格铺满 ＋ 总数 12——面板只摆 8 格，溢出的那 4 件要并进
+    /// 底下一行「还有 4 件放不下（见战报）」（口径②）。
+    /// </summary>
+    private static Godot.Collections.Dictionary _ManyDropsView()
+    {
+        var cells = new Godot.Collections.Array();
+        for (int index = 0; index < 8; index++)
+        {
+            cells.Add(new Godot.Collections.Dictionary
+            {
+                { "icon", "" }, { "text", $"草药 ×{index + 1}" },
+            });
+        }
+
+        return new Godot.Collections.Dictionary
+        {
+            { "title", "胜利" },
+            { "harvest", true },
+            { "exp", 200 },
+            { "money", 30 },
+            { "levels", new Godot.Collections.Array() },
+            { "drops", cells },
+            { "drops_total", 12 },
+            { "martial", new Godot.Collections.Array() },
+            { "notes", new Godot.Collections.Array() },
+        };
+    }
 
     /// <summary>喂给面板的最小 view：两条升级（→ 两行）＋ 一格掉落，`_CheckSettlePanelContract` 用</summary>
     private static Godot.Collections.Dictionary _TwoLevelView() => new()

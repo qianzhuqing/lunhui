@@ -190,9 +190,12 @@ public partial class CharacterSheet : RefCounted
     /// 内功自己给悟性／根骨的话，「装内功 → 槽位涨 → 又能装一部」会变成顺序游戏（决策 22），
     /// 所以门槛与槽位都按这份算；内功加成只进派生数值。</summary>
     public Godot.Collections.Dictionary loadout_attrs()
+        => _loadout_attrs_of(_inventory());
+
+    /// <summary>同上，但装备那一层按**指定的背包**算（「换上之后」的预演传副本）。</summary>
+    private Godot.Collections.Dictionary _loadout_attrs_of(Inventory inventory)
     {
         var equipment_only = new Godot.Collections.Array();
-        Inventory inventory = _state != null ? _state.Get("inventory").As<Inventory>() : null;
         if (_state != null && inventory != null)
         {
             equipment_only = inventory.contributions_for(_db, char_id);
@@ -231,8 +234,20 @@ public partial class CharacterSheet : RefCounted
     /// 招式槽与内功容量，就变成「装上去→属性涨→又能装」的顺序游戏（与内功同一条纪律，见决策 22）。
     /// </summary>
     public Godot.Collections.Array set_contributions()
+        => _set_contributions_of(_inventory());
+
+    /// <summary>当前这一局的背包（没有局就是 null）。</summary>
+    private Inventory _inventory() => _state != null ? _state.Get("inventory").As<Inventory>() : null;
+
+    /// <summary>
+    /// 「套装档位 → 贡献」的**唯一实现**，按传进来的背包算。
+    ///
+    /// 平时传真背包（`set_contributions()`）；「换上之后」的预演传的是**背包副本**
+    /// （见 `preview_swap_stats`）——套装数的是「身上穿着几件成员」，预演要是不跟着副本走，
+    /// 「这一件正好凑齐一套」那一档就会漏掉。
+    /// </summary>
+    private Godot.Collections.Array _set_contributions_of(Inventory inventory)
     {
-        Inventory inventory = _state != null ? _state.Get("inventory").As<Inventory>() : null;
         if (_state == null || inventory == null)
         {
             return new Godot.Collections.Array();
@@ -313,10 +328,16 @@ public partial class CharacterSheet : RefCounted
     }
 
     /// <summary>显示用文本：百分比类乘 100 加 %，其余按 show_decimals 取整。</summary>
-    public string stat_label(string stat_id)
+    public string stat_label(string stat_id) => format_stat_value(stat_id, stat_value(stat_id));
+
+    /// <summary>
+    /// 把**任意一个**派生数值写成显示文本（百分比乘 100 加 %、其余按 `show_decimals` 取整）。
+    /// 单拎出来是因为「换上之后」要写的是**预演值**，不是当前值——格式只能有这一处，
+    /// 否则面板上同一个数会出现两种写法（`stat_label()` 也走它）。
+    /// </summary>
+    public string format_stat_value(string stat_id, double value)
     {
         var row = _db.get_row("stat_def", stat_id) as StatDefRow;
-        double value = stat_value(stat_id);
         if (row == null)
         {
             return value.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -473,6 +494,58 @@ public partial class CharacterSheet : RefCounted
             }
         }
         return out_rows;
+    }
+
+    /// <summary>
+    /// 「换上之后」的预演（UI 清单 §二-5：选中候选后即时重算，与面板同一个 `AttributeCalculator`）。
+    ///
+    /// **做法：在背包的一份副本上真做一遍换装，再按副本算一遍全量数值。** 不手工「减掉这一件、
+    /// 加上那一件」，是因为套装（08）数的是「身上穿着几件成员」——候选正好凑齐一套时，
+    /// 手工替换会漏掉那一档，预演就成了瞎话。副本走 `to_dict()`／`from_dict()`（与存读档同一条路），
+    /// 用完即弃，**不动真存档**。
+    ///
+    /// `candidate_instance_id` 给空串＝只看「卸下这一格之后」。
+    /// </summary>
+    public Godot.Collections.Dictionary preview_swap_stats(
+        string slot_id, int index, string candidate_instance_id)
+    {
+        Inventory inventory = _inventory();
+        if (inventory == null || slot_id.Length == 0)
+        {
+            return new Godot.Collections.Dictionary();
+        }
+
+        Inventory trial = Inventory.from_dict(inventory.to_dict());
+        if (trial == null)
+        {
+            return new Godot.Collections.Dictionary();
+        }
+
+        trial.unequip(char_id, slot_id, index);
+        if (candidate_instance_id.Length > 0)
+        {
+            // 装不上（等级／武器不符）时 `equip()` 返回 ok=false、什么也不动——预演就退回「卸下之后」。
+            // 界面上那件候选本来就置灰（原因出自同一份 `can_equip`），这里不重复报一次错。
+            trial.equip(_db, char_id, level, weapon_type_id(), candidate_instance_id);
+        }
+
+        var contributions = new Godot.Collections.Array();
+        contributions.AddRange(trial.contributions_for(_db, char_id));
+        contributions.AddRange(_loadout != null ? _loadout.contributions() : new Godot.Collections.Array());
+        contributions.AddRange(_set_contributions_of(trial));
+        contributions.AddRange(codex_contributions());
+        contributions.AddRange(story_contributions());
+        contributions.AddRange(TalentService.contributions(_db, _state, char_id));
+        Godot.Collections.Dictionary computed =
+            _calculator.compute(level, base_attrs(), allocations(), contributions, true);
+        // 槽位／内功容量那两个数走另一条公式（与 `stats()` 同一处口径）：装备带属性点时它们也会动
+        Godot.Collections.Dictionary derived = _growth.derived_stats(level, _loadout_attrs_of(trial));
+        foreach (Variant key in derived.Keys)
+        {
+            computed[key] = derived[key];
+        }
+
+        return computed;
     }
 
     /// <summary>这件装备的随机词条文案（空串 = 没有词条）</summary>

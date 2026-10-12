@@ -82,6 +82,11 @@ public partial class CharacterScreen : Control
 
     private string _selected_char = "";
     private string _selected_slot = "";
+    /// <summary>
+    /// 装备页里选中的那件候选（清单 §二-5：点一行＝选中候选）。**选中态是「可换 → 详情／对比」
+    /// 这条路的中枢**：候选被穿上去、或者换了槽位／换了人之后就不再存在，页面重建时会把它清掉。
+    /// </summary>
+    private string _selected_candidate = "";
     private string _filter = "all";
 
     /// <summary>
@@ -213,6 +218,7 @@ public partial class CharacterScreen : Control
     {
         _selected_char = char_id;
         _selected_slot = "";
+        _selected_candidate = "";
         refresh();
     }
 

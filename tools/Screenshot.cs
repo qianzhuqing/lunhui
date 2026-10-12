@@ -23,6 +23,9 @@ public partial class Screenshot : Node
     /// <summary>第 5 个用户参数：要停在哪一页（空＝不动，面板自己决定）</summary>
     private string _tab = "";
 
+    /// <summary>第 6 个用户参数：`&lt;槽位 id&gt;|&lt;第几格&gt;`——顺手按一下那个槽位（空＝不按）</summary>
+    private string _slot = "";
+
     public override void _Ready()
     {
         string[] args = OS.GetCmdlineUserArgs();
@@ -47,6 +50,11 @@ public partial class Screenshot : Node
         {
             // 第 5 个参数：要停在哪一页（角色面板这种多页签的面板，逐页对观感时用）
             _tab = args[4];
+        }
+
+        if (args.Length > 5)
+        {
+            _slot = args[5];
         }
 
         // `_Ready` 正处在「根节点装配子节点」的窗口里，直接 `AddChild` 会失败——延后一帧。
@@ -99,6 +107,18 @@ public partial class Screenshot : Node
                 && int.TryParse(_tab, out int tab_index))
             {
                 _node.Call("select_tab", tab_index);
+            }
+
+            // 第 6 个参数：「slot:<槽位 id>|<第几格>」＝顺手选中一个槽位（装备页的详情／可换
+            // 只有在选中之后才摆得出来，空态截图看不出效果）。跟 `_tab` 一样是**为了让截图
+            // 能停在真正想看的那一屏**，不是产品里的行为。
+            if (_slot.Length > 0 && _node != null && _node.HasMethod("press_slot"))
+            {
+                string[] parts = _slot.Split("|");
+                if (parts.Length == 2 && int.TryParse(parts[1], out int slot_index))
+                {
+                    _node.Call("press_slot", parts[0], slot_index);
+                }
             }
         }
     }

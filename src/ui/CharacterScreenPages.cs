@@ -8,6 +8,9 @@ namespace Lunhui.Ui;
 /// bCharacterScreenb 四个页签的重建（角色／装备／行囊／武学）——从 bCharacterScreen.csb 拆出来的 partial
 /// （那份要守 800 行硬上限）。
 ///
+/// **装备页那一块 2026-10-12 又拆出去一份**（`CharacterScreenEquip.cs`：七槽视图／换上之后／
+/// 详情／可换四块）。
+///
 /// 这一份只干一件事：按 bCharacterSheetb／bInventoryb 给的数据**摆控件**。
 /// 名字（bSlotButtonweapon_0b 这种）就是用例与自检的接口，别改。
 /// </summary>
@@ -163,19 +166,10 @@ public partial class CharacterScreen
         }
 
         Godot.Collections.Dictionary summary = panel.slot_summary();
-        VBoxContainer head = UiChrome.section_head(
-            "武学",
+        _skill_box.AddChild(_section(
+            "SkillSection", "SkillHeader", "武学",
             $"招式 {_i(summary, "active_used")}/{_i(summary, "active_slots")}"
-                + $"　内功 {_i(summary, "passive_used")}/{_i(summary, "passive_capacity")} 格",
-            "SkillSection");
-        // 用例按老名字 `SkillHeader` 找这一行的文字（`.cs` 版 `TestCharacterUi._CheckSkillLoadout`），
-        // 所以把标题那个 Label 单独改名：节点名是接口，别因为换了骨架就把接口改掉。
-        if (head.FindChild("SectionTitle", true, false) is Label head_title)
-        {
-            head_title.Name = "SkillHeader";
-        }
-
-        _skill_box.AddChild(head);
+                + $"　内功 {_i(summary, "passive_used")}/{_i(summary, "passive_capacity")} 格"));
 
         // 装／卸都要能按段找得到：招式在前、内功在后（`skill_rows()` 就是按这个顺序给的）
         foreach (Variant row_value in panel.skill_rows())
@@ -212,6 +206,49 @@ public partial class CharacterScreen
         return box;
     }
 
+    /// <summary>
+    /// 一段的标题条（示意图的 `.lu-panel-h`：12px 墨色标题 ＋ 右边一截次要字 ＋ 下面一道细线）。
+    /// 15 §4.4 只有 12／24 两档字号，**层级靠颜色与位置分**——小节头一律这一种长相，
+    /// 别再写 18／20 那种「不大不小」的小标题（像素字按 1.5 倍画就是糊的）。
+    ///
+    /// 两个名字都要留着：`section_name` 是这一段的节点名，`pin_name` 是**用例当接口找的
+    /// 那个标题 Label 的名字**——用例按节点名找段、按标题名读那行字。
+    /// </summary>
+    private static Control _section(string section_name, string pin_name, string title, string hint = "")
+    {
+        Control head = UiChrome.section_head(title, hint, section_name);
+        if (head.FindChild("SectionTitle", true, false) is Label title_label)
+        {
+            title_label.Name = pin_name;
+        }
+
+        return head;
+    }
+
+    /// <summary>
+    /// 固定列里的一个小格子：**不换行**（列宽就是按整行文字量出来的；允许换行会把那一列的
+    /// 最小宽度压到一个字，窄栏下整列就塌了——七维行踩过这个坑）。
+    /// 颜色只从 `UiKit/colors/*` 取，别在这儿再写一遍色值。
+    /// </summary>
+    private static Label _cell_label(
+        string node_name, string text, string color_name, int min_width, HorizontalAlignment align)
+    {
+        var label = new Label
+        {
+            Name = node_name,
+            Text = text,
+            AutowrapMode = TextServer.AutowrapMode.Off,
+            HorizontalAlignment = align,
+        };
+        label.AddThemeColorOverride("font_color", UiKit.color(color_name));
+        if (min_width > 0)
+        {
+            label.CustomMinimumSize = new Vector2(min_width, 0);
+        }
+
+        return label;
+    }
+
     /// <summary>左栏：立绘 ＋ 名字／定位 ＋ 装备摘要（只读，要改去「装备」页）</summary>
     private void _build_character_left(VBoxContainer box, CharacterSheet panel)
     {
@@ -220,7 +257,9 @@ public partial class CharacterScreen
             box.AddChild(_portrait);
         }
 
-        box.AddChild(_make_label("Template", $"{panel.display_name()}　Lv{panel.level}", 20));
+        // 名字是这一屏的**大标题**（示意图 `.lu-hero-name` 是 26px；两档字号里取 24——
+        // 20 那种「不大不小」的档位在像素字下是 1.666 倍，画出来是糊的）
+        box.AddChild(_make_label("Template", $"{panel.display_name()}　Lv{panel.level}", 24));
         string sub = $"{panel.role_tag()} · {panel.weapon_type_name()}";
         string desc = panel.template_desc();
         if (desc.Length > 0)
@@ -229,7 +268,7 @@ public partial class CharacterScreen
         }
 
         box.AddChild(_make_label("TemplateDesc", sub));
-        box.AddChild(_make_label("EquipSummaryHeader", "装备摘要", 18));
+        box.AddChild(_section("EquipSummarySection", "EquipSummaryHeader", "装备摘要"));
         // 清单 §二-4 原本写的是「兵器／护具／站位」三行，**「站位」那行已按策划 2026-10-04 的拍板删掉**
         // （前/后排规则还没定，bbattle_actorb 里记着这条缺口）——装备摘要只摆有数据的槽位行。
         // 槽位 id 取自 bequip_slot_defb：武器是 bweaponb、护具是 bbodyb（不是 barmorb）。
@@ -264,13 +303,23 @@ public partial class CharacterScreen
     /// <summary>
     /// 中栏：七维（5 项可加点 ＋ 2 项资质，资质那一行顺带写清它管着多少格）
     /// ＋ 图鉴奖励 ＋ 永久增益 ＋ 心性称号
+    ///
+    /// 七维行按清单 §二-4 摆成**五列固定列**：图标／字／值／加成来源／＋。
+    /// 以前是「力 5（裸 5 ＋ 装备 0）」一整串塞在一个标签里——窄栏下那串括号会换行，
+    /// 把一行撑成两行、还跟下一行对不齐。现在来源单独一列（`AttrSource<id>`，不换行）。
     /// </summary>
     private void _build_character_middle(VBoxContainer box, CharacterSheet panel, GodotObject st)
     {
-        box.AddChild(_make_label("AttrHeader", $"七维 · 可加点 {panel.available_points()} 点", 18));
+        box.AddChild(_section("AttrSection", "AttrHeader", $"七维 · 可加点 {panel.available_points()} 点"));
         Godot.Collections.Dictionary total = panel.total_attrs();
         Godot.Collections.Dictionary naked = panel.naked_attrs();
         Godot.Collections.Dictionary summary = panel.slot_summary();
+        // 五列用 GridContainer 而不是每行一个 HBox：列宽由**所有行**一起定，两行之间才对得齐
+        // （每行自己排的话，「+2 装备」和「招式槽 12」会让两行的值列差开几个像素）。
+        var grid = new GridContainer { Name = "AttrGrid", Columns = 5 };
+        grid.AddThemeConstantOverride("h_separation", 8);
+        grid.AddThemeConstantOverride("v_separation", 4);
+        box.AddChild(grid);
         foreach (Variant attr_value in Db.rows("attribute_def"))
         {
             var attr_row = attr_value.As<AttributeDefRow>();
@@ -280,41 +329,43 @@ public partial class CharacterScreen
             // 悟性／根骨是资质（设计 0.13.0）：加号置灰，并在行里写清为什么不能加
             string blocked_reason = panel.allocation_block_reason(attr_id);
             bool is_talent = blocked_reason.Length > 0;
-            var row = new HBoxContainer { Name = $"AttrRow{attr_id}" };
-            row.AddThemeConstantOverride("separation", 8);
-            string text = $"{attr_row.name_cn} {total_value}";
-            if (total_value != naked_value)
-            {
-                text += $"（裸 {naked_value} ＋ 装备 {total_value - naked_value}）";
-            }
-
-            if (is_talent)
-            {
-                // 资质行（清单 §二-4）：这一项**管着什么**也写在同行，省得玩家猜
-                if (attr_id == "wu")
-                {
-                    text += $"　招式槽 {_i(summary, "active_slots")}";
-                }
-                else if (attr_id == "gen")
-                {
-                    text += $"　心法 {_i(summary, "passive_capacity")} 格";
-                }
-
-                text += "　资质，不可加点";
-            }
-
-            Label attr_label = _make_label($"AttrLabel{attr_id}", text);
-            // 自动换行会把标签的最小宽度压到一个字，HBox 于是把它挤成竖排——
-            // 七维行必须让它撑满（这一条踩过：面板上「力 5（裸 5 ＋ 装备 0）」被竖着排下来）
-            attr_label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             // 属性图标：bicons/attr/<attr_id>.pngb（15 §六；没出图就不占位）
             TextureRect attr_icon = IconPaths.make_icon(IconPaths.attr(attr_id), $"AttrIcon{attr_id}");
-            if (attr_icon != null)
+            // 第 1 列：图标。没出图的那一项摆一个**空格子**——列的宽度由别的行定，
+            // 所以这一行不会因为缺图而错位，也别给玩家留一个空的占位框。
+            grid.AddChild(attr_icon ?? (Control)new Control { Name = $"AttrIconNone{attr_id}" });
+            // 第 2 列：字。资质那一项把「不可加点」也跟着写出来（加号是置灰的，得说清为什么）
+            Label attr_label = _make_label(
+                $"AttrLabel{attr_id}",
+                is_talent ? $"{attr_row.name_cn}　资质，不可加点" : attr_row.name_cn);
+            // 自动换行会把标签的最小宽度压到一个字，那一列于是缩到最窄——这一列要撑住
+            // （这一条踩过：面板上「力 5（裸 5 ＋ 装备 0）」被挤成竖排）
+            attr_label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            grid.AddChild(attr_label);
+            // 第 3 列：值（朱红、右对齐——两三位数不会让这一列跟着晃）
+            grid.AddChild(_cell_label(
+                $"AttrValue{attr_id}", total_value.ToString(), "cinnabar_deep", 36,
+                HorizontalAlignment.Right));
+            // 第 4 列：加成来源。可加点项写装备给的那几点（没有就写「—」）；
+            // 资质项这一列写它**管着什么**（清单 §二-4：省得玩家猜）
+            string source_text;
+            if (attr_id == "wu")
             {
-                row.AddChild(attr_icon);
+                source_text = $"招式槽 {_i(summary, "active_slots")}";
+            }
+            else if (attr_id == "gen")
+            {
+                source_text = $"心法 {_i(summary, "passive_capacity")} 格";
+            }
+            else
+            {
+                source_text = total_value != naked_value ? $"+{total_value - naked_value} 装备" : "—";
             }
 
-            row.AddChild(attr_label);
+            grid.AddChild(_cell_label(
+                $"AttrSource{attr_id}", source_text, is_talent ? "ink_off" : "jade", 76,
+                HorizontalAlignment.Left));
+            // 第 5 列：加点钮（资质置灰，原因进悬浮说明）
             Button plus = _make_button(
                 $"PlusButton{attr_id}", "+", () => { press_plus(attr_id); },
                 panel.available_points() <= 0 || is_talent);
@@ -324,8 +375,7 @@ public partial class CharacterScreen
             }
 
             plus.CustomMinimumSize = new Vector2(36, 0);
-            row.AddChild(plus);
-            box.AddChild(row);
+            grid.AddChild(plus);
         }
 
         // 图鉴奖励（设计 01「收集本身也是成长」）：进度与当前加成摆出来，玩家才知道集图鉴有用
@@ -357,7 +407,9 @@ public partial class CharacterScreen
     /// <summary>右栏：战斗属性（按表里的顺序逐项一行）＋ 非战斗技能</summary>
     private void _build_character_right(VBoxContainer box, CharacterSheet panel)
     {
-        box.AddChild(_make_label("StatHeader", "战斗属性", 18));
+        // 小节头右边的次要字写「几项」——「照表摆」这件事玩家看得见（示意图那一行也是这么写的）
+        box.AddChild(_section(
+            "StatSection", "StatHeader", "战斗属性", $"{Db.rows("stat_def").Count} 项"));
         // 战斗外气血（v11 起进存档）：面板上要看得见，不然玩家不知道为什么要去医馆
         int current_hp = panel.current_hp();
         int max_hp = panel.max_hp();
@@ -368,28 +420,31 @@ public partial class CharacterScreen
         // 而这是玩家进战斗前最想知道的一件事。
         box.AddChild(UiChrome.stat_bar(
             "hp", max_hp > 0 ? (float)current_hp / max_hp : 0f, 200, "HpBar"));
+        // 三列（图标／名／值），跟七维那五列同一个道理：值单独一列、右对齐，
+        // 「外功攻击 26」这种整串一个标签的写法两行之间对不齐（清单 §二-4：每行图标／名／值）
+        var stat_grid = new GridContainer { Name = "StatGrid", Columns = 3 };
+        stat_grid.AddThemeConstantOverride("h_separation", 8);
+        stat_grid.AddThemeConstantOverride("v_separation", 4);
+        box.AddChild(stat_grid);
         foreach (Variant stat_value in Db.rows("stat_def"))
         {
             var stat_row = stat_value.As<StatDefRow>();
             string stat_id = stat_row.stat_id;
-            var line = new HBoxContainer { Name = $"StatRow{stat_id}" };
-            line.AddThemeConstantOverride("separation", 8);
-            // 派生数值图标：bicons/stat/<stat_id>.pngb（15 §六；没出图就不占位）
+            // 派生数值图标：bicons/stat/<stat_id>.pngb（15 §六；没出图就摆一个空格子，
+            // 列宽由别的行定，这一行不会因此错位）
             TextureRect stat_icon = IconPaths.make_icon(IconPaths.stat(stat_id), $"StatIcon{stat_id}");
-            if (stat_icon != null)
-            {
-                line.AddChild(stat_icon);
-            }
-
-            Label stat_label = _make_label(
-                $"StatLabel{stat_id}", $"{panel.stat_name(stat_id)} {panel.stat_label(stat_id)}");
+            stat_grid.AddChild(stat_icon ?? (Control)new Control { Name = $"StatIconNone{stat_id}" });
+            Label stat_label = _make_label($"StatLabel{stat_id}", panel.stat_name(stat_id));
             stat_label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            line.AddChild(stat_label);
-            box.AddChild(line);
+            stat_grid.AddChild(stat_label);
+            stat_grid.AddChild(_cell_label(
+                $"StatValue{stat_id}", panel.stat_label(stat_id), "cinnabar_deep", 56,
+                HorizontalAlignment.Right));
         }
 
         // 非战斗技能与判定值（判定不含装备）
-        box.AddChild(_make_label("EventSkillHeader", "非战斗技能（判定值不含装备加成）", 18));
+        box.AddChild(_section(
+            "EventSkillSection", "EventSkillHeader", "非战斗技能（判定值不含装备加成）"));
         foreach (Variant row_value in panel.event_skill_rows())
         {
             Godot.Collections.Dictionary row = row_value.AsGodotDictionary();
@@ -470,119 +525,6 @@ public partial class CharacterScreen
     }
 
     // ------------------------------------------------------------------ 装备页
-
-    private void _rebuild_equipment()
-    {
-        _clear(_equip_box);
-        GodotObject st = current_state();
-        CharacterSheet panel = sheet();
-        if (st == null || panel == null)
-        {
-            _equip_box.AddChild(_make_label("Empty", "没有会话状态"));
-            return;
-        }
-
-        _equip_box.AddChild(_make_label(
-            "SlotHeader", $"{panel.display_name()} 的装备（点槽位选要换的装备）", 18));
-        foreach (Variant row_value in panel.equipped_rows())
-        {
-            Godot.Collections.Dictionary row = row_value.AsGodotDictionary();
-            string slot_id = _s(row, "slot_id");
-            int index = _i(row, "index");
-            string slot_key = $"{slot_id}|{index}";
-            int capacity = ((EquipSlotDefRow)Db.get_row("equip_slot_def", slot_id))?.max_equip ?? 1;
-            string slot_name = _s(row, "slot_name");
-            string slot_label = capacity <= 1 ? slot_name : $"{slot_name}{index + 1}";
-            var line = new HBoxContainer { Name = $"SlotRow{slot_id}_{index}" };
-            line.AddThemeConstantOverride("separation", 8);
-            string suffix = _selected_slot == slot_key ? "▶ " : "";
-            string text = $"{suffix}{slot_label}：{_s(row, "name")}";
-            bool empty = _b(row, "empty");
-            if (!empty)
-            {
-                text += $"（{_s(row, "summary")}）";
-                if (_s(row, "affix_summary").Length > 0)
-                {
-                    text += $"　词条：{_s(row, "affix_summary")}";
-                }
-            }
-
-            string sid = slot_id;
-            int idx = index;
-            Button button = _make_button($"SlotButton{sid}_{idx}", text, () => press_slot(sid, idx));
-            button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            if (!empty)
-            {
-                button.AddThemeColorOverride("font_color", new Color(_s(row, "rarity_color")));
-                // 装备图标（设计 15 §六＋A14，0.31.1）：**有图才摆**（还没出图就不占位）
-                var base_row = row.ContainsKey("base") ? row["base"].As<EquipBaseRow>() : null;
-                string base_id = base_row != null ? base_row.equip_id : "";
-                TextureRect icon = IconPaths.make_icon(
-                    equip_icon_path(base_id), $"EquipIcon{sid}_{idx}");
-                if (icon != null)
-                {
-                    line.AddChild(icon);
-                }
-            }
-
-            line.AddChild(button);
-            if (!empty)
-            {
-                int slot_index = idx;
-                line.AddChild(_make_button(
-                    $"UnequipButton{sid}_{slot_index}", "卸下", () => { unequip(sid, slot_index); }));
-            }
-
-            _equip_box.AddChild(line);
-        }
-
-        if (_selected_slot.Length == 0)
-        {
-            _equip_box.AddChild(_make_label("Hint", "选一个槽位后，这里会列出可以装上的装备。"));
-            return;
-        }
-
-        string target_slot = _selected_slot.Split("|")[0];
-        // 写中文槽位名，别把内部 id 甩给玩家看（equip_slot_def.name_cn）
-        Resource slot_row = Db.get_row("equip_slot_def", target_slot);
-        string target_name = slot_row != null ? slot_row.Get("name_cn").AsString() : target_slot;
-        _equip_box.AddChild(_make_label("CandidateHeader", $"可以装到「{target_name}」的装备：", 18));
-        Godot.Collections.Array candidates = _candidate_rows(target_slot);
-        if (candidates.Count == 0)
-        {
-            _equip_box.AddChild(_make_label("NoCandidate", "背包里没有适合这个槽位的装备"));
-            return;
-        }
-
-        foreach (Variant candidate_value in candidates)
-        {
-            Godot.Collections.Dictionary candidate = candidate_value.AsGodotDictionary();
-            string instance_id = _s(candidate, "instance_id");
-            string text = $"{_s(candidate, "name")}（{_s(candidate, "rarity")}）{_s(candidate, "summary")}";
-            if (_s(candidate, "affix_summary").Length > 0)
-            {
-                text += $"　词条：{_s(candidate, "affix_summary")}";
-            }
-
-            if (!_b(candidate, "ok"))
-            {
-                text += $"　— {_s(candidate, "error")}";
-            }
-
-            string iid = instance_id;
-            Button button = _make_button(
-                $"EquipButton{iid}", text, () => { equip_instance(iid); }, !_b(candidate, "ok"));
-            button.AddThemeColorOverride("font_color", new Color(_s(candidate, "color")));
-            TextureRect candidate_icon = IconPaths.make_icon(
-                equip_icon_path(_s(candidate, "base_id")), $"EquipIconCand{iid}");
-            if (candidate_icon != null)
-            {
-                _equip_box.AddChild(candidate_icon);
-            }
-
-            _equip_box.AddChild(button);
-        }
-    }
 
     /// <summary>
     /// 装备图标的路径：**优先 bequip_base.iconb，空则退回 bequip_idb**——与道具行／武学行同一套优先级

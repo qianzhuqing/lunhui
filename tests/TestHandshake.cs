@@ -65,6 +65,7 @@ public abstract partial class TestHandshake : TestCase
         "HarnessSelfTest.cs", "TestRows.cs",
         // 拆开的 `partial`（注册进运行器的是主文件）与探针类——不是独立用例。
         "TestBattleUiCommands.cs", "TestBattleUiSettles.cs", "TestMapAssetsAssets.cs",
+        "TestCharacterBagUi.cs",
         "TestSaveMigrationBase.cs", "TestTablePipelineBase.cs",
         "FailingProbe.cs", "FailingSaveStore.cs", "UnwritableSaveStore.cs",
     };
@@ -393,7 +394,6 @@ public abstract partial class TestHandshake : TestCase
         { "facing_quadrant", "查询" },
         { "is_sneaking", "查询" },
         { "has_elite_glow", "查询" },
-        { "weapon_type_name_of", "查询" },
         { "team_drop_groups", "查询" },
         { "threat_tags", "查询" },
         { "resolve_db", "查询" },

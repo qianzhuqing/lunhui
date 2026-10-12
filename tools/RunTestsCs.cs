@@ -386,7 +386,16 @@ public partial class RunTestsCs : Node
 /// 第八版收口（2026-10-12 三轮）：结算那一帧其余挂件整组收起（回合标签／状态播报／Boss 长血条／战报面板，
 /// 只留「战报」那枚入口钮）＋掉落格文案不再被挤成一字一行；`TestBattleUiSettles` 补 6 条钉住它。
 /// 于是实测 **11787**，MinAssertions 11771 → **11777**（total−10）。
-private const int MinAssertions = 11777;
+/// 同日 P18（口径④）再 +7：结算帧只剩三样（`_check_settle_frame`）＋战报钮盖在面板之上＋跳字层收起
+/// ＋「还有 N 件放不下」那一行。于是实测 **11794**，MinAssertions 11777 → **11784**（total−10）。
+/// 角色页排版（2026-10-12 第 4 屏）：`TestCharacterUi` 补「值列只放数值／来源列不换行／
+/// 来源写法是「+N 装备」或「—」／资质行的来源列写招式槽·心法格」那一族。
+/// 于是实测 **11803**，MinAssertions 11784 → **11793**（total−10）。
+/// 装备页（2026-10-12 UI 清单 §二-5）：`TestCharacterUi` 补「三栏／七槽／空槽写可装／装备需求写 Lv／
+/// 词条区＋洗词条置灰／点候选只选中／换上之后预演值＝真穿上值」那一族，
+/// `TestHandshake` 顺带把「已接进游戏路径」的 `weapon_type_name_of` 从 TEST_ONLY_API_ALLOWED 划掉。
+/// 于是实测 **11821**，MinAssertions 11793 → **11811**（total−10）。
+private const int MinAssertions = 11811;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

@@ -315,6 +315,13 @@ public partial class TestCharacterUi : TestCase
             CheckTrue(
                 talent_label != null && talent_label.Text.Contains("不可加点"),
                 $"{talent_id} 那一行写明不可加点");
+            // 资质项「管着什么」（招式槽／心法格）2026-10-12 起写在**加成来源那一列**里
+            // （清单 §二-4 的五列：图标／字／值／加成来源／＋）
+            var talent_source = screen.FindChild($"AttrSource{talent_id}", true, false) as Label;
+            CheckTrue(
+                talent_source != null
+                && talent_source.Text.Contains(talent_id == "wu" ? "招式槽" : "心法"),
+                $"{talent_id} 的来源列写清它管着多少格：{talent_source?.Text}");
         }
 
         CharacterSheet sheet = screen.sheet();
@@ -357,6 +364,32 @@ public partial class TestCharacterUi : TestCase
             CheckEq(
                 (int)attr_label.SizeFlagsHorizontal, (int)Control.SizeFlags.ExpandFill,
                 "五维行撑满整行（自动换行会把最小宽度压到一个字，HBox 于是把它挤成竖排）");
+            // 加成来源 2026-10-12 起**单独一列**（清单 §二-4）：名字后面不再拖那串「（裸 X ＋ 装备 Y）」
+            CheckFalse(attr_label.Text.Contains("裸"), $"加成来源移到独立列：{attr_label.Text}");
+        }
+
+        // 七维五列固定列：值／加成来源各占一列，来源列不换行（列宽按整行文字算）
+        var attr_value = screen.FindChild("AttrValuestr", true, false) as Label;
+        var attr_source = screen.FindChild("AttrSourcestr", true, false) as Label;
+        CheckNotNull(attr_value, "五维行有独立的数值列");
+        CheckNotNull(attr_source, "五维行有独立的加成来源列");
+        if (attr_source != null)
+        {
+            CheckEq(
+                (int)attr_source.AutowrapMode, (int)TextServer.AutowrapMode.Off,
+                "加成来源列不换行（换行会把那一列的最小宽度压到一个字）");
+            CheckTrue(
+                attr_source.Text == "—" || attr_source.Text.StartsWith("+"),
+                $"来源列写「+N 装备」或「—」：{attr_source.Text}");
+        }
+
+        if (attr_value != null)
+        {
+            // 值那一列只放数值本身（「（裸 X ＋ 装备 Y）」那截已经搬去来源列了）——
+            // 两边都写数值的话，玩家会以为两列数的是两回事
+            CheckTrue(
+                int.TryParse(attr_value.Text, out int parsed_value) && parsed_value > 0,
+                $"值那一列只放数值：{attr_value.Text}");
         }
 
         // 图鉴奖励：面板要写清「已收集几部 → 现在 +几、再收几部再 +1」
@@ -472,9 +505,56 @@ public partial class TestCharacterUi : TestCase
     private void _CheckEquipmentTab(TableDb db, CharacterScreen screen, GodotObject state)
     {
         screen.select_tab(1);
+        // 三栏（清单 §二-5）：左＝七槽 ＋ 换上之后｜中＝详情｜右＝可换
+        CheckTrue(screen.FindChild("EquipSlotsColumn", true, false) != null, "装备页有七槽栏");
+        CheckTrue(screen.FindChild("EquipDetailColumn", true, false) != null, "装备页有详情栏");
+        CheckTrue(screen.FindChild("EquipCandidateColumn", true, false) != null, "装备页有可换栏");
+
+        // 七个槽位照 equip_slot_def 摆出来（戒指两格 → 八行）：每个 slot_id 的第一格都在
+        Godot.Collections.Array slot_defs = db.rows("equip_slot_def");
+        var slot_hits = 0;
+        foreach (Variant slot_value in slot_defs)
+        {
+            string slot_id = slot_value.As<EquipSlotDefRow>().slot_id;
+            if (screen.FindChild($"SlotButton{slot_id}_0", true, false) != null)
+            {
+                slot_hits += 1;
+            }
+        }
+
+        CheckEq(slot_hits, slot_defs.Count, "七个槽位都摆出来");
+
+        // 空槽也占一行，写「空 · 可装」（清单 §二-5）
+        var empty_slot = screen.FindChild("SlotButtonlegs_0", true, false) as Button;
+        CheckNotNull(empty_slot, "下装槽空着也占一行");
+        if (empty_slot != null)
+        {
+            CheckTrue(empty_slot.Text.Contains("可装"), $"空槽写「可装」：{empty_slot.Text}");
+        }
+
         var slot_button = screen.FindChild("SlotButtonweapon_0", true, false) as Button;
         CheckNotNull(slot_button, "武器槽有按钮");
         CheckTrue(screen.FindChild("SlotButtonring_1", true, false) != null, "戒指槽有两格");
+
+        // 卸下那一按搬进了详情栏（清单 §二-5：选中槽位后才写出那件装备的详情）——先选槽，再按
+        screen.press_slot("weapon", 0);
+        var detail_header = screen.FindChild("EquipDetailHeader", true, false) as Label;
+        CheckNotNull(detail_header, "选中武器槽后详情栏写出装备名");
+        var req_value = screen.FindChild("EquipReqRowValue", true, false) as Label;
+        CheckNotNull(req_value, "详情栏写出装备需求");
+        if (req_value != null)
+        {
+            CheckTrue(req_value.Text.StartsWith("Lv "), $"装备需求写 Lv：{req_value.Text}");
+        }
+
+        CheckTrue(screen.FindChild("AffixText", true, false) != null, "详情栏有词条区");
+        var reroll = screen.FindChild("RerollAffixButton", true, false) as Button;
+        CheckNotNull(reroll, "有洗词条按钮");
+        if (reroll != null)
+        {
+            CheckTrue(reroll.Disabled, "洗词条 Q6 待定，先置灰");
+        }
+
         var unequip = screen.FindChild("UnequipButtonweapon_0", true, false) as Button;
         CheckNotNull(unequip, "武器槽有卸下按钮");
         if (unequip == null)
@@ -484,6 +564,7 @@ public partial class TestCharacterUi : TestCase
 
         Inventory inventory = _InventoryOf(state);
         string instance_id = inventory.equipped_instances(db, CharId)[0];
+        double atk_equipped = screen.sheet().stat_value("atk_phys");
         unequip.EmitSignal(Button.SignalName.Pressed);
         // 0.10.2 起初始装备是**两件**（武器＋布衣）：卸掉武器后身上还剩那件布衣
         CheckEq(inventory.equipped_instances(db, CharId).Length, 1, "卸下武器后身上还剩上衣");
@@ -502,6 +583,29 @@ public partial class TestCharacterUi : TestCase
             CheckTrue(
                 candidate_header.Text.Contains("武器") && !candidate_header.Text.Contains("weapon"),
                 $"候选标题写中文槽位名而不是内部 id：{candidate_header.Text}");
+        }
+
+        // 点候选那一行＝**只选中**（清单 §二-5）：详情栏换成它，「换上之后」即时重算
+        var candidate_row = screen.FindChild($"CandidateRow{instance_id}", true, false) as Button;
+        CheckNotNull(candidate_row, "候选列表里有整行可选");
+        if (candidate_row != null)
+        {
+            candidate_row.EmitSignal(Button.SignalName.Pressed);
+            var cand_header = screen.FindChild("EquipDetailHeader", true, false) as Label;
+            var base_row = db.get_row("equip_base", inventory.base_of(instance_id)) as EquipBaseRow;
+            string weapon_name = base_row != null ? base_row.name_cn : "";
+            CheckTrue(
+                cand_header != null && weapon_name.Length > 0 && cand_header.Text.Contains(weapon_name),
+                $"详情栏换成选中的候选：{(cand_header != null ? cand_header.Text : "缺")}");
+            CheckTrue(
+                screen.FindChild($"EquipConfirmButton{instance_id}", true, false) != null,
+                "选中候选后详情栏出现「换上」");
+            CheckNotNull(screen.FindChild("SwapRowatk_phys", true, false), "「换上之后」写出外功那一行");
+            Godot.Collections.Dictionary after = screen.sheet().preview_swap_stats("weapon", 0, instance_id);
+            double atk_after = after.ContainsKey("atk_phys") ? after["atk_phys"].AsDouble() : -1.0;
+            CheckEq(
+                (int)System.Math.Round(atk_after), (int)System.Math.Round(atk_equipped),
+                "预演算出的外功＝真穿上时的外功");
         }
 
         var equip_button = screen.FindChild($"EquipButton{instance_id}", true, false) as Button;
@@ -527,122 +631,6 @@ public partial class TestCharacterUi : TestCase
         }
     }
 
-    private void _CheckBagTab(TableDb db, CharacterScreen screen, GodotObject state)
-    {
-        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
-        Inventory inventory = _InventoryOf(state);
-        inventory.add_item(db, "item_herb", 2);
-        inventory.add_item(db, "item_wine_gourd", 1);
-        screen.refresh();
-
-        // 格子网格：一格一件，堆叠数压在右下角那个小徽标上（清单 §二-2）
-        CheckNotNull(screen.FindChild("ItemCellitem_herb", true, false), "网格里有草药那一格");
-        var herb_badge = screen.FindChild("ItemCountitem_herb", true, false) as Label;
-        CheckNotNull(herb_badge, "草药有堆叠数徽标");
-        if (herb_badge != null)
-        {
-            CheckEq(herb_badge.Text, "2", "徽标写的就是堆叠数量");
-        }
-
-        CheckNull(
-            screen.FindChild("ItemCountitem_wine_gourd", true, false),
-            "只有 1 件时不摆堆叠数（清单 §二-2 那一行）");
-
-        // 动作收在右侧详情里：先选中那一格，再看主／次两个按钮
-        //（旧版是每一行自己带一份按钮，同一件事会有两个入口）
-        screen.select_bag_entry("item:item_herb");
-        CheckEq(
-            (screen.FindChild("BagUseButton", true, false) as Button)?.Text, "查看",
-            "没有 use_context 的材料，主动作是「查看」");
-        var drop_herb = screen.FindChild("BagDropButton", true, false) as Button;
-        CheckNotNull(drop_herb, "材料可以丢弃");
-
-        screen.select_bag_entry("item:item_wine_gourd");
-        var drop_key = screen.FindChild("BagDropButton", true, false) as Button;
-        CheckNotNull(drop_key, "钥匙道具也在网格里");
-        if (drop_key != null)
-        {
-            CheckTrue(drop_key.Disabled, "钥匙道具的丢弃按钮被禁用");
-        }
-
-        var drop_reason = screen.FindChild("BagDropReason", true, false) as Label;
-        CheckTrue(
-            drop_reason != null && drop_reason.Text.Contains("钥匙"),
-            "置灰的丢弃按钮下面写明原因");
-
-        Godot.Collections.Dictionary refused = screen.drop_item("item_wine_gourd");
-        CheckFalse(refused["ok"].AsBool(), "钥匙道具丢弃被拒");
-        CheckTrue(screen.status_text().Contains("钥匙"), "状态栏说明拒绝原因");
-
-        screen.select_bag_entry("item:item_herb");
-        drop_herb = screen.FindChild("BagDropButton", true, false) as Button;
-        if (drop_herb != null)
-        {
-            drop_herb.EmitSignal(Button.SignalName.Pressed);
-            CheckEq(inventory.count("item_herb"), 1, "丢弃材料数量减一");
-        }
-
-        // 分类筛选（点左边那一列的标签＝换分类，网格里只剩这一档）
-        screen.set_filter("material");
-        CheckNotNull(screen.FindChild("ItemCellitem_herb", true, false), "材料分类下能看到草药");
-        CheckTrue(
-            screen.FindChild("ItemCellitem_wine_gourd", true, false) == null, "钥匙被筛掉");
-
-        // 「钥匙」按**设计语义**筛（is_key_item），不是按 item_type=key：
-        // 05 把铁镐列进钥匙道具，而它的 item_type 是 tool——以前它哪个分类都进不去
-        inventory.add_item(db, "item_pickaxe", 1);
-        screen.refresh();
-        screen.set_filter("key");
-        CheckNotNull(
-            screen.FindChild("ItemCellitem_wine_gourd", true, false), "钥匙分类下有酒葫芦");
-        CheckNotNull(
-            screen.FindChild("ItemCellitem_pickaxe", true, false),
-            "钥匙分类下有铁镐（item_type=tool，但它是钥匙道具）");
-        CheckTrue(screen.FindChild("ItemCellitem_herb", true, false) == null, "材料不在钥匙分类里");
-        screen.set_filter("all");
-    }
-
-    /// <summary>秘籍研读：门槛不够按钮置灰并写原因；够门槛时点一下就学会并消耗一本。</summary>
-    private void _CheckSkillbook(TableDb db, CharacterScreen screen, GodotObject state)
-    {
-        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
-        screen.set_filter("skillbook");
-        _InventoryOf(state).add_item(db, "item_scroll_wudu", 1);
-        screen.refresh();
-        screen.select_bag_entry("item:item_scroll_wudu");
-        var button = screen.FindChild("BagUseButton", true, false) as Button;
-        CheckNotNull(button, "残页有研读按钮");
-        if (button == null)
-        {
-            return;
-        }
-
-        CheckEq(button.Text, "研读", "秘籍的主动作是「研读」（不是「使用」）");
-        // 1 级书生智 10 < 12：按钮置灰，原因写在按钮下面那一行
-        CheckTrue(button.Disabled, "智不够时研读按钮置灰");
-        var label = screen.FindChild("BagUseReason", true, false) as Label;
-        CheckNotNull(label, "置灰的研读按钮下面写了原因");
-        if (label != null)
-        {
-            CheckTrue(label.Text.Contains("门槛"), $"写明研读不行的原因：{label.Text}");
-        }
-
-        // 点数全塞智，把它抬到 12
-        while (screen.sheet().total_attrs()["int"].AsInt32() < 12 && screen.sheet().available_points() > 0)
-        {
-            screen.press_plus("int");
-        }
-
-        screen.refresh();
-        button = screen.FindChild("BagUseButton", true, false) as Button;
-        CheckFalse(button.Disabled, "智 12 后研读按钮可点");
-        button.EmitSignal(Button.SignalName.Pressed);
-        var game_state = (GameState)state;
-        CheckTrue(game_state.is_learned(CharId, "sk_wudu_03"), "研读后学会五毒掌·蚀骨");
-        CheckEq(_InventoryOf(state).count("item_scroll_wudu"), 0, "研读消耗一本");
-        CheckTrue(screen.status_text().Contains("研读"), $"状态栏提示研读：{screen.status_text()}");
-        screen.set_filter("all");
-    }
 
     private void _CheckBack(CharacterScreen screen, Godot.Collections.Array back_calls)
     {

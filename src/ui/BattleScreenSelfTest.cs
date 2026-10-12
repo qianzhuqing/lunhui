@@ -236,6 +236,8 @@ public partial class BattleScreen
         lines.Add($"推进步数：{guard}");
         lines.Add($"结果：{sim.Call("winner").AsString()}（{sim.Call("rounds_played").AsInt32()} 回合）");
         lines.Add(result_label_text());
+        // 口径④：**这一刻**量结算帧屏上有什么最干净（战报还没被下面那一步顺手按出来）
+        ok = ok && _check_settle_frame(lines);
         // 结算那一帧战报会自己收起来（第八版 `_apply_settle_hud()`：它从压暗底下面透出来像残留 UI）。
         // 而下面要量的正是「日志自动跟到底」——先把面板露出来再量。**直接给 `Visible`，别走
         // `toggle_log_panel()`**：那条会 `MoveToFront()` 把战报盖到结算面板之上，后面两档包围盒
@@ -657,59 +659,6 @@ public partial class BattleScreen
         lines.Add(_clip_ascii(tag));
         return ok;
     }
-
-    /// <summary>
-    /// 结算面板的版式（22 §1.6 第八版 ＋ §八「结算面板＝整屏分区」）：面板**自身**高 ≤ 设计高减掉
-    /// 贴底那枚「确定」那一带（口径②：真超出由滚动区整块滚）、宽 ≤ 设计宽、且不与「确定」叠在一起；
-    /// `harvest` 时那几块该在的都在（战果标题／经验／铜钱／掉落／武学），零收获时四块**都不在**（口径③）。
-    /// `level_rows` &lt; 0 表示这一档不查升级行数（真打那场升了几级取决于经验，不是这一档要钉的）。
-    /// </summary>
-    private bool _check_settle_panel(
-        string tag, bool harvest, int level_rows, System.Collections.Generic.List<string> lines)
-    {
-        var panel = GetNodeOrNull<Control>("SettleRoot/SettlePanel");
-        var confirm = GetNodeOrNull<Control>("ResultConfirm");
-        if (panel == null || confirm == null)
-        {
-            lines.Add($"结算面板缺节点（{tag}）");
-            return false;
-        }
-
-        double limit = _settle_max_height();
-        bool size_ok = panel.Size.Y <= limit + 1.0 && panel.Size.X <= _stage_size().X;
-        bool apart_ok = panel.GetGlobalRect().End.Y <= confirm.GetGlobalRect().Position.Y + 1.0;
-        bool blocks_ok = panel.FindChild("SettleTitleBox", true, false) != null;
-        if (harvest)
-        {
-            blocks_ok = blocks_ok && panel.FindChild("SettleExp", true, false) != null
-                && panel.FindChild("SettleMoneyRow", true, false) != null
-                && panel.FindChild("SettleDrops", true, false) != null
-                && panel.FindChild("SettleMartial", true, false) != null;
-        }
-        else
-        {
-            blocks_ok = blocks_ok && panel.FindChild("SettleExp", true, false) == null
-                && panel.FindChild("SettleMoneyRow", true, false) == null
-                && panel.FindChild("SettleDrops", true, false) == null
-                && panel.FindChildren("SettleLevelRow*", "Label", true, false).Count == 0;
-        }
-
-        int rows = panel.FindChildren("SettleLevelRow*", "Label", true, false).Count;
-        bool rows_ok = level_rows < 0 || rows == level_rows;
-        bool ok = size_ok && apart_ok && blocks_ok && rows_ok;
-        lines.Add($"LAYOUT[{tag}] 面板 {panel.Size.X:0}x{panel.Size.Y:0}（上限 {limit:0}）={_bool(size_ok)}；"
-            + $"与「确定」不叠={_bool(apart_ok)}；块齐={_bool(blocks_ok)}；升级 {rows} 行={_bool(rows_ok)}");
-        return ok;
-    }
-
-    /// <summary>造一条升级记录（形状与 `LevelService.apply_available_levels()` 里那一项一致）</summary>
-    private static Godot.Collections.Dictionary _level_change(
-        string char_id, string name, int from, int to, int points) =>
-        new()
-        {
-            { "char_id", char_id }, { "name", name }, { "from", from }, { "to", to },
-            { "points", points },
-        };
 
     /// <summary>「回合数／当前出手者」——比只看回合数稳：同一回合里推进到另一个人也算推进。</summary>
     private string _turn_mark() =>

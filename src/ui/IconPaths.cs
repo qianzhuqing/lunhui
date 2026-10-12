@@ -40,6 +40,12 @@ public partial class IconPaths : RefCounted
     /// </summary>
     public const string ATTR_DIR = ROOT + "attr/";
     public const string STAT_DIR = ROOT + "stat/";
+    /// <summary>
+    /// 空槽占位图标（清单 §二-5、15 §六）：`assets/icons/slot/slot_&lt;slot_id&gt;.png`。
+    /// **前缀在这个族的文件名那一侧**（`slot_weapon.png` ↔ `equip_slot_def` 的 `weapon` 行），
+    /// 所以别拿 `_under()` 直接拼主键——`test_map_assets` 那条「文件名必须是表里的 id」也按这个前缀查。
+    /// </summary>
+    public const string SLOT_DIR = ROOT + "slot/";
     /// <summary>角色与敌人的**剪影／立绘**不在 `icons/` 下，而在 `assets/sprites/&lt;faction&gt;/`（15 §六）。</summary>
     public const string SPRITES_DIR = "res://assets/sprites/";
 
@@ -59,6 +65,13 @@ public partial class IconPaths : RefCounted
     public static string attr(string attr_id) => _under(ATTR_DIR, attr_id);
 
     public static string stat(string stat_id) => _under(STAT_DIR, stat_id);
+
+    /// <summary>空槽占位图（`slot_weapon.png` ↔ `weapon`）。**有图才摆**——没出图就不留空位。</summary>
+    public static string slot(string slot_id)
+    {
+        string trimmed = slot_id.StripEdges();
+        return trimmed.Length == 0 ? "" : _under(SLOT_DIR, $"slot_{trimmed}");
+    }
 
     /// <summary>
     /// 角色／敌人的剪影：`assets/sprites/&lt;faction&gt;/&lt;enemy_id&gt;.png`（15 §六）。

@@ -100,6 +100,88 @@ public partial class CharacterScreen
 
         ok = ok && equip_ok;
 
+        // 3b. 装备页（UI 清单 §二-5）：三栏（七槽 ＋ 换上之后｜详情｜可换）。
+        // 「换上之后」走 `CharacterSheet.preview_swap_stats` 真重算（在背包副本上真穿一遍），
+        // 不是拿表里的加成手工加减——所以这里钉「预演值 ＝ 真穿上去之后的值」。
+        select_tab(1);
+        bool equip_columns_ok = FindChild("EquipSlotsColumn", true, false) != null
+            && FindChild("EquipDetailColumn", true, false) != null
+            && FindChild("EquipCandidateColumn", true, false) != null;
+        ok = ok && equip_columns_ok;
+        lines.Add($"装备页三栏（七槽／详情／可换）={_bool(equip_columns_ok)}");
+
+        var slot_ids = new System.Collections.Generic.List<string>();
+        foreach (Variant slot_value in Db.rows("equip_slot_def"))
+        {
+            slot_ids.Add(slot_value.As<EquipSlotDefRow>().slot_id);
+        }
+
+        bool slot_rows_ok = true;
+        foreach (string slot_id in slot_ids)
+        {
+            slot_rows_ok = slot_rows_ok && FindChild($"SlotButton{slot_id}_0", true, false) != null;
+        }
+
+        ok = ok && slot_rows_ok;
+        lines.Add($"七槽视图（{string.Join("／", slot_ids)}）={_bool(slot_rows_ok)}");
+
+        // 选中武器槽 → 详情栏写出装备名／装备需求／词条区；洗词条 Q6 待定先摆着置灰
+        press_slot("weapon", 0);
+        Label equip_detail_header = FindChild("EquipDetailHeader", true, false) as Label;
+        Label equip_req_value = FindChild("EquipReqRowValue", true, false) as Label;
+        Button reroll_button = FindChild("RerollAffixButton", true, false) as Button;
+        bool detail_ok = equip_detail_header != null && equip_detail_header.Text.Length > 0
+            && equip_req_value != null
+            && equip_req_value.Text.StartsWith("Lv ", System.StringComparison.Ordinal)
+            && FindChild("AffixText", true, false) != null
+            && reroll_button != null && reroll_button.Disabled;
+        ok = ok && detail_ok;
+        lines.Add($"装备详情（{(equip_detail_header != null ? equip_detail_header.Text : "缺")}"
+            + $" · {(equip_req_value != null ? equip_req_value.Text : "缺")}）={_bool(detail_ok)}");
+
+        // 卸下 → 背包里出现候选 → 选中它 → 「换上之后」真重算（外功升回去）
+        string spare_weapon = "";
+        foreach (Variant row_value in sheet().equipped_rows())
+        {
+            Godot.Collections.Dictionary row = row_value.AsGodotDictionary();
+            if (_s(row, "slot_id") == "weapon" && !_b(row, "empty"))
+            {
+                spare_weapon = _s(row, "instance_id");
+                break;
+            }
+        }
+
+        bool swap_ok = false;
+        if (spare_weapon.Length > 0)
+        {
+            double atk_on = sheet().stat_value("atk_phys");
+            unequip("weapon", 0);
+            double atk_off = sheet().stat_value("atk_phys");
+            press_slot("weapon", 0);
+            Button candidate_row = FindChild($"CandidateRow{spare_weapon}", true, false) as Button;
+            if (candidate_row != null)
+            {
+                candidate_row.EmitSignal(Button.SignalName.Pressed);
+                Godot.Collections.Dictionary after =
+                    sheet().preview_swap_stats("weapon", 0, spare_weapon);
+                double atk_after = after.ContainsKey("atk_phys") ? after["atk_phys"].AsDouble() : -1.0;
+                swap_ok = atk_off < atk_on
+                    && System.Math.Abs(atk_after - atk_on) < 0.0001
+                    && FindChild("SwapRowatk_phys", true, false) != null;
+                lines.Add($"换上之后（外功 {atk_on:F0} → {atk_off:F0} → 预演 {atk_after:F0}）={_bool(swap_ok)}");
+            }
+
+            // 还原：把武器装回去，后面几步的剧本按原状态走
+            equip_instance(spare_weapon);
+        }
+        else
+        {
+            lines.Add("换上之后 ok=false（武器槽是空的）");
+        }
+
+        ok = ok && swap_ok;
+        select_tab(0);
+
         // 4. 武学装配：卸下招式 → 槽位腾出来 → 再装回去（战斗用的是装配，不是模板）
         string[] active_ids = sheet().loadout().active_ids();
         string first_active = active_ids.Length > 0 ? active_ids[0] : "";
@@ -249,14 +331,32 @@ public partial class CharacterScreen
         bool points_ok = attr_header != null && attr_header.Text.Contains("可加点");
         ok = ok && points_ok;
         lines.Add($"七维表头写「可加点 N 点」={_bool(points_ok)}（{(attr_header != null ? attr_header.Text : "缺")}）");
-        // 资质行（清单 §二-4）：悟性／根骨那一行要把「管着什么」写出来
+        // 资质行（清单 §二-4）：悟性／根骨那一行要把「管着什么」写出来——招式槽／心法格在
+        // 「加成来源」那一列（`AttrSource<id>`），「不可加点」跟着属性名（加号是置灰的，得说清理由）
         Label wu_line = FindChild("AttrLabelwu", true, false) as Label;
         Label gen_line = FindChild("AttrLabelgen", true, false) as Label;
-        bool talent_rows_ok = wu_line != null && gen_line != null
-            && wu_line.Text.Contains("招式槽") && wu_line.Text.Contains("不可加点")
-            && gen_line.Text.Contains("心法") && gen_line.Text.Contains("不可加点");
+        Label wu_source = FindChild("AttrSourcewu", true, false) as Label;
+        Label gen_source = FindChild("AttrSourcegen", true, false) as Label;
+        bool talent_rows_ok = wu_line != null && gen_line != null && wu_source != null && gen_source != null
+            && wu_line.Text.Contains("不可加点") && gen_line.Text.Contains("不可加点")
+            && wu_source.Text.Contains("招式槽") && gen_source.Text.Contains("心法");
         ok = ok && talent_rows_ok;
-        lines.Add($"资质行写出招式槽／心法格={_bool(talent_rows_ok)}（{(wu_line != null ? wu_line.Text : "缺")}）");
+        lines.Add($"资质行写出招式槽／心法格={_bool(talent_rows_ok)}"
+            + $"（{(wu_source != null ? wu_source.Text : "缺")}／{(gen_source != null ? gen_source.Text : "缺")}）");
+        // 七维固定列（清单 §二-4）：图标／字／值／加成来源／＋ 五列——以前「（裸 X ＋ 装备 Y）」
+        // 跟名字挤在同一个标签里，窄栏下会换行；现在来源单独一列且**不换行**（换行会把列压塌）
+        var attr_grid = FindChild("AttrGrid", true, false) as GridContainer;
+        Label str_name = FindChild("AttrLabelstr", true, false) as Label;
+        Label str_value = FindChild("AttrValuestr", true, false) as Label;
+        Label str_source = FindChild("AttrSourcestr", true, false) as Label;
+        bool attr_columns_ok = attr_grid != null && attr_grid.Columns == 5
+            && str_name != null && str_value != null && str_source != null
+            && !str_name.Text.Contains("裸")
+            && str_source.AutowrapMode == TextServer.AutowrapMode.Off;
+        ok = ok && attr_columns_ok;
+        lines.Add($"七维五列（图标／字／值／来源／＋）={_bool(attr_columns_ok)}"
+            + $"（{(str_name != null ? str_name.Text : "缺")}｜{(str_value != null ? str_value.Text : "缺")}"
+            + $"｜{(str_source != null ? str_source.Text : "缺")}）");
         // 右栏：战斗属性逐项一行（行数＝表里那几项）
         var stat_rows = FindChildren("StatLabel*", "Label", true, false);
         bool stat_ok = stat_rows.Count == Db.rows("stat_def").Count;

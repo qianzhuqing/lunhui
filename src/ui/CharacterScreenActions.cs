@@ -36,7 +36,20 @@ public partial class CharacterScreen
     public void press_slot(string slot_id, int index)
     {
         _selected_slot = $"{slot_id}|{index}";
+        // 换了槽位，上一件候选就不是「这个槽位的候选」了——选中态一起清掉
+        _selected_candidate = "";
         _set_status("选择要装上的装备");
+        refresh();
+    }
+
+    /// <summary>
+    /// 在「可换」列表里选中一件候选（清单 §二-5：点一行＝选中候选）。**只改选中态**——
+    /// 真穿上去是那一行／详情里那枚「换上」按钮（`equip_instance`），这样玩家可以先看
+    /// 「换上之后」与详情再决定。选中的那件不在列表里了（被穿上／卖掉／换人）时会留空。
+    /// </summary>
+    public void press_candidate(string instance_id)
+    {
+        _selected_candidate = instance_id;
         refresh();
     }
 
