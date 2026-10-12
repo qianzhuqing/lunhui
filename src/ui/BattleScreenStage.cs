@@ -564,13 +564,16 @@ public partial class BattleScreen
             foreach (Variant row_variant in Db.rows("element_counter"))
             {
                 Resource row = row_variant.AsGodotObject() as Resource;
-                if (row == null || row.Get("defend_element").AsString() != element
+                // 列名照 `ElementCounterRow` 的字段读（`element_def`／`element_atk`）——这两处原先写的是
+                // `defend_element`／`attack_element`，两个都不是表里的列，`Get()` 一律返回空串，
+                // 于是**每一行都不匹配**、「克 X」那枚签从来没出现过（2026-10-12 相性签断言抓出来的）。
+                if (row == null || row.Get("element_def").AsString() != element
                     || System.Math.Abs(row.Get("multiplier").AsDouble() - 1.3) > 0.001)
                 {
                     continue;
                 }
 
-                marks.Add(($"克 {_element_name(row.Get("attack_element").AsString())}", true));
+                marks.Add(($"克 {_element_name(row.Get("element_atk").AsString())}", true));
                 break;
             }
         }

@@ -95,13 +95,42 @@ public partial class TestCharacterUi
         CheckEq(detail_header?.Text, skill_base.name_cn, "点一格后详情栏写出它的名字");
         var cost = screen.FindChild("SkillDetailCostRowValue", true, false) as Label;
         CheckEq(cost?.Text, active_row.qi_cost.ToString(), "详情写消耗内力");
+
+        // 系别：读 `element_def.name_cn`（外功／内功／奇诡）——**那一行不许写 external 这类 id**
+        var element_def = db.get_row("element_def", active_row.element) as ElementDefRow;
+        CheckNotNull(element_def, "element_def 有这一系的维表行");
+        var element = screen.FindChild("SkillDetailElementRowValue", true, false) as Label;
+        CheckEq(element?.Text, element_def != null ? element_def.name_cn : "", "详情写系别的中文名");
+        CheckTrue(
+            element != null && element.Text.Length > 0 && !element.Text.Contains(active_row.element),
+            $"系别那一行不写表内 id：{(element != null ? element.Text : "缺")}");
+
+        // 结算：类型名 ＋ 吃哪门防御 ＋ 可暴击／可闪避（白话，按 `damage_type` 那三列拼）
+        var damage_type = db.get_row("damage_type", active_row.damage_type) as DamageTypeRow;
+        var settle = screen.FindChild("SkillDetailSettleRowValue", true, false) as Label;
+        CheckTrue(
+            settle != null && damage_type != null
+                && settle.Text.Contains(damage_type.name_cn)
+                && settle.Text.Contains(damage_type.use_def_phys ? "吃外功防御" : "无视防御"),
+            $"结算写成白话：{(settle != null ? settle.Text : "缺")}");
+
+        // 段数是**这个角色手里**的段数（`hit_count ＋ extra_hit`，与战斗侧同一算法），不是表里的裸值
+        int expect_hits = BattleSimulator.effective_hits_for(
+            active_row.skill_id, active_row.hit_count, panel.stat_value("extra_hit"));
         var power = screen.FindChild("SkillDetailPowerRowValue", true, false) as Label;
         CheckEq(
             power?.Text,
-            ((int)System.Math.Round(active_row.power_ratio * 100.0)).ToString() + "%",
-            "详情写伤害倍率");
+            ((int)System.Math.Round(active_row.power_ratio * 100.0)).ToString() + "%"
+                + (expect_hits >= 2 ? "／段" : ""),
+            "详情写伤害倍率（段数 ≥2 时缀「／段」）");
         var hits = screen.FindChild("SkillDetailHitRowValue", true, false) as Label;
-        CheckEq(hits?.Text, active_row.hit_count.ToString(), "详情写招式段数");
+        CheckEq(hits?.Text, expect_hits.ToString(), "详情写招式段数（按这个角色算）");
+        var poise = screen.FindChild("SkillDetailPoiseRowValue", true, false) as Label;
+        CheckEq(poise?.Text, active_row.poise_damage.ToString(), "详情写破架势");
+        var target = screen.FindChild("SkillDetailTargetRowValue", true, false) as Label;
+        CheckTrue(
+            target != null && target.Text.Length > 0 && !target.Text.Contains(active_row.target_type),
+            $"目标写成中文、不写 table 里的枚举：{(target != null ? target.Text : "缺")}");
 
         // 附加效果那句白话：表里配了 `status_id` 就写状态名，没配写「无附加效果」——
         // **两种都不许出现表内 id**（文案审计盯着）

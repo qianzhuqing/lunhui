@@ -193,12 +193,25 @@ public partial class BattleSimulator
     /// </summary>
     public int _effective_hits(BattleActor actor, Resource skill)
     {
-        int hits = System.Math.Max(1, skill.Get("hit_count").AsInt32());
-        if (skill.Get("skill_id").AsString() == BASIC_ATTACK_ID)
+        return effective_hits_for(
+            skill.Get("skill_id").AsString(), skill.Get("hit_count").AsInt32(), actor.stat("extra_hit"));
+    }
+
+    /// <summary>
+    /// 上面那条的**唯一算法**：`hit_count ＋ extra_hit`，至少一段；普攻不吃 `extra_hit`。
+    ///
+    /// 单拎出来是因为**角色面板也要写这个数**（UI 清单 §二-6「招式段数」写的是这个角色手里的段数，
+    /// 不是表里的裸值——玄微剑「3 招档 +1」那种加成得看得见），而面板手上没有 `BattleActor`。
+    /// 两处各写一遍的话，改了一处另一处就开始说谎。
+    /// </summary>
+    public static int effective_hits_for(string skill_id, int base_hits, double extra_hit)
+    {
+        int hits = System.Math.Max(1, base_hits);
+        if (skill_id == BASIC_ATTACK_ID)
         {
             return hits;
         }
-        return System.Math.Max(1, hits + (int)actor.stat("extra_hit"));
+        return System.Math.Max(1, hits + (int)extra_hit);
     }
 
     /// <summary>一次行动的期望总伤害权重（不含随机与实际防御，只用来排序）。</summary>

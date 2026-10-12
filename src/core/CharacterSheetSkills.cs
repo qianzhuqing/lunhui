@@ -83,12 +83,20 @@ public partial class CharacterSheet
                 if (_db.get_row("skill_active", skill_id) is SkillActiveRow active)
                 {
                     entry["element"] = active.element;
+                    // 清单 §二-6「招式详情」七行的**文字**都在下面几个小函数里译好再交给界面
+                    // ——系别名、结算白话、目标名一律照表读，界面不出现 `external`／`dmg_normal` 这类 id。
+                    entry["element_name"] = _element_name(active.element);
                     entry["damage_type"] = active.damage_type;
+                    entry["settle_note"] = _settle_note(active);
                     entry["power_ratio"] = active.power_ratio;
                     entry["qi_cost"] = active.qi_cost;
                     entry["poise_damage"] = active.poise_damage;
                     entry["hit_count"] = active.hit_count;
+                    // 「招式段数」写的是**这个角色手里**的段数（表里的 `hit_count` ＋ 派生值 `extra_hit`），
+                    // 不是表里的裸值——与战斗侧同一处算法，见 `BattleSimulatorSelect.effective_hits_for`。
+                    entry["effective_hits"] = _effective_hits(active);
                     entry["target_type"] = active.target_type;
+                    entry["target_name"] = _target_name(active.target_type);
                     // 清单 §二-6「附加效果写成一句白话」：附带的异常状态在这里译一次（id 不上界面）
                     entry["status_note"] = _status_note(active);
                     // 「这招在战斗里能不能用出来」：伤害型看 `is_attack()`（有伤害类型且倍率 > 0）；
@@ -160,6 +168,73 @@ public partial class CharacterSheet
         }
         return ((int)value).ToString();
     }
+
+    /// <summary>一招在这个角色手里实际打几段（清单 §二-6「招式段数」）——算法在战斗侧那一处，
+    /// 这里只把角色的 `extra_hit` 递给它，免得面板说 1 段、战斗里打两段。</summary>
+    private int _effective_hits(SkillActiveRow active) =>
+        BattleSimulator.effective_hits_for(
+            active.skill_id, active.hit_count, stat_value("extra_hit"));
+
+    /// <summary>系别 id → 玩家看得懂的字（`element_def.name_cn`）。
+    /// **取不到就给空串**，绝不把 `external` 这类 id 甩到屏上——缺行由构建期校验点名。</summary>
+    private string _element_name(string element_id)
+    {
+        var row = _db.get_row("element_def", element_id) as ElementDefRow;
+        return row != null ? row.name_cn : "";
+    }
+
+    /// <summary>
+    /// 「结算」那一行：按 `damage_type` 拼一句白话——类型名 ＋ 吃哪门防御 ＋ 可暴击／可闪避。
+    /// 类型名照表的 `name_cn` 读（界面不出现 `dmg_normal` 这种 id），三段的写法在下面一处拼好，
+    /// 界面只负责摆。
+    /// </summary>
+    private string _settle_note(SkillActiveRow active)
+    {
+        var type = _db.get_row("damage_type", active.damage_type) as DamageTypeRow;
+        if (type == null)
+        {
+            return "";
+        }
+
+        string defense;
+        if (type.use_def_phys && type.use_def_qi)
+        {
+            defense = "吃内外防御";
+        }
+        else if (type.use_def_phys)
+        {
+            defense = "吃外功防御";
+        }
+        else if (type.use_def_qi)
+        {
+            defense = "吃内功防御";
+        }
+        else
+        {
+            defense = "无视防御";
+        }
+
+        var tags = new System.Collections.Generic.List<string>();
+        if (type.can_crit)
+        {
+            tags.Add("可暴击");
+        }
+        if (type.can_dodge)
+        {
+            tags.Add("可闪避");
+        }
+        return $"{type.name_cn} · {defense} · {(tags.Count > 0 ? string.Join("、", tags) : "必中")}";
+    }
+
+    /// <summary>`target_type`（06 的三种枚举，校验器盯着）→ 玩家看得懂的字。
+    /// 认不出来给空串，同样不把 id 甩上界面。</summary>
+    private static string _target_name(string target_type) => target_type switch
+    {
+        "single" => "单体",
+        "all_enemy" => "全体敌人",
+        "self" => "自身",
+        _ => "",
+    };
 
     /// <summary>
     /// 招式附带的那条异常状态写成一句白话（清单 §二-6「附加效果写成一句白话」）。

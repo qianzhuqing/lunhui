@@ -66,6 +66,7 @@ public partial class TableRegistry : RefCounted
         "dialogue_option",
         // 战斗
         "damage_type",
+        "element_def",
         "element_counter",
         "status_effect",
         "skill_base",
@@ -141,6 +142,7 @@ public partial class TableRegistry : RefCounted
         { "dialogue_node", "res://src/data/tables/DialogueNodeRow.cs" },
         { "dialogue_option", "res://src/data/tables/DialogueOptionRow.cs" },
         { "damage_type", "res://src/data/tables/DamageTypeRow.cs" },
+        { "element_def", "res://src/data/tables/ElementDefRow.cs" },
         { "element_counter", "res://src/data/tables/ElementCounterRow.cs" },
         { "status_effect", "res://src/data/tables/StatusEffectRow.cs" },
         { "skill_base", "res://src/data/tables/SkillBaseRow.cs" },
@@ -210,6 +212,7 @@ public partial class TableRegistry : RefCounted
         { "dialogue_node", new[] { "node_id" } },
         { "dialogue_option", new[] { "option_id" } },
         { "damage_type", new[] { "type_id" } },
+        { "element_def", new[] { "element_id" } },
         { "element_counter", new[] { "element_atk", "element_def" } },
         { "status_effect", new[] { "status_id" } },
         { "skill_base", new[] { "skill_id" } },

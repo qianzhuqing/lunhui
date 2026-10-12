@@ -299,7 +299,7 @@ public partial class CharacterScreen
             col.AddChild(_section("SkillDetailSection", "SkillDetailHeader", "招式详情", "点上面一格"));
             col.AddChild(_make_label(
                 "SkillDetailHint",
-                "点上面任意一格，这里写出它的消耗内力／伤害倍率／段数与附加效果。"));
+                "点上面任意一格，这里写出它的消耗内力／系别／结算／伤害倍率／段数／破架势／目标与附加效果。"));
             return col;
         }
 
@@ -313,8 +313,24 @@ public partial class CharacterScreen
         if (is_active)
         {
             col.AddChild(_kv_row("SkillDetailCostRow", "消耗内力", _i(row, "qi_cost").ToString(), ""));
-            col.AddChild(_kv_row("SkillDetailPowerRow", "伤害倍率", _percent(_f(row, "power_ratio")), ""));
-            col.AddChild(_kv_row("SkillDetailHitRow", "招式段数", _i(row, "hit_count").ToString(), ""));
+            // 清单 §二-6「招式详情」那七行：数值与白话都在 `CharacterSheet` 里译好（系别读
+            // `element_def.name_cn`、结算按 `damage_type` 拼、目标按 `target_type` 译），
+            // 这里只摆——界面自己拼的话，同一件事就有了第二处定义。
+            col.AddChild(_kv_row("SkillDetailElementRow", "系别", _s(row, "element_name"), ""));
+            col.AddChild(_kv_row("SkillDetailSettleRow", "结算", _s(row, "settle_note"), ""));
+            // 段数 ≥2 时倍率是**每段**的，缀一个「／段」——不然 3 段招看着比 1 段招还弱
+            int base_hits = System.Math.Max(1, _i(row, "hit_count"));
+            int hits = System.Math.Max(1, _i(row, "effective_hits"));
+            col.AddChild(_kv_row(
+                "SkillDetailPowerRow", "伤害倍率",
+                _percent(_f(row, "power_ratio")) + (hits >= 2 ? "／段" : ""), ""));
+            col.AddChild(_kv_row(
+                "SkillDetailHitRow", "招式段数", hits.ToString(),
+                hits > base_hits ? $"含 +{hits - base_hits}" : ""));
+            col.AddChild(_kv_row("SkillDetailPoiseRow", "破架势", _i(row, "poise_damage").ToString(), ""));
+            string target = _s(row, "target_name");
+            col.AddChild(_kv_row(
+                "SkillDetailTargetRow", "目标", target.Length > 0 ? target : "—", ""));
         }
         else
         {
@@ -340,7 +356,8 @@ public partial class CharacterScreen
 
         // 「装备到快捷键」／「遗忘」（清单那一行）：装备那一枚**装不上就置灰并写原因**，原因就是
         // `can_equip` 给的那一句（槽满了会写「招式槽已满（12/12）」）——全文摆在悬浮说明里，行上放不下。
-        // ★5 绝学「遗忘」要二次确认那条在清单里是 ⏳（口径待策划定），先按普通卸下走。
+        // ★5 绝学要不要二次确认已经拍板（2026-10-12）：**不做**——「遗忘」＝卸下（`SkillLoadout.toggle`，
+        // 可逆、不花钱、不掉熟练度、不销毁），★5 与普通招式同一条，所以这里两枚按钮都是直调 `toggle_skill`。
         string equip_error = _s(row, "equip_error");
         bool already = _b(row, "equipped");
         var actions = new HBoxContainer { Name = "SkillActions" };

@@ -402,7 +402,13 @@ public partial class RunTestsCs : Node
 /// `tests/TestCharacterSkillUi.cs`（三栏／顶部切人／「N / M 槽（悟性 X）」／点一格出详情／
 /// 附加效果一句白话／招式槽满了「装备到快捷键」置灰并写原因／被动与套装段／整页不漏表内 id）。
 /// 于是实测 **11867**，MinAssertions 11818 → **11857**（total−10）。
-private const int MinAssertions = 11857;
+/// 武学详情加厚（2026-10-12 小策划 P21）：补系别维表 `element_def`（新表 → 表数与行数那句跟着改），
+/// 详情摆七行（消耗内力／系别／结算／伤害倍率／招式段数／破架势／目标），段数走
+/// `BattleSimulator.effective_hits_for`（与战斗侧同一算法）；`TestCharacterSkillUi` 补那五条，
+/// `BattleScreenSelfTest` 补「相性签写中文系别名」一条——**它顺带抓出两个真 bug**：
+/// 相性行读的是 `defend_element`／`attack_element` 两个不存在的列名（所以那枚「克 X」签从来没出现过）。
+/// 于是实测 **11888**（TestCharacterSkillUi.cs 是 TestCharacterUi 的 partial，**不能进 Suites**——登记了会红「不在执行列表里」；验证清单 的 verify_paths 也只登记 suite 文件），MinAssertions 11857 → **11878**（total−10）。
+private const int MinAssertions = 11878;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

@@ -44,6 +44,35 @@ public partial class BattleScreen
         ok = ok && mirror_ok;
         lines.Add($"切磋镜像（照自己现造·敌方·满血·无收益）={_bool(mirror_ok)}");
 
+        // 相性签（22 §1.2.5）写的是**中文系别名**：`_element_name()` 读 `element_def.name_cn`，
+        // 取不到就退回 id——而 `element_def` 这张表曾经根本不存在，屏上写的是「克 internal」
+        // （撞「界面不许出现表内 id」）。这条一直没人盖，所以在这里钉住：每个单位的相性签里
+        // 都不许出现 external／internal／odd，且三个 id 都要查得到中文名。
+        string[] element_ids = { "external", "internal", "odd" };
+        bool element_ok = true;
+        var element_marks = new System.Collections.Generic.List<string>();
+        foreach (Godot.Collections.Array group in new[] { allies, enemies })
+        {
+            foreach (Variant actor_variant in group)
+            {
+                foreach (string mark in _affinity_marks(actor_variant.AsGodotObject()))
+                {
+                    element_marks.Add(mark);
+                    foreach (string element_id in element_ids)
+                    {
+                        element_ok = element_ok && !mark.Contains(element_id);
+                    }
+                }
+            }
+        }
+        foreach (string element_id in element_ids)
+        {
+            string name = _element_name(element_id);
+            element_ok = element_ok && name.Length > 0 && name != element_id;
+        }
+        ok = ok && element_ok && element_marks.Count > 0;
+        lines.Add($"相性签写中文系别名（{string.Join("／", element_marks)}）={_bool(element_ok)}");
+
         // 版式（22 §八）：整屏·无壳之后不再有「整页最小尺寸」这回事，要量的是
         // **所有可见挂件都留在画框里** ＋ 第五版那条让位（顺序条右缘 ＜ 我方最左单位头顶条左缘）。
         ok = ok && _check_stage_layout(lines);
