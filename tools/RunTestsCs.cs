@@ -412,7 +412,16 @@ public partial class RunTestsCs : Node
 /// 第一批只填毒手 odd／醉刀客 internal）、`EnemyFactory` 只在非空时写 `tags["element"]`、
 /// 相性行每只存活敌人都画；`TestEnemyTemplate._CheckElementColumn` ＋ `BattleScreenSelfTest`
 /// 那一族共 +8。于是实测 **11896**，MinAssertions 11878 → **11886**（total−10）。
-private const int MinAssertions = 11886;
+/// 商店页（2026-10-12 UI 清单 §二-9）：`TestShop._CheckLimitedStockUi` 改成新选择器那一族
+/// （点一行＝选中／数量到上限停与到 1 就停／合计＝单价×数量／买不起写「还差 N」＋确认购买置灰／
+/// 卖光后确认购买仍置灰）——同一次改口径、断言净 +14。于是实测 **11910**，
+/// ＋把新拆的 `src/ui/ShopScreenBuy.cs`／`src/ui/ItemText.cs` 登记进对接表的 `code_paths`
+/// （那条门限逐条断言「列出的文件真实存在」，于是又 +2）。**实测 11912**，
+/// MinAssertions 11886 → **11902**（total−10）。
+/// 武学详情第八行「冷却」＋无伤害招收口（2026-10-13 小策划 P25）：`TestCharacterSkillUi` 补六条
+/// （没冷却的招不摆那一行／有冷却写「N 回合」／醉步那一类收成一句白话且四行都不摆／它的冷却照摆）。
+/// 于是实测 **11918**，MinAssertions 11902 → **11908**（total−10）。
+private const int MinAssertions = 11908;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

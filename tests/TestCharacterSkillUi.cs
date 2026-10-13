@@ -214,6 +214,51 @@ public partial class TestCharacterUi
                 $"置灰原因写出来：{full_button.TooltipText}");
         }
 
+        // 第八行「冷却」（清单 §二-6，小策划 P25）：**>0 才摆**、`0` 整行不摆——20/35 招有冷却
+        // （1–5 回合），不摆出来玩家会把「几回合一次的大招」当成随便放
+        var zero_cool = screen.FindChild("SkillDetailCooldownRowValue", true, false) as Label;
+        CheckTrue(
+            active_row.cooldown == 0 && zero_cool == null,
+            "没有冷却的招不摆那一行（0 不摆，与「有图才摆」同一套）");
+
+        const string cool_skill = "sk_xuanwei_08";
+        if (!game_state.is_learned(CharId, cool_skill))
+        {
+            game_state.learn_skill(CharId, cool_skill);
+        }
+
+        screen.select_skill(cool_skill);
+        var cool_active = db.get_row("skill_active", cool_skill) as SkillActiveRow;
+        CheckNotNull(cool_active, "表里有那招带冷却的");
+        var cool_row = screen.FindChild("SkillDetailCooldownRowValue", true, false) as Label;
+        CheckEq(
+            cool_row?.Text, cool_active != null ? $"{cool_active.cooldown} 回合" : "",
+            "有冷却的招写「N 回合」");
+
+        // 无伤害的自增益招（醉步 `sk_drunk_zuibu`）：结算／倍率／段数／破架势那四行**全不摆**，
+        // 收成一句「自身增益 · 无直接伤害」——不然屏上是「结算」空白 ＋「伤害倍率 0%」＋「段数 1」，
+        // 三行都在说反话。冷却是真有的（3 回合），照摆。
+        const string self_skill = "sk_drunk_zuibu";
+        if (!game_state.is_learned(CharId, self_skill))
+        {
+            game_state.learn_skill(CharId, self_skill);
+        }
+
+        screen.select_skill(self_skill);
+        var self_row = screen.FindChild("SkillDetailSelfRowValue", true, false) as Label;
+        CheckEq(self_row?.Text, "自身增益 · 无直接伤害", "自增益招收成一句白话");
+        CheckTrue(
+            screen.FindChild("SkillDetailSettleRowValue", true, false) == null
+                && screen.FindChild("SkillDetailPowerRowValue", true, false) == null
+                && screen.FindChild("SkillDetailHitRowValue", true, false) == null
+                && screen.FindChild("SkillDetailPoiseRowValue", true, false) == null,
+            "无伤害那四行都不摆（不是摆成空白与 0）");
+        var self_cool = screen.FindChild("SkillDetailCooldownRowValue", true, false) as Label;
+        var self_active = db.get_row("skill_active", self_skill) as SkillActiveRow;
+        CheckEq(
+            self_cool?.Text, self_active != null ? $"{self_active.cooldown} 回合" : "",
+            "自增益招的冷却照摆");
+
         // 套装效果：进度与档位都按 SetService 的真实算法写，达成的档位同时出现在被动段
         SetService sets = SetService.create(db);
         int count = sets.count_for("set_xuanwei_sword", CharId, _InventoryOf(state), state);

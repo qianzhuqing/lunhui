@@ -1,6 +1,7 @@
 using System.Globalization;
 using Godot;
 using Lunhui.Core;
+using Lunhui.Data.Tables;
 
 namespace Lunhui.Ui;
 
@@ -18,7 +19,8 @@ namespace Lunhui.Ui;
 /// </summary>
 public partial class ShopScreen : CanvasLayer
 {
-    private static readonly int[] QTY_STEPS = { 1, 5, 10 };
+    /// <summary>买卖数量的硬上限（限量商品再按「还剩几个」往下夹，见 `qty_max()`）</summary>
+    public const int QTY_HARD_MAX = 99;
 
     /// <summary>
     /// 页签：key ↔ 场景里 `Tab&lt;后缀&gt;` 按钮名 ↔ 显示名（三处必须对齐，
@@ -47,8 +49,11 @@ public partial class ShopScreen : CanvasLayer
     /// <summary>打开界面时停在哪个页签</summary>
     [Export] public string tab = "buy";
 
-    /// <summary>买卖数量（材料一次买 10 个很常见）</summary>
-    [Export] public int qty_index;
+    /// <summary>当前买卖数量（清单 §二-9：选择器中段显示它；`−`／`＋` 改它）</summary>
+    [Export] public int qty = 1;
+
+    /// <summary>买入页选中的那一行（清单 §二-9「点一行＝选中」）；空＝还没选</summary>
+    [Export] public string selected_item = "";
 
     private GodotObject db;
     private GodotObject state;
@@ -58,7 +63,11 @@ public partial class ShopScreen : CanvasLayer
     private Label _money;
     private VBoxContainer _list;
     private Label _status;
-    private Button _qty_button;
+    private Button _qty_minus;
+    private Button _qty_plus;
+    private Label _qty_label;
+    private Label _total_label;
+    private Button _confirm_button;
     private Button _return_button;
     private HBoxContainer _tabs_box;
     private bool _bound;
@@ -127,7 +136,32 @@ public partial class ShopScreen : CanvasLayer
 
     public string money_text() => _money != null ? _money.Text : "";
 
-    public int quantity() => QTY_STEPS[qty_index];
+    public int quantity() => _clamped_qty();
+
+    /// <summary>
+    /// 当前这一件商品最多能选到几个：限量商品就是**还剩几个**（到上限停，别让玩家选一个买不到的
+    /// 数量再挨一句报错），没限量／还没选中商品就是硬上限 `QTY_HARD_MAX`。
+    /// </summary>
+    public int qty_max()
+    {
+        if (shop == null)
+        {
+            return QTY_HARD_MAX;
+        }
+
+        if (tab == "buy" && selected_item.Length > 0)
+        {
+            int left = shop.remaining(building_id, selected_item);
+            if (left >= 0)
+            {
+                return System.Math.Clamp(left, 1, QTY_HARD_MAX);
+            }
+        }
+
+        return QTY_HARD_MAX;
+    }
+
+    private int _clamped_qty() => System.Math.Clamp(qty, 1, qty_max());
 
     // ------------------------------------------------------------------ 界面
 
@@ -145,11 +179,25 @@ public partial class ShopScreen : CanvasLayer
         _tabs_box = _require_node("Panel/Margin/Column/Tabs") as HBoxContainer;
         _list = _require_node("Panel/Margin/Column/Body/List") as VBoxContainer;
         _status = _require_node("Panel/Margin/Column/Status") as Label;
-        _qty_button = _require_node("Panel/Margin/Column/Buttons/QtyButton") as Button;
+        _qty_minus = _require_node("Panel/Margin/Column/Buttons/QtyMinus") as Button;
+        _qty_label = _require_node("Panel/Margin/Column/Buttons/QtyLabel") as Label;
+        _qty_plus = _require_node("Panel/Margin/Column/Buttons/QtyPlus") as Button;
+        _total_label = _require_node("Panel/Margin/Column/Buttons/TotalLabel") as Label;
+        _confirm_button = _require_node("Panel/Margin/Column/Buttons/ConfirmBuy") as Button;
         _return_button = _require_node("Panel/Margin/Column/Buttons/ReturnButton") as Button;
-        if (_qty_button != null)
+        if (_qty_minus != null)
         {
-            _qty_button.Pressed += () => press_qty();
+            _qty_minus.Pressed += () => press_qty(-1);
+        }
+
+        if (_qty_plus != null)
+        {
+            _qty_plus.Pressed += () => press_qty(1);
+        }
+
+        if (_confirm_button != null)
+        {
+            _confirm_button.Pressed += () => press_buy(selected_item);
         }
 
         if (_return_button != null)
@@ -191,11 +239,21 @@ public partial class ShopScreen : CanvasLayer
         refresh();
     }
 
-    public int press_qty()
+    /// <summary>数量选择器：`delta` 是 ＋1（`＋`）或 −1（`−`）；**到上下限就停**（不绕圈）。</summary>
+    public int press_qty(int delta = 1)
     {
-        qty_index = (qty_index + 1) % QTY_STEPS.Length;
+        qty = System.Math.Clamp(qty + delta, 1, qty_max());
         refresh();
         return quantity();
+    }
+
+    /// <summary>买入页点一行＝选中（清单 §二-9）：数量回到 1——上一件商品选到 10 个，
+    /// 默默套到刚点开的另一件货上会让人误买。</summary>
+    public void select_buy_item(string item_id)
+    {
+        selected_item = item_id;
+        qty = 1;
+        refresh();
     }
 
     public void press_return()
@@ -225,9 +283,15 @@ public partial class ShopScreen : CanvasLayer
         }
 
         _title.Text = $"{building_name()}（{_building_desc()}）";
-        _money.Text = $"铜钱 {shop.money()}　｜　买卖数量 ×{quantity()}";
-        _qty_button.Text = $"数量 ×{quantity()}";
+        // 标题栏只留店名与持有铜钱（清单 §二-9）；买卖数量搬到选择器那一行去
+        _money.Text = $"铜钱 {shop.money()}";
         _refresh_tabs();
+        // 商品被买光／存档换了之后选中行可能已经不存在了——留着它会让「确认购买」对着空气算钱
+        if (selected_item.Length > 0 && tab == "buy" && !_stock_has(selected_item))
+        {
+            selected_item = "";
+        }
+
         _clear(_list);
         switch (tab)
         {
@@ -244,6 +308,8 @@ public partial class ShopScreen : CanvasLayer
                 _rebuild_buy();
                 break;
         }
+
+        _refresh_bar();
     }
 
     private string _building_desc()
@@ -261,53 +327,6 @@ public partial class ShopScreen : CanvasLayer
             {
                 button.Text = (tab == entry[0] ? "▶ " : "") + entry[2];
             }
-        }
-    }
-
-    private void _rebuild_buy()
-    {
-        Godot.Collections.Array rows = shop.stock_rows(building_id);
-        if (rows.Count == 0)
-        {
-            _list.AddChild(_make_label("Empty", "这家店没有货架"));
-            return;
-        }
-
-        foreach (Variant row_variant in rows)
-        {
-            GodotObject row = row_variant.AsGodotObject();
-            string item_id = row.Get("item_id").AsString();
-            if (row.Get("buy_price").AsInt32() <= 0)
-            {
-                continue;
-            }
-
-            Godot.Collections.Dictionary check = shop.can_buy(building_id, item_id, quantity());
-            var line = new HBoxContainer { Name = "BuyRow" + item_id };
-            line.AddThemeConstantOverride("separation", 8);
-            string text = $"{shop.item_name(item_id)}　{row.Get("buy_price").AsInt32()} 文/个";
-            int left = shop.remaining(building_id, item_id);
-            if (left >= 0)
-            {
-                text += $"　（限量：还剩 {left}）";
-            }
-
-            if (!_b(check, "ok"))
-            {
-                text += $"　— {_s(check, "error")}";
-            }
-
-            Label label = _make_label("BuyLabel" + item_id, text, 0, _item_color(item_id));
-            // 不设 EXPAND：中文在 HBox 里的最小宽度只有一个字，会被挤成一列（踩过）
-            label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            line.AddChild(label);
-            string captured = item_id;
-            line.AddChild(_make_button(
-                "BuyButton" + item_id,
-                $"买 {quantity()} 个（{_i(check, "total")} 文）",
-                () => press_buy(captured),
-                !_b(check, "ok")));
-            _list.AddChild(line);
         }
     }
 

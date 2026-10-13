@@ -321,7 +321,9 @@ public partial class NpcPanel : Control
         int favor = _favor_of(current_state());
         // 名字/称号/等级/好感是**一组**信息（14 §「NPC 信息面板的结构」）
         _name_label.Text = $"{def.name_cn}　{def.title_cn}　Lv.{def.level}";
-        _favor_label.Text = $"好感 {favor}　{_favor_bar(favor)}";
+        // 「好感 27 / 30」那条分母（＝下一道未达档）与下面那条条形的口径都在 `NpcService` 一处算
+        // （UI 清单 §二-7 要求「必须给阈值刻度」：只给条看不出还差多少）
+        _favor_label.Text = $"{NpcService.favor_progress_text(favor, _favor_cap())}　{_favor_bar(favor)}";
         _favor_ticks.Text = NpcService.favor_tier_text();
         _info_label.Text = def.info_text_cn;
         _refresh_avatar();
@@ -487,8 +489,7 @@ public partial class NpcPanel : Control
     /// <summary>好感条：10 格（19 §三要求「必须显示好感度与条形」——玩家要判断还差多少能换东西）</summary>
     private string _favor_bar(int favor)
     {
-        NpcFavorRow row = _favor_row_of(npc_id);
-        int cap = System.Math.Max(1, row != null ? row.favor_max : 100);
+        int cap = _favor_cap();
         // GDScript 的 `round()` 是「.5 往远处舍入」；C# 的 `Math.Round` 默认是银行家舍入，别用默认值。
         int filled = (int)System.Math.Round(
             (double)favor / cap * 10.0, System.MidpointRounding.AwayFromZero);
@@ -499,6 +500,13 @@ public partial class NpcPanel : Control
         }
 
         return out_text;
+    }
+
+    /// <summary>好感上限（`npc_favor.favor_max`；没行才用 100）——条形满格与「三档全过」那条分母共用。</summary>
+    private int _favor_cap()
+    {
+        NpcFavorRow row = _favor_row_of(npc_id);
+        return System.Math.Max(1, row != null ? row.favor_max : 100);
     }
 
     /// <summary>

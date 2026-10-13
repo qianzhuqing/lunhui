@@ -95,6 +95,42 @@ public partial class NpcService : RefCounted
         return "刻度：" + string.Join("　", parts);
     }
 
+    /// <summary>
+    /// 下一道**还没到**的档位门槛（`FAVOR_TIERS` 里第一个 `favor < at`）；三档全过返回 0。
+    ///
+    /// 好感条的分母就用它——玩家的用途是「还差多少换下一个东西」（面板里那句注释），
+    /// 所以写「还差几到下一档」比写好感上限有用；三档都过了才退到上限（见 `favor_progress_text`）。
+    /// </summary>
+    public static int favor_next_tier(int favor)
+    {
+        foreach (Variant tier_variant in FAVOR_TIERS)
+        {
+            int at = tier_variant.AsGodotDictionary()["at"].AsInt32();
+            if (favor < at)
+            {
+                return at;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// 好感条那一行的文案：`好感 27 / 30`。
+    ///
+    /// 分母＝**下一道未达档**：玩家的用途是「还差多少能换下一个东西」（见 `NpcPanel` 里那条注释），
+    /// 所以取最近的那一道门槛；30／60／90 三个数本身由刻度那一行 `favor_tier_text()` 全写出来。
+    /// UI 清单 §二-7 那格写的是「好感 27 / 60」——在 30／60／90 这套档位下，27 的下一档是 30 而不是 60，
+    /// 那句里的 60 对不上任何一条自洽的取法（已写进小策划通知区请他确认，这里先按「下一道未达档」落）。
+    /// 三档全过（≥90）时没有「下一档」可写，退到好感上限 `cap`（`npc_favor.favor_max`）。
+    /// 格式化只在这一处：面板与用例都读它，改口径不会只改一半。
+    /// </summary>
+    public static string favor_progress_text(int favor, int cap)
+    {
+        int next = favor_next_tier(favor);
+        int denom = next > 0 ? next : System.Math.Max(1, cap);
+        return $"好感 {favor} / {denom}";
+    }
+
     // ------------------------------------------------------------------ 静态查表
 
     public static Resource def_of(TableDb db, string npc_id) =>

@@ -54,6 +54,8 @@ public partial class CharacterScreen
 
     private void _rebuild_bag()
     {
+        // 格子马上要被整批换掉，先把手上的小卡收了——不然它会继续指着已经不在树上的那一格
+        _bag_hover?.hide_now();
         _clear(_bag_box);
         GodotObject st = current_state();
         Inventory inventory = st?.Get("inventory").As<Inventory>();
@@ -126,7 +128,7 @@ public partial class CharacterScreen
                 key = $"item:{item_id}",
                 item_id = item_id,
                 name = row.name_cn,
-                icon_path = IconPaths.item(row.icon.Length > 0 ? row.icon : item_id),
+                icon_path = ItemText.item_icon_path(Db, item_id),
                 rarity = row.rarity,
                 count = inventory.count(item_id),
             });
@@ -262,7 +264,8 @@ public partial class CharacterScreen
         {
             Name = (entry.is_equip() ? "EquipCell" : "ItemCell") + ident,
             CustomMinimumSize = new Vector2(BAG_CELL, BAG_CELL),
-            TooltipText = entry.count > 1 ? $"{entry.name} ×{entry.count}" : entry.name,
+            // **原生 tooltip 退休**（清单 §二-2 ＋ §二-12：格子悬停＝自绘小卡）：两套一起摆会
+            // 叠着弹——原生那套的延时不可控、也塞不下四行，位置还压在卡上面。卡见 `_bag_hover_rows()`。
         };
         button.AddThemeStyleboxOverride("normal", UiChrome.cell_style(on, false));
         button.AddThemeStyleboxOverride("hover", UiChrome.cell_style(true, false));
@@ -270,6 +273,9 @@ public partial class CharacterScreen
         button.AddThemeStyleboxOverride("focus", UiChrome.cell_style(on, false));
         string key = entry.key;
         button.Pressed += () => select_bag_entry(key);
+        // 悬停出小卡（清单 §二-2 ＋ §二-12）：一屏共用一张，停 0.2 秒才浮、移开立刻收。
+        // 内容走 `_bag_hover_rows()` 现算——堆叠数／词条／稀有度变了，卡跟着变。
+        _hover().watch(button, () => _bag_hover_rows(entry));
 
         // 图／字居中：`Button` **不给子节点排版**（它不是容器），所以这里靠锚点铺满再居中。
         // 子节点一律 `MouseFilter = Ignore`，否则它会吃掉格子自己的点击。
@@ -510,9 +516,58 @@ public partial class CharacterScreen
             return $"{slot_name} · {rarity}";
         }
 
-        var row = Db.get_row("item_base", entry.item_id) as ItemBaseRow;
-        return $"{_item_type_name(row != null ? row.item_type : "")} · {rarity}";
+        return $"{_bag_type_text(entry, sheet_panel)} · {rarity}";
     }
+
+    /// <summary>
+    /// 「类型」那一截（详情栏的「类型 · 稀有度」与悬停小卡的「`类型 · 部位 · 品阶`」共用一处）：
+    /// **道具走 `item_type` 的中文名**（`ItemText`，界面不印英文枚举）、**装备走武器类型名**
+    /// （剑／拳／刀…，读 `weapon_type_def.name_cn`；非武器为空，调用方跳过那一截）。
+    /// </summary>
+    private string _bag_type_text(BagEntry entry, CharacterSheet sheet_panel)
+    {
+        if (entry.is_equip())
+        {
+            var base_row = Db.get_row("equip_base", entry.base_id) as EquipBaseRow;
+            return base_row != null && sheet_panel != null ? sheet_panel.weapon_type_name_of(base_row) : "";
+        }
+
+        var row = Db.get_row("item_base", entry.item_id) as ItemBaseRow;
+        return ItemText.type_name(row != null ? row.item_type : "");
+    }
+
+    /// <summary>
+    /// 这一格悬停要说的五格字（清单 §二-12）——**与右侧详情栏同一处数据**，不另算一套：
+    /// 稀有度／效果行／描述／词条都走详情栏用的那几个私有函数，小卡只是换个排法。
+    /// </summary>
+    private string[] _bag_hover_rows(BagEntry entry)
+    {
+        CharacterSheet sheet_panel = sheet();
+        string rarity = sheet_panel != null ? sheet_panel.rarity_name(entry.rarity) : entry.rarity;
+        string type_text = _bag_type_text(entry, sheet_panel);
+        if (entry.is_equip())
+        {
+            var base_row = Db.get_row("equip_base", entry.base_id) as EquipBaseRow;
+            Resource slot_row = Db.get_row("equip_slot_def", entry.slot_id);
+            string slot_name = slot_row != null ? slot_row.Get("name_cn").AsString() : "";
+            return HoverCardText.equip_card(
+                entry.name, type_text, slot_name, rarity,
+                sheet_panel != null ? sheet_panel.equipment_summary(base_row) : "",
+                sheet_panel != null ? sheet_panel.affix_summary_of(entry.instance_id) : "");
+        }
+
+        return HoverCardText.item_card(
+            entry.name, type_text, rarity, entry.count,
+            _bag_effect_text(entry, sheet_panel), _bag_desc_text(entry),
+            // 脚注写**真话**：这一屏左键是选中，动作在右侧详情那两个按钮上
+            // （清单原文的「左键使用 · 右键丢弃」与现状不符，已记进交接待策划回话）
+            "左键选中 · 右侧按钮使用／丢弃");
+    }
+
+    /// <summary>行囊这一屏共用的那张悬停小卡（第一次用到时才建，挂在本屏根节点上）。</summary>
+    private HoverCard _hover() => _bag_hover ??= HoverCard.make(this, "BagHoverCard");
+
+    private HoverCard _bag_hover;
 
     /// <summary>效果行：**没有数值列就直说「效果待补」**——印一个编出来的数字比留白更糟
     /// （`item_base` 的效果数值列是 `待策划确认.md` Q33）。装备的效果行走词条。</summary>
@@ -538,20 +593,6 @@ public partial class CharacterScreen
         var row = Db.get_row("item_base", entry.item_id) as ItemBaseRow;
         return row != null ? row.desc : "";
     }
-
-    /// <summary>道具类型的**玩家可见名**（`item_base.item_type` 是表内值，界面不印英文）。
-    /// 取值与 `TableValidator.ITEM_TYPES` 同一套；**分类标签那六个词不从这里来**——分类是归组，
-    /// 与 `item_type` 不是一对一（钥匙那一档按 `is_key_item` 判，铁镐的 item_type 是 `tool`）。</summary>
-    private static string _item_type_name(string item_type) => item_type switch
-    {
-        "material" => "材料",
-        "consumable" => "消耗品",
-        "skillbook" => "秘籍",
-        "tool" => "工具",
-        "key" => "钥匙",
-        "currency" => "货币",
-        _ => "杂项",
-    };
 
     /// <summary>`_make_label` 的颜色参数是字符串（`new Color(str)`），而色值只在主题里有一份
     /// ——这里补一个「主题色名 → 十六进制」的转写，别在界面里散写 `#` 字面量。</summary>

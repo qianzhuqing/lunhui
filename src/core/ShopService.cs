@@ -191,7 +191,11 @@ public partial class ShopService : RefCounted
 
     // ------------------------------------------------------------------ 买入
 
-    /// <summary>能不能买：{ok, error, unit_price, total, remaining}</summary>
+    /// <summary>
+    /// 能不能买：{ok, error, unit_price, total, remaining, short}。
+    /// `short` ＝ 铜钱不够时**还差多少**（够就是 0）——界面那行「还差 172」直接读它，
+    /// 别在面板里再减一遍（改价改规则不会只改一半）。
+    /// </summary>
     public Godot.Collections.Dictionary can_buy(string building_id, string item_id, int qty = 1)
     {
         int unit = buy_price(building_id, item_id);
@@ -223,12 +227,15 @@ public partial class ShopService : RefCounted
         int total = unit * count;
         if (money() < total)
         {
-            return _deny($"铜钱不够（需要 {total}，现有 {money()}）", unit, count);
+            Godot.Collections.Dictionary denied =
+                _deny($"铜钱不够（需要 {total}，现有 {money()}）", unit, count);
+            denied["short"] = total - money();
+            return denied;
         }
         return new Godot.Collections.Dictionary
         {
             { "ok", true }, { "error", "" }, { "unit_price", unit },
-            { "total", total }, { "remaining", left },
+            { "total", total }, { "remaining", left }, { "short", 0 },
         };
     }
 
@@ -236,7 +243,7 @@ public partial class ShopService : RefCounted
         new()
         {
             { "ok", false }, { "error", reason }, { "unit_price", unit },
-            { "total", unit * qty }, { "remaining", 0 },
+            { "total", unit * qty }, { "remaining", 0 }, { "short", 0 },
         };
 
     /// <summary>买入。返回 {ok, error, spent, got: [{item_id, qty}], equipment: [instance_id]}</summary>

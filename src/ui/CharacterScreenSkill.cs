@@ -299,7 +299,7 @@ public partial class CharacterScreen
             col.AddChild(_section("SkillDetailSection", "SkillDetailHeader", "招式详情", "点上面一格"));
             col.AddChild(_make_label(
                 "SkillDetailHint",
-                "点上面任意一格，这里写出它的消耗内力／系别／结算／伤害倍率／段数／破架势／目标与附加效果。"));
+                "点上面任意一格，这里写出它的消耗内力／系别／结算／伤害倍率／段数／破架势／冷却／目标与附加效果。"));
             return col;
         }
 
@@ -317,17 +317,35 @@ public partial class CharacterScreen
             // `element_def.name_cn`、结算按 `damage_type` 拼、目标按 `target_type` 译），
             // 这里只摆——界面自己拼的话，同一件事就有了第二处定义。
             col.AddChild(_kv_row("SkillDetailElementRow", "系别", _s(row, "element_name"), ""));
-            col.AddChild(_kv_row("SkillDetailSettleRow", "结算", _s(row, "settle_note"), ""));
-            // 段数 ≥2 时倍率是**每段**的，缀一个「／段」——不然 3 段招看着比 1 段招还弱
-            int base_hits = System.Math.Max(1, _i(row, "hit_count"));
-            int hits = System.Math.Max(1, _i(row, "effective_hits"));
-            col.AddChild(_kv_row(
-                "SkillDetailPowerRow", "伤害倍率",
-                _percent(_f(row, "power_ratio")) + (hits >= 2 ? "／段" : ""), ""));
-            col.AddChild(_kv_row(
-                "SkillDetailHitRow", "招式段数", hits.ToString(),
-                hits > base_hits ? $"含 +{hits - base_hits}" : ""));
-            col.AddChild(_kv_row("SkillDetailPoiseRow", "破架势", _i(row, "poise_damage").ToString(), ""));
+            // 无伤害的自增益招（醉步）：结算／倍率／段数／破架势那四行全是在说反话
+            // （空 ＋ 0% ＋ 1 段），收成一句白话；判定在 `CharacterSheet` 那一处（`self_support`）
+            if (_b(row, "self_support"))
+            {
+                col.AddChild(_kv_row("SkillDetailSelfRow", "结算", "自身增益 · 无直接伤害", ""));
+            }
+            else
+            {
+                col.AddChild(_kv_row("SkillDetailSettleRow", "结算", _s(row, "settle_note"), ""));
+                // 段数 ≥2 时倍率是**每段**的，缀一个「／段」——不然 3 段招看着比 1 段招还弱
+                int base_hits = System.Math.Max(1, _i(row, "hit_count"));
+                int hits = System.Math.Max(1, _i(row, "effective_hits"));
+                col.AddChild(_kv_row(
+                    "SkillDetailPowerRow", "伤害倍率",
+                    _percent(_f(row, "power_ratio")) + (hits >= 2 ? "／段" : ""), ""));
+                col.AddChild(_kv_row(
+                    "SkillDetailHitRow", "招式段数", hits.ToString(),
+                    hits > base_hits ? $"含 +{hits - base_hits}" : ""));
+                col.AddChild(_kv_row("SkillDetailPoiseRow", "破架势", _i(row, "poise_damage").ToString(), ""));
+            }
+
+            // 第八行「冷却」（清单 §二-6）：**>0 才摆**、`0` 整行不摆——20/35 招有冷却（1–5 回合），
+            // 不摆出来玩家会把「几回合一次的大招」当成随便放。
+            int cooldown = _i(row, "cooldown");
+            if (cooldown > 0)
+            {
+                col.AddChild(_kv_row("SkillDetailCooldownRow", "冷却", $"{cooldown} 回合", ""));
+            }
+
             string target = _s(row, "target_name");
             col.AddChild(_kv_row(
                 "SkillDetailTargetRow", "目标", target.Length > 0 ? target : "—", ""));

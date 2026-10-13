@@ -30,8 +30,8 @@ public abstract partial class TestHandshake
             new CheckFloor
             {
                 Pattern = "ok = ok &&",
-                Floor = 12,
-                Why = "商店场景自检的聚合断言（2026-10-11 由 .gd 搬 C#，12 条原样搬过来）",
+                Floor = 17,
+                Why = "商店场景自检的聚合断言（2026-10-11 由 .gd 搬 C#，12 条原样搬过来；2026-10-12 UI 清单 §二-9 +5：「点一行＝选中·合计＝单价×数量」「数量选择器到上限／到 1 就停」「买不起写还差 N ＋ 确认购买置灰」「按确认购买真扣钱」）",
             }
         },
         {
@@ -99,8 +99,8 @@ public abstract partial class TestHandshake
             new CheckFloor
             {
                 Pattern = "ok = ok &&",
-                Floor = 25,
-                Why = "NPC 面板自检的聚合断言（25 条原样搬过来——含 Q88 的「同伴只摆赠与＋切磋」「判成镜像」与 UI 清单 §二-7 的两条）",
+                Floor = 26,
+                Why = "NPC 面板自检的聚合断言（25 条原样搬过来——含 Q88 的「同伴只摆赠与＋切磋」「判成镜像」与 UI 清单 §二-7 的两条；2026-10-12 +1：「好感条写分母（分母＝下一道未达档）」）",
             }
         },
         {

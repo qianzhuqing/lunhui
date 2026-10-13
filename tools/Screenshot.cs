@@ -27,6 +27,9 @@ public partial class Screenshot : Node
     /// ——顺手点一下那里（空＝不点）。</summary>
     private string _slot = "";
 
+    /// <summary>第 7 个参数（`learn:<武学 id>[,<武学 id>]…`）：截武学页详情前先学会这几招。</summary>
+    private string _learn = "";
+
     public override void _Ready()
     {
         string[] args = OS.GetCmdlineUserArgs();
@@ -56,6 +59,15 @@ public partial class Screenshot : Node
         if (args.Length > 5)
         {
             _slot = args[5];
+        }
+
+        // 第 7 个参数：「learn:<武学 id>[,<武学 id>]…」＝先让主角学会这几招。武学页的详情只有
+        // 「这一招在列表里」时点得出来，而默认存档只带起始那几招——冷却是 0、醉步更是没有，
+        // 想截「冷却 N 回合」那一行就只能先学会它。与 `slot:`／`skill:` 同一套「让截图停在真正
+        // 想看的那一屏」的写法，不是产品里的行为。
+        if (args.Length > 6)
+        {
+            _learn = args[6];
         }
 
         // `_Ready` 正处在「根节点装配子节点」的窗口里，直接 `AddChild` 会失败——延后一帧。
@@ -104,6 +116,20 @@ public partial class Screenshot : Node
                 _node.Call("refresh");
             }
 
+            // 先学会那几招，再选中（`_learn` 为空时整段跳过，旧调用一字不变）
+            if (_learn.StartsWith("learn:", System.StringComparison.Ordinal))
+            {
+                string list = _learn.Substring("learn:".Length);
+                foreach (string skill_id in list.Split(","))
+                {
+                    string trimmed = skill_id.StripEdges();
+                    if (trimmed.Length > 0 && state.HasMethod("learn_skill"))
+                    {
+                        state.Call("learn_skill", first, trimmed);
+                    }
+                }
+            }
+
             if (_tab.Length > 0 && _node != null && _node.HasMethod("select_tab")
                 && int.TryParse(_tab, out int tab_index))
             {
@@ -118,6 +144,19 @@ public partial class Screenshot : Node
                 && _node.HasMethod("select_skill"))
             {
                 _node.Call("select_skill", _slot.Substring("skill:".Length));
+            }
+
+            // 「npc:<npc_id>」＝NPC 面板停在某个人身上（不给就停在空态「（不认识这个人）」，
+            // 那一屏看不出好感条长什么样）。`npc_id` 是 `[Export]` 属性、`refresh()` 是公开方法，
+            // 直接写进去再重画即可——与上面 `skill:` 同一套「让截图停在想看的那一屏」的写法。
+            if (_slot.StartsWith("npc:", System.StringComparison.Ordinal)
+                && _has_prop(_node, "npc_id"))
+            {
+                _node.Set("npc_id", _slot.Substring("npc:".Length));
+                if (_node.HasMethod("refresh"))
+                {
+                    _node.Call("refresh");
+                }
             }
 
             if (_slot.Length > 0 && _node != null && _node.HasMethod("press_slot"))

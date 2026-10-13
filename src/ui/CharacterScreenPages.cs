@@ -441,14 +441,9 @@ public partial class CharacterScreen
     /// </summary>
     public string equip_icon_path(string base_id)
     {
-        Resource row = Db != null ? Db.get_row("equip_base", base_id) : null;
-        string icon_id = row != null ? row.Get("icon").AsString().StripEdges() : "";
-        if (icon_id.Length == 0)
-        {
-            icon_id = base_id;
-        }
-
-        return IconPaths.equip(icon_id);
+        // 「`icon` 列优先、空则退回行 id」这条口径与道具那半边合在一处（`ItemText`）：
+        // 每个界面各写一份，改一处就会有一处静默少图。
+        return ItemText.equip_icon_path(Db, base_id);
     }
 
     /// <summary>

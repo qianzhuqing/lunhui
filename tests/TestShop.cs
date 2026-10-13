@@ -568,7 +568,11 @@ public partial class TestShop : TestCase
         screen.Free();
     }
 
-    /// <summary>限量在界面上要看得见：行里写「限量：还剩 N」；要买的数量超过剩余时按钮置灰并写明原因。</summary>
+    /// <summary>
+    /// 限量在界面上要看得见 ＋ 数量选择器到上限停（UI 清单 §二-9）：行里写「限量：还剩 N」；
+    /// `＋` 到剩余数就停（不让玩家选一个买不到的数量再挨一句报错），`−` 到 1 就停；
+    /// 卖光后行还在、写「还剩 0」、确认购买置灰。
+    /// </summary>
     private void _CheckLimitedStockUi(TableDb db)
     {
         if (Tree == null)
@@ -594,34 +598,50 @@ public partial class TestShop : TestCase
         {
             CheckTrue(label.Text.Contains("限量：还剩 3"), $"行里写明还剩几个：{label.Text}");
         }
-        Button buy = screen.FindChild("BuyButtonitem_iron", true, false) as Button;
-        CheckNotNull(buy, "限量商品有买入按钮");
-        if (buy != null)
+        Button select = screen.FindChild("BuySelectitem_iron", true, false) as Button;
+        CheckNotNull(select, "限量商品行有「选中」（点一行＝选中）");
+        CheckEq(screen.selected_item, "", "还没点过：没有选中行");
+        screen.select_buy_item("item_iron");
+        CheckEq(screen.selected_item, "item_iron", "点一行＝选中");
+        CheckEq(screen.quantity(), 1, "换一件商品，数量回到 1");
+
+        // 数量选择器：`＋` 到剩余数就停（1 → 2 → 3 → 3），`−` 到 1 就停
+        CheckEq(screen.press_qty(1), 2, "＋ 一次到 2");
+        CheckEq(screen.press_qty(1), 3, "＋ 再一次到 3");
+        CheckEq(screen.press_qty(1), 3, "到上限停：还剩 3 个，再一次 ＋ 不动");
+        CheckEq(screen.press_qty(-1), 2, "− 一次回 2");
+        CheckEq(screen.press_qty(-1), 1, "− 到 1");
+        CheckEq(screen.press_qty(-1), 1, "− 到 1 就停（不为 0／不绕圈）");
+
+        Label total = screen.FindChild("TotalLabel", true, false) as Label;
+        Button confirm = screen.FindChild("ConfirmBuy", true, false) as Button;
+        CheckNotNull(total, "底部有「合计」那截");
+        CheckNotNull(confirm, "底部有「确认购买」");
+        ShopService grocery = ShopService.create(limited, state);
+        int unit = grocery.buy_price(Grocery, "item_iron");
+        if (total != null && confirm != null)
         {
-            CheckFalse(buy.Disabled, "数量 1 时能买");
+            CheckTrue(total.Text.Contains($"合计 {unit} 文"), $"合计＝单价×数量：{total.Text}");
+            CheckFalse(confirm.Disabled, "钱够、有货 → 确认购买能按");
         }
 
-        // 数量轮到 5（> 剩余 3）：按钮置灰、行里写明库存不够（QTY_STEPS = 1 → 5 → 10 → 1）
-        CheckEq(screen.quantity(), 1, "默认数量 1");
-        screen.press_qty();
-        CheckEq(screen.quantity(), 5, "点一下轮到 5 个");
-        Button buy5 = screen.FindChild("BuyButtonitem_iron", true, false) as Button;
-        CheckNotNull(buy5, "刷新后的行里还有买入按钮");
-        if (buy5 != null)
+        // 买不起：不隐藏、把差多少写进行里与合计（清单 §二-9「还差 172」），确认购买置灰
+        inventory.money = 1;
+        screen.refresh();
+        Label poor_label = screen.FindChild("BuyLabelitem_iron", true, false) as Label;
+        if (poor_label != null)
         {
-            CheckTrue(buy5.Disabled, "要买 5 个但只剩 3 个 → 按钮置灰");
+            CheckTrue(poor_label.Text.Contains($"还差 {unit - 1}"), $"行里写明还差多少：{poor_label.Text}");
         }
-        Label label5 = screen.FindChild("BuyLabelitem_iron", true, false) as Label;
-        if (label5 != null)
+        if (total != null && confirm != null)
         {
-            CheckTrue(label5.Text.Contains("库存不够"), $"行里写明库存不够：{label5.Text}");
+            CheckTrue(total.Text.Contains("还差"), $"合计那截也写还差：{total.Text}");
+            CheckTrue(confirm.Disabled, "钱不够 → 确认购买置灰（不是点了才报错）");
         }
+        inventory.money = 1000;
+        screen.refresh();
 
-        // 轮回到 1：买三次就把这 3 个卖光 → 行还在、写「还剩 0」、按钮仍置灰
-        screen.press_qty();
-        CheckEq(screen.quantity(), 10, "再点一下轮到 10 个");
-        screen.press_qty();
-        CheckEq(screen.quantity(), 1, "数量轮回到 1");
+        // 买三次就把这 3 个卖光 → 行还在、写「还剩 0」、确认购买仍置灰
         CheckTrue(screen.press_buy("item_iron")["ok"].AsBool(), "买第 1 个");
         CheckTrue(screen.press_buy("item_iron")["ok"].AsBool(), "买第 2 个");
         CheckTrue(screen.press_buy("item_iron")["ok"].AsBool(), "买第 3 个（卖光）");
@@ -632,10 +652,10 @@ public partial class TestShop : TestCase
         {
             CheckTrue(sold_label.Text.Contains("还剩 0"), $"写清还剩 0：{sold_label.Text}");
         }
-        Button sold_buy = screen.FindChild("BuyButtonitem_iron", true, false) as Button;
-        if (sold_buy != null)
+        Button sold_confirm = screen.FindChild("ConfirmBuy", true, false) as Button;
+        if (sold_confirm != null)
         {
-            CheckTrue(sold_buy.Disabled, "卖光后按钮置灰");
+            CheckTrue(sold_confirm.Disabled, "卖光后确认购买置灰");
         }
         Tree.Root.RemoveChild(screen);
         screen.Free();

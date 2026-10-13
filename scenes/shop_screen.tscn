@@ -86,9 +86,26 @@ autowrap_mode = 3
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="QtyButton" type="Button" parent="Panel/Margin/Column/Buttons"]
+[node name="QtyMinus" type="Button" parent="Panel/Margin/Column/Buttons"]
 layout_mode = 2
-text = "数量 ×1"
+text = "-"
+
+[node name="QtyLabel" type="Label" parent="Panel/Margin/Column/Buttons"]
+layout_mode = 2
+text = "×1"
+
+[node name="QtyPlus" type="Button" parent="Panel/Margin/Column/Buttons"]
+layout_mode = 2
+text = "+"
+
+[node name="TotalLabel" type="Label" parent="Panel/Margin/Column/Buttons"]
+layout_mode = 2
+text = "合计 0 文"
+
+[node name="ConfirmBuy" type="Button" parent="Panel/Margin/Column/Buttons"]
+layout_mode = 2
+disabled = true
+text = "确认购买"
 
 [node name="ReturnButton" type="Button" parent="Panel/Margin/Column/Buttons"]
 layout_mode = 2

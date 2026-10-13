@@ -48,7 +48,7 @@ public partial class UiKit : RefCounted
         {
             Name = string.IsNullOrEmpty(node_name) ? "Card" : node_name,
         };
-        card.AddThemeStyleboxOverride("panel", _panel_style());
+        card.AddThemeStyleboxOverride("panel", panel_style());
         var column = new VBoxContainer { Name = "CardColumn" };
         column.AddThemeConstantOverride("separation", 4);
         card.AddChild(column);
@@ -93,7 +93,7 @@ public partial class UiKit : RefCounted
     public static PanelContainer make_panel(string node_name)
     {
         var panel = new PanelContainer { Name = node_name };
-        panel.AddThemeStyleboxOverride("panel", _panel_style());
+        panel.AddThemeStyleboxOverride("panel", panel_style());
         return panel;
     }
 
@@ -114,8 +114,11 @@ public partial class UiKit : RefCounted
     /// <summary>
     /// 面板背板：主题里那件九宫格 `StyleBoxTexture`（15 §4.4 的 `panel_bg.png`）。
     /// 主题缺了它也不要红——退回一块同色底的方块，界面还能看。
+    /// **公开出来是给悬停小卡的**（`HoverCard`）：清单 §二-12 点名小卡「与面板同一套观感、
+    /// 不用新出图」，所以卡与 `add_card()`／`make_panel()` 共用这一件，
+    /// 各屏别再自己 `load()` 贴图拼九宫格。
     /// </summary>
-    private static StyleBox _panel_style()
+    public static StyleBox panel_style()
     {
         Theme theme = _theme();
         if (theme != null && theme.HasStylebox("panel", "PanelContainer"))

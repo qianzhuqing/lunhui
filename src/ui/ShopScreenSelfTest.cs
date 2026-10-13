@@ -39,6 +39,45 @@ public partial class ShopScreen
         ok = ok && tab == "buy";
         lines.Add($"页签切换 ok={_bool(tab == "buy")}");
 
+        // 数量选择器 ＋ 合计 ＋ 确认购买（UI 清单 §二-9）：点一行＝选中、选择器到上限停、
+        // 合计＝单价×数量、**买不起不隐藏而是把「还差 N」写出来**、确认购买置灰。
+        select_buy_item("eq_sword_01");
+        Button confirm = FindChild("ConfirmBuy", true, false) as Button;
+        Label total_label = FindChild("TotalLabel", true, false) as Label;
+        Label qty_label = FindChild("QtyLabel", true, false) as Label;
+        int unit = shop.buy_price(building_id, "eq_sword_01");
+        bool bar_ok = selected_item == "eq_sword_01" && confirm != null && !confirm.Disabled
+            && total_label != null && total_label.Text == $"合计 {unit} 文"
+            && qty_label != null && qty_label.Text == "×1";
+        ok = ok && bar_ok;
+        lines.Add($"点一行＝选中·合计＝单价×数量={_bool(bar_ok)}（{total_label?.Text}）");
+        press_qty(1);
+        press_qty(1);
+        bool step_ok = quantity() == 3 && total_label.Text == $"合计 {unit * 3} 文";
+        ok = ok && step_ok;
+        lines.Add($"数量 ＋2 步到 3、合计跟着翻={_bool(step_ok)}（{qty_label.Text}／{total_label.Text}）");
+        int keep_money = shop.money();
+        int need = unit * quantity();
+        _inventory().money = 1;
+        refresh();
+        Label poor_row = FindChild("BuyLabeleq_sword_01", true, false) as Label;
+        bool poor_ok = poor_row != null && poor_row.Text.Contains($"还差 {need - 1}")
+            && total_label.Text.Contains($"还差 {need - 1}") && confirm.Disabled;
+        ok = ok && poor_ok;
+        lines.Add($"买不起：不隐藏·写清还差多少·确认购买置灰={_bool(poor_ok)}（{poor_row?.Text}）");
+        _inventory().money = keep_money;
+        press_qty(-1);
+        press_qty(-1);
+        bool floor_ok = quantity() == 1 && press_qty(-1) == 1;
+        ok = ok && floor_ok;
+        lines.Add($"数量到 1 就停（不为 0／不绕圈）={_bool(floor_ok)}");
+        // 真按那枚「确认购买」（不是直接调 `press_buy`）：按钮接线也一起过
+        int before_button = shop.money();
+        confirm.EmitSignal(Button.SignalName.Pressed);
+        bool press_ok = shop.money() == before_button - unit;
+        ok = ok && press_ok;
+        lines.Add($"按「确认购买」真扣钱={_bool(press_ok)}（{before_button} → {shop.money()}）");
+
         // 2. 买入白板剑
         int money_before = shop.money();
         Godot.Collections.Dictionary bought = press_buy("eq_sword_01");

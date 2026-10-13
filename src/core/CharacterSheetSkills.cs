@@ -97,6 +97,13 @@ public partial class CharacterSheet
                     entry["effective_hits"] = _effective_hits(active);
                     entry["target_type"] = active.target_type;
                     entry["target_name"] = _target_name(active.target_type);
+                    // 「冷却」那一行（清单 §二-6 第八行）：`>0 才摆`，`0` 不摆——与「有图才摆」同一套。
+                    entry["cooldown"] = active.cooldown;
+                    // 「无伤害的自增益招」（醉步那种：`damage_type` 空 ＋ 目标是自己）：照八行摆出来会是
+                    // 「结算」空白 ＋「伤害倍率 0%」＋「招式段数 1」三行都在说反话，所以这一类在界面上收成
+                    // 一句「自身增益 · 无直接伤害」。**判定只在这一处**，界面只读这个键。
+                    entry["self_support"] =
+                        active.damage_type.StripEdges().Length == 0 && active.target_type == "self";
                     // 清单 §二-6「附加效果写成一句白话」：附带的异常状态在这里译一次（id 不上界面）
                     entry["status_note"] = _status_note(active);
                     // 「这招在战斗里能不能用出来」：伤害型看 `is_attack()`（有伤害类型且倍率 > 0）；

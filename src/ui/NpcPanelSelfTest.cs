@@ -46,6 +46,20 @@ public partial class NpcPanel
             && _favor_ticks.Text.Contains("30") && _favor_ticks.Text.Contains("90");
         ok = ok && tier_ok;
         lines.Add($"好感档位刻度={_bool(tier_ok)}（{(_favor_ticks != null ? _favor_ticks.Text : "缺")}）");
+        // 好感条那行要写**分母**（UI 清单 §二-7「好感 27 / 60」那一格）：分母＝下一道未达档，
+        // 三档全过才退到上限。分档规则本身在 `NpcService` 一处，这里两段都钉：先钉纯函数的分档，
+        // 再钉面板那行确实用了它（不然面板改成写死也能过）。
+        bool progress_rule_ok = NpcService.favor_next_tier(0) == 30
+            && NpcService.favor_next_tier(29) == 30 && NpcService.favor_next_tier(30) == 60
+            && NpcService.favor_next_tier(60) == 90 && NpcService.favor_next_tier(95) == 0
+            && NpcService.favor_progress_text(27, 100) == "好感 27 / 30"
+            && NpcService.favor_progress_text(95, 100) == "好感 95 / 100";
+        int favor_now = _favor_of(st);
+        bool progress_label_ok = _favor_label.Text.StartsWith(
+            NpcService.favor_progress_text(favor_now, 100), System.StringComparison.Ordinal);
+        ok = ok && progress_rule_ok && progress_label_ok;
+        lines.Add($"好感条写分母（分母＝下一道未达档）={_bool(progress_rule_ok && progress_label_ok)}"
+            + $"（{_favor_label.Text}）");
         // 不可偷的人（`steal_difficulty=0`）：**摆一行说明、不给按钮**——静默会被当成漏做
         npc_id = "npc_qiutu";
         refresh();
