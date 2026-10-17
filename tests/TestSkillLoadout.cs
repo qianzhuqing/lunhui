@@ -31,6 +31,80 @@ public partial class TestSkillLoadout : TestCase
         _CheckPassiveBonus(db, state);
         _CheckRoundTrip(db, state);
         _CheckNoSelfLoop();
+        _CheckBasicSlot(db, state);
+    }
+
+    /// <summary>
+    /// 普攻位（设计 04 §武学页三块玩家配置，2026-10-13）：**只装已学的免费招**
+    /// （`qi_cost = 0` 且 `cooldown = 0`）、**与招式位互斥**、空＝系统普攻；进存档、
+    /// 而且**装上之后战斗里那一下真的换成它**（吃段数、进记录）。
+    /// </summary>
+    private void _CheckBasicSlot(TableDb db, GodotObject state)
+    {
+        SkillLoadout loadout = SkillLoadout.create(db, state, CharId);
+        CheckEq(loadout.basic_id(), "", "开局普攻位是空的（照旧用系统普攻）");
+        CheckTrue(loadout.can_set_basic("sk_xuanwei_01")["ok"].AsBool(), "免费招能装上（起手式）");
+        CheckFalse(
+            loadout.can_set_basic("sk_xuanwei_02")["ok"].AsBool(),
+            "要内力的招装不上（普攻位就是「替换普攻」那一档）");
+        CheckTrue(
+            loadout.can_set_basic("sk_xuanwei_02")["error"].AsString().Contains("免费"),
+            "装不上时把原因写出来");
+
+        // 互斥：**先把起手式装进招式位**，再想装普攻位就该被拦住（两边不可能同时占着）
+        if (!_Has(loadout.active_ids(), "sk_xuanwei_01") && loadout.can_equip("sk_xuanwei_01")["ok"].AsBool())
+        {
+            loadout.toggle("sk_xuanwei_01");
+        }
+
+        CheckFalse(
+            loadout.can_set_basic("sk_xuanwei_01")["ok"].AsBool(),
+            "已经在招式位上的招装不进普攻位（互斥）");
+        CheckTrue(
+            loadout.can_set_basic("sk_xuanwei_01")["error"].AsString().Contains("招式位"),
+            "拦下来时说清是「招式位」那一半");
+        if (_Has(loadout.active_ids(), "sk_xuanwei_01"))
+        {
+            loadout.toggle("sk_xuanwei_01");   // 先从招式位卸下
+        }
+
+        CheckTrue(loadout.set_basic("sk_xuanwei_01")["ok"].AsBool(), "卸下招式位之后装到普攻位");
+        CheckEq(loadout.basic_id(), "sk_xuanwei_01", "普攻位记下来了");
+        CheckFalse(
+            loadout.can_equip("sk_xuanwei_01")["ok"].AsBool(),
+            "互斥的另一半：已经在普攻位上，就装不进招式位");
+
+        // 进存档（v16 的 `char_loadouts.basic`）＋ 读回来还在
+        GameState back = GameState.from_dict(((GameState)state).to_dict(), db);
+        CheckEq(
+            back.loadout_of(CharId)["basic"].AsString(), "sk_xuanwei_01",
+            "普攻位跟着存档走（v16 新字段）");
+        CheckEq(
+            SkillLoadout.create(db, back, CharId).basic_id(), "sk_xuanwei_01",
+            "读档后普攻位还在");
+
+        // 战斗里那一下真换成它：日志点的是这一招的名字，而且**计入招式使用记录**
+        BattleActor actor = BattleActor.from_character(
+            db, db.get_row("character_base", CharId), 3,
+            new Godot.Collections.Dictionary(), new Godot.Collections.Array());
+        actor.actor_id = CharId;
+        actor.basic_skill_id = "sk_xuanwei_01";
+        actor.skills = new[] { "sk_xuanwei_01" };
+        BattleActor foe = BattleActor.from_character(
+            db, db.get_row("character_base", CharId), 3,
+            new Godot.Collections.Dictionary(), new Godot.Collections.Array());
+        foe.actor_id = "foe";
+        foe.side = BattleActor.side_enemy();
+        foe.hp = foe.max_hp();
+        BattleSimulator sim = BattleSimulator.create(db, RngService.create(7));
+        Godot.Collections.Array lines = sim.basic_attack(actor, foe);
+        string text = string.Join("｜", lines);
+        CheckTrue(
+            text.Contains(db.display_name("sk_xuanwei_01")),
+            $"装上之后普攻打的就是那一招（战报点名）：{text}");
+        CheckEq(
+            loadout.set_basic("")["ok"].AsBool(), true, "卸下普攻位（空串＝回系统普攻）");
+        CheckEq(SkillLoadout.create(db, state, CharId).basic_id(), "", "卸下之后是空的");
     }
 
     /// <summary>开局：已学 = 模板的起始武学，装配已经铺好，槽位按公式算。</summary>

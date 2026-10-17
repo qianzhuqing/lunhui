@@ -159,16 +159,37 @@ public partial class GameState
         {
             { "active", _to_array(entry.ContainsKey("active") ? entry["active"].AsGodotArray() : new Godot.Collections.Array()) },
             { "passive", _to_array(entry.ContainsKey("passive") ? entry["passive"].AsGodotArray() : new Godot.Collections.Array()) },
+            // 普攻位（v16 起，设计 04 §武学页的三块玩家配置）：**空串＝照旧用系统普攻**
+            // （`BattleSimulator.__basic_attack__` 不落表、也不动）。
+            { "basic", entry.ContainsKey("basic") ? entry["basic"].AsString() : "" },
         };
     }
 
     public void set_loadout(string char_id, string[] active, string[] passive)
     {
+        // **普攻位要保住**：装配结构 v16 起多了这一项，旧的"两列表"写法写回时别把它擦掉
         char_loadouts[char_id] = new Godot.Collections.Dictionary
         {
             { "active", _to_array(active) },
             { "passive", _to_array(passive) },
+            { "basic", loadout_of(char_id)["basic"].AsString() },
         };
+    }
+
+    /// <summary>
+    /// 普攻位装哪一招（空串＝照旧用系统普攻）。设计 04 §武学页的三块玩家配置：
+    /// 可装的是**已学的免费招**（`skill_active.qi_cost = 0` 且 `cooldown = 0`）；
+    /// 装上之后那一招**吃 `extra_hit`、计入招式使用记录、受武器类型限制**，且**与招式位互斥**——
+    /// 后面三条的判定在 `SkillLoadout` 那一侧（与招式槽同一处口径）。
+    /// </summary>
+    public void set_basic_skill(string char_id, string skill_id)
+    {
+        Godot.Collections.Dictionary entry = char_loadouts.ContainsKey(char_id)
+            && char_loadouts[char_id].VariantType == Variant.Type.Dictionary
+                ? char_loadouts[char_id].AsGodotDictionary()
+                : new Godot.Collections.Dictionary();
+        entry["basic"] = skill_id;
+        char_loadouts[char_id] = entry;
     }
 
     public string[] masteries_of(string char_id)

@@ -108,6 +108,26 @@ public partial class BattleActor
     public bool has_status(string status_id) => status_stacks(status_id) > 0;
 
     /// <summary>
+    /// 身上有没有**异常状态**（`status_effect` 那一路，不算 `buff_def`）。
+    /// 内功满级签名「忘忧」（打带异常的目标暴击率 +25%）读的就是它——设计说的是"带异常状态"，
+    /// 不是"带任意减益"，所以这里不把减益 buff 算进来。
+    /// </summary>
+    public bool has_affliction()
+    {
+        foreach (Variant entry_variant in statuses)
+        {
+            Godot.Collections.Dictionary entry = entry_variant.AsGodotDictionary();
+            Godot.Collections.Array stacks = entry["stacks"].AsGodotArray();
+            if (stacks.Count > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 回合末结算：每层按锁定的伤害跳一次，持续回合 -1，到 0 的整条清掉。
     /// 返回 [{status_id, source_id, stacks, damage, expired}]
     /// </summary>
@@ -143,6 +163,28 @@ public partial class BattleActor
     }
 
     /// <summary>斩杀：把剩下的层数立刻各结算一次并清空（combat_const.dot_execute_threshold 触发）。</summary>
+    /// <summary>
+    /// 解掉某一类异常（战斗内用解毒药那条路，Q33 的 `item_base.clear_status`）：整条摘掉，
+    /// 返回摘掉了几层（0＝身上本来就没有）。**不吃抗性、不掷骰**——药就是药。
+    /// </summary>
+    public int clear_status(string status_id)
+    {
+        int removed = 0;
+        for (int index = statuses.Count - 1; index >= 0; index--)
+        {
+            Godot.Collections.Dictionary entry = statuses[index].AsGodotDictionary();
+            if (entry["status_id"].AsString() != status_id)
+            {
+                continue;
+            }
+
+            removed += entry["stacks"].AsGodotArray().Count;
+            statuses.RemoveAt(index);
+        }
+
+        return removed;
+    }
+
     public Godot.Collections.Array consume_all_statuses()
     {
         var out_rows = new Godot.Collections.Array();

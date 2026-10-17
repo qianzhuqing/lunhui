@@ -51,6 +51,10 @@ public partial class TestCharacterUi : TestCase
         _CheckBack(screen, back_calls);
         // 武学页排在最后：它要把招式槽填满来验「满了就置灰」，别让那一步影响前面的剧本
         _CheckSkillPage(db, screen, state);
+        // 悬停小卡（§二-12）排在最后一步：它要在四个页签之间来回切、还要往行囊里加点东西
+        _CheckHoverCardUi(db, screen, state);
+        // 道具使用弹窗（§二-3）再往后：它要改气血来验预览那两档，别影响前面的剧本
+        _CheckUseItemModal(db, screen, state);
 
         _DropScreen(screen);
 

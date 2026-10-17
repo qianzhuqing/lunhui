@@ -21,8 +21,9 @@ public partial class TestSaveMigration : TestSaveMigrationBase
         TableDb db = GetDb();
         // 存档结构版本写死绝对值：升版本必须同时写迁移与 `AddedIn`（漏一边就有档读不回来）
         CheckEq(
-            GameState.save_version(), 15,
-            "存档结构版本是 15（v15 = NPC 好感 npc_favor，设计 19）");
+            GameState.save_version(), 16,
+            "存档结构版本是 16（v16 = 普攻位 ＋ 每角色战斗外残留状态；"
+                + "2026-10-13 拍板：P28～P31 那一批合并成一次升版、旧档不迁移）");
         _CleanDir(TestDir);
         _CheckDirectMigration(db);
         _CheckStoreMigration(db);
@@ -67,30 +68,55 @@ public partial class TestSaveMigration : TestSaveMigrationBase
         WriteText(store.slot_path(1), Json.Stringify(_V1Dict()));
 
         Godot.Collections.Dictionary loaded = store.load_slot(1, db);
-        CheckTrue(loaded["ok"].AsBool(), "v1 存档能读出来");
+        // **2026-10-13 用户口径修正：旧档照读**（缺的字段取默认值），**只有"比当前新"的档才拒**。
+        // 起因是 v16 那次升版一开始写成"版本对不上就拒读"，玩家手里 v15 的档一进游戏就报"读不了"，
+        // 看起来就像存档坏了——用户当场反馈。v15 → v16 只多了一个**新增**的键（`char_loadouts.basic`），
+        // 旧档本来就完全读得动，所以这一侧要放开。
+        CheckTrue(loaded["ok"].AsBool(), "v1 的老档照读（缺的字段补默认值）");
         var loadedState = (GameState)loaded["state"].AsGodotObject();
-        CheckEq(loadedState.migrated_from, 1, "状态标记需要迁移");
+        CheckEq(loadedState.migrated_from, 1, "状态里记着「从哪一版升上来」");
+        CheckEq(loadedState.version, GameState.save_version(), "读进来就是当前版本");
+        CheckEq(
+            loadedState.loadout_of("scholar_fallen")["basic"].AsString(), "",
+            "v16 新增的普攻位在旧档里取默认值（空＝照旧用系统普攻）");
+        CheckTrue(
+            _InventoryOf(loadedState).equipment_count() > 0, "v1 老档补上了初始装备");
 
-        // 走菜单的读档流程：迁移后立刻写回
+        // **反方向要拒**：比当前版本新的档（未来格式）读不了，而且要说人话——硬读只会静静丢东西
+        Godot.Collections.Dictionary future = _V1Dict();
+        future["version"] = GameState.save_version() + 1;
+        WriteText(store.slot_path(2), Json.Stringify(future));
+        Godot.Collections.Dictionary refused = store.load_slot(2, db);
+        CheckFalse(refused["ok"].AsBool(), "比当前版本新的档拒读");
+        CheckTrue(
+            refused["error"].AsString().Contains("更新"),
+            $"说清是「更新的版本」：{refused["error"].AsString()}");
+
+        // **边界那一档（v15 → v16）单独钉一遍**：玩家手里的档就在这一版上（v16 只多了一个
+        // **新增**的键 `char_loadouts.basic`）——这是"旧档照读"最要紧的那一格。
+        Godot.Collections.Dictionary v15 = _V1Dict();
+        v15["version"] = GameState.save_version() - 1;
+        WriteText(store.slot_path(3), Json.Stringify(v15));
+        Godot.Collections.Dictionary edge = store.load_slot(3, db);
+        CheckTrue(edge["ok"].AsBool(), "上一版（v15）的档直接读得动——不迁也能读");
+        var edgeState = (GameState)edge["state"].AsGodotObject();
+        CheckEq(
+            edgeState.loadout_of("scholar_fallen")["basic"].AsString(), "",
+            "新增的普攻位键缺了就是空（照旧用系统普攻）");
+        CheckEq(edgeState.version, GameState.save_version(), "读进来即当前版本");
+
+        // 菜单那条路：老档读得进去，并把"已升级"那句话交给玩家
         MenuController controller = MenuController.create(
             db, store, System.Array.Empty<string>(), "normal");
         Godot.Collections.Dictionary result = controller.load_game(1);
-        CheckTrue(result["ok"].AsBool(), "菜单读档成功");
+        CheckTrue(result["ok"].AsBool(), "菜单能读老档");
         CheckTrue(
             result["message"].AsString().Contains("升级"),
-            $"提示已升级存档：{result["message"].AsString()}");
-
+            $"读档时告诉玩家已升级：{result["message"].AsString()}");
         Variant raw = Json.ParseString(FileAccess.GetFileAsString(store.slot_path(1)));
-        CheckTrue(GameState.is_valid_dict(raw), "写回后仍是合法存档");
         CheckEq(
             raw.AsGodotDictionary()["version"].AsInt32(), GameState.save_version(),
-            "文件里的版本变成当前版本");
-
-        Godot.Collections.Dictionary again = store.load_slot(1, db);
-        var againState = (GameState)again["state"].AsGodotObject();
-        CheckEq(againState.migrated_from, 0, "第二次读取不需要迁移");
-        CheckEq(_InventoryOf(againState).equipment_count(), 2, "写回后的存档带着装备（两件）");
-        CheckEq(againState.level_of("scholar_fallen"), 3, "写回后等级没丢");
+            "读进游戏之后落盘的版本是当前版本");
     }
 
     private void _CheckV2RoundTrip(TableDb db)

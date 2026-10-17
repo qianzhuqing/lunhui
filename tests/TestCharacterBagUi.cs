@@ -87,6 +87,133 @@ public partial class TestCharacterUi
         screen.set_filter("all");
     }
 
+    /// <summary>
+    /// 道具使用弹窗（UI 清单 §二-3）：行囊里点「使用」＝**开弹窗**（不是当场用掉）；
+    /// 目标行队伍每人一行（**空位不摆**）、预览随选中目标变、「使用」置灰并把原因写在按钮下面、
+    /// 「取消」与 `Esc` 都只回行囊（不扣物品、不退整个面板）。
+    ///
+    /// 两味 `use_context=field` 的药是这一屏的对象；「使用」现在恒置灰，因为 `item_base`
+    /// 还没有效果数值列（Q33）——**与战斗里那六指令同一口径**，不解析中文、不自己编数。
+    /// </summary>
+    private void _CheckUseItemModal(TableDb db, CharacterScreen screen, GodotObject state)
+    {
+        screen.select_tab(UiNav.char_tab_of(UiNav.BAG));
+        screen.set_filter("all");
+        Inventory inventory = _InventoryOf(state);
+        inventory.add_item(db, "item_med_01", 2);
+        screen.refresh();
+        screen.select_bag_entry("item:item_med_01");
+
+        var use = screen.FindChild("BagUseButton", true, false) as Button;
+        CheckNotNull(use, "战斗外能用的药有「使用」");
+        CheckNull(screen.FindChild("UseModal", true, false), "弹窗是懒建的：没点之前连节点都没有");
+        if (use == null)
+        {
+            return;
+        }
+
+        CheckEq(use.Text, "使用", "动词是「使用」");
+        CheckFalse(use.Disabled, "field 那类药点得动——置灰的是弹窗里那一枚（数值列还没配）");
+        use.EmitSignal(Button.SignalName.Pressed);
+        CheckTrue(screen.use_modal_open(), "点「使用」＝开弹窗");
+        CheckEq(inventory.count("item_med_01"), 2, "开弹窗不扣物品");
+        var modal = screen.FindChild("UseModal", true, false) as Control;
+        CheckNotNull(modal, "弹窗建出来了");
+        if (modal == null)
+        {
+            return;
+        }
+
+        var med = db.get_row("item_base", "item_med_01") as ItemBaseRow;
+        CheckNotNull(med, "表里有两味战斗外的药");
+        if (med != null)
+        {
+            CheckEq(
+                (screen.FindChild("UseTitle", true, false) as Label)?.Text, $"使用 · {med.name_cn}",
+                "标题栏写「使用 · 名字」");
+        }
+
+        CheckEq(
+            (screen.FindChild("UseHeld", true, false) as Label)?.Text, "持有 2", "标题栏右边写持有数");
+
+        // 目标行：队伍几人摆几行，**空位不摆**（摆一行灰的"空位"只会让玩家去点它）
+        int members = state.Get("char_ids").AsStringArray().Length;
+        var rows = screen.FindChildren("UseTargetRow*", "Button", true, false);
+        CheckEq(rows.Count, members, $"队伍 {members} 人就摆 {members} 行");
+        CheckTrue(
+            ((screen.FindChild($"UseTargetName{CharId}", true, false) as Label)?.Text ?? "").StartsWith("▶"),
+            "单人队默认就选中他（那一行有 ▶）");
+
+        CheckTrue(
+            ((screen.FindChild("UsePreviewEffect", true, false) as Label)?.Text ?? "").Contains("效果"),
+            "预览有「效果」那一行（数值列没配就摆表里那句文字）");
+        CheckTrue(
+            ((screen.FindChild("UsePreviewCost", true, false) as Label)?.Text ?? "").Contains("剩 1"),
+            "消耗那一行写用掉之后还剩几件");
+
+        // 气血满＝预览写明「浪费」（清单 §二-3 那一格）
+        var sheet = screen.sheet();
+        ((GameState)state).char_hp[CharId] = sheet.max_hp();
+        screen.select_use_target(CharId);
+        CheckTrue(
+            ((screen.FindChild("UsePreviewHp", true, false) as Label)?.Text ?? "").Contains("浪费"),
+            "气血已满就写明再用是浪费");
+
+        // 不满：读得出当前值，但**算不出到多少就直说**（不编数字）
+        ((GameState)state).char_hp[CharId] = 5;
+        screen.select_use_target(CharId);
+        string hp_line = (screen.FindChild("UsePreviewHp", true, false) as Label)?.Text ?? "";
+        CheckTrue(hp_line.Contains("5"), $"气血那一行读当前值：{hp_line}");
+        // Q33 三列落表之后（2026-10-13），这一行是**算得出来**的：清单要的「气血 94 → 180（+86，上限截断）」，
+        // 而且与真扣下去同一处口径（`ItemUse.preview_field`）——不是界面自己算的第二个数
+        CheckTrue(
+            hp_line.Contains("→") && hp_line.Contains("+120"),
+            $"预览写出「气血 5 → 125（+120）」这种结果：{hp_line}");
+        CheckEq(
+            (screen.FindChild($"UseTargetState{CharId}", true, false) as Label)?.Text, "—",
+            "没满的目标状态词是「—」（战斗外没有状态模型）");
+
+        var confirm = screen.FindChild("UseConfirm", true, false) as Button;
+        CheckNotNull(confirm, "弹窗里有「使用」");
+        if (confirm != null)
+        {
+            // Q33 三列落表之后这件**有**效果（`heal_hp = 120`），所以「使用」点得动
+            CheckFalse(confirm.Disabled, "配了效果的道具，「使用」点得动");
+        }
+
+        CheckEq(
+            (screen.FindChild("UseBlockReason", true, false) as Label)?.Text, "",
+            "配了效果就不再写「还没接」那一句（只有真没配的才置灰并说明）");
+
+        var cancel = screen.FindChild("UseCancel", true, false) as Button;
+        CheckNotNull(cancel, "弹窗里有「取消」");
+        cancel?.EmitSignal(Button.SignalName.Pressed);
+        CheckFalse(screen.use_modal_open(), "「取消」关掉弹窗");
+        CheckEq(inventory.count("item_med_01"), 2, "取消不扣物品");
+
+        // 真用一口：气血从 5 回到 125（**上限截断**、与预览同一个数），并**扣掉一件**
+        ((GameState)state).char_hp[CharId] = 5;
+        use.EmitSignal(Button.SignalName.Pressed);
+        CheckTrue(screen.use_modal_open(), "再开一次");
+        var use_confirm = screen.FindChild("UseConfirm", true, false) as Button;
+        use_confirm?.EmitSignal(Button.SignalName.Pressed);
+        CheckEq(((GameState)state).char_hp[CharId].AsInt32(), 125, "「使用」真回了 120 气血（5 → 125）");
+        CheckEq(inventory.count("item_med_01"), 1, "用掉一件");
+        CheckTrue(screen.status_text().Contains("气血"), $"底部说明播报这一口的结果：{screen.status_text()}");
+        CheckFalse(screen.use_modal_open(), "用完之后弹窗收掉（别留一张指旧数据的卡）");
+
+        // `Esc`：弹窗开着时只关它（清单 §二-3「关闭＝回到行囊」），关着时照旧退面板
+        var backs = new Godot.Collections.Array();
+        screen.back_handler = Callable.From(() => backs.Add(true));
+        use.EmitSignal(Button.SignalName.Pressed);
+        screen._UnhandledInput(new InputEventAction { Action = "ui_cancel", Pressed = true });
+        CheckFalse(screen.use_modal_open(), "`Esc` 先关弹窗");
+        CheckEq(backs.Count, 0, "关弹窗那一下**不**退面板");
+        screen._UnhandledInput(new InputEventAction { Action = "ui_cancel", Pressed = true });
+        CheckEq(backs.Count, 1, "弹窗关着时 `Esc` 照旧退面板（那一层没被挡住）");
+        screen.set_filter("all");
+    }
+
     /// <summary>秘籍研读：门槛不够按钮置灰并写原因；够门槛时点一下就学会并消耗一本。</summary>
     private void _CheckSkillbook(TableDb db, CharacterScreen screen, GodotObject state)
     {

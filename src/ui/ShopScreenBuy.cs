@@ -155,8 +155,29 @@ public partial class ShopScreen
             "BuySelect" + item_id,
             item_id == selected_item ? "已选" : "选中",
             () => select_buy_item(captured)));
+        // 悬停＝物品／装备小卡（清单 §二-9 ＋ §二-12）：这一行的字里已经有类型与价，
+        // 小卡补的是「这件东西是什么」（部位／品阶／属性行／说明）。**挂整行**而不是挂那个 Label
+        // ——行里还有图标与「选中」按钮，挂 Label 的话鼠标一挪到图标上卡就没了。
+        _hover().watch(line, () => _shop_hover_rows(item_id, unit));
         return line;
     }
+
+    /// <summary>
+    /// 货架一行悬停要说的字（清单 §二-12 的物品卡／装备卡）。尾截写**单价与持有**
+    /// ——货架上不写「剩 N」（那会被读成"货架还剩 N 件"，限量明明是另一行在报）。
+    /// 数据走 `HoverCardText.of_base()`：与 NPC 面板那三处同一套读法，不各查一遍三张表。
+    /// </summary>
+    private string[] _shop_hover_rows(string item_id, int unit)
+    {
+        return HoverCardText.of_base(
+            (TableDb)db, item_id, $"单价 {unit} 文 · 持有 {_inventory().count(item_id)}",
+            "左键选中 · 底部「确认购买」");
+    }
+
+    /// <summary>这一屏共用的那张悬停小卡（第一次用到时才建，挂在本屏根节点上）。</summary>
+    private HoverCard _hover() => _hover_card ??= HoverCard.make(this, "HoverCard");
+
+    private HoverCard _hover_card;
 
     /// <summary>货架行里那截「类型 · 效果」：装备按部位 ＋ 品阶，道具按类型 ＋ 说明。</summary>
     private string _stock_kind_text(string item_id)

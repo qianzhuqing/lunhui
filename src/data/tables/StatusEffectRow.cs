@@ -53,4 +53,13 @@ public partial class StatusEffectRow : TableRow
 
     [Export]
     public string desc { get; set; } = "";
+
+    /// <summary>
+    /// 战斗外还没消散吗（设计 04 §战斗外的残留状态，2026-10-13）：**「侵入体内」的两类
+    /// （中毒 `poison`／内伤 `internal`）填 1**——战斗结束不清、带进下一场；「战伤」那两类
+    /// （灼伤／流血）填 0，战斗结束即消（它们本来就是打在身上的）。
+    /// 战斗外**不结算伤害**（不然玩家在菜单里会掉血掉死），但层数留着。
+    /// </summary>
+    [Export]
+    public bool persist_out_of_battle { get; set; } = false;
 }

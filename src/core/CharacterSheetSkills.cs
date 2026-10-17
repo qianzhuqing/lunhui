@@ -89,7 +89,10 @@ public partial class CharacterSheet
                     entry["damage_type"] = active.damage_type;
                     entry["settle_note"] = _settle_note(active);
                     entry["power_ratio"] = active.power_ratio;
-                    entry["qi_cost"] = active.qi_cost;
+                    // 「消耗内力」写的是**实际会扣的那个数**（`skill_active.qi_cost` × `combat_const.qi_cost_mul`）
+                    // ——与战斗侧同一处算法（`SkillCost`），否则屏上写 16、战斗里只扣 10。
+                    // 传 `true`：面板永远是**玩家自己**的口径（系数只作用我方，设计 04 §招式循环）。
+                    entry["qi_cost"] = SkillCost.effective_qi_cost(_db, active.qi_cost, true);
                     entry["poise_damage"] = active.poise_damage;
                     entry["hit_count"] = active.hit_count;
                     // 「招式段数」写的是**这个角色手里**的段数（表里的 `hit_count` ＋ 派生值 `extra_hit`），
@@ -134,6 +137,12 @@ public partial class CharacterSheet
                 // 面板要如实说一句，别让玩家以为「装了这部就该有个特别效果，怎么没反应」。
                 // 注意**不要把 id 原样显示**（界面不许出现表内英文 id，有文案审计盯着），只说「暂未生效」。
                 entry["special_effect_pending"] = passive.passive_effect.Trim().Length > 0;
+                // 满级签名（设计 08 §内功满级签名）：面板要写得下「熟练 10/10 · 满级效果：…」；
+                // 满级了而代码还没接的，如实带一句「还没接」——`MasteryBonus` 是唯一说这事的地方。
+                Godot.Collections.Dictionary mastery_bonus =
+                    MasteryBonus.describe(_db, skill_id, mastery_of(skill_id));
+                entry["mastery_bonus_text"] = mastery_bonus["text"];
+                entry["mastery_bonus_pending"] = mastery_bonus["pending"];
             }
             out_rows.Add(entry);
         }
@@ -180,7 +189,8 @@ public partial class CharacterSheet
     /// 这里只把角色的 `extra_hit` 递给它，免得面板说 1 段、战斗里打两段。</summary>
     private int _effective_hits(SkillActiveRow active) =>
         BattleSimulator.effective_hits_for(
-            active.skill_id, active.hit_count, stat_value("extra_hit"));
+            // 面板说的是**招式**的段数，普攻那一条（`basic_hit`）在这儿用不上，传 0
+            active.skill_id, active.hit_count, stat_value("extra_hit"), 0.0);
 
     /// <summary>系别 id → 玩家看得懂的字（`element_def.name_cn`）。
     /// **取不到就给空串**，绝不把 `external` 这类 id 甩到屏上——缺行由构建期校验点名。</summary>

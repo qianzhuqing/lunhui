@@ -251,6 +251,91 @@ public partial class BattleActor
     }
 
     /// <summary>
+    /// 满级签名「百草」：清掉自身 **1 层**减益，返回清了几层（0 或 1）。
+    /// 先清异常状态（`status_effect`）再找减益 buff——异常是"更该被解掉"的那一类；
+    /// 清的是**层**不是整条（设计写的"清掉 1 层"），所以中毒 3 层会变成 2 层。
+    /// </summary>
+    public int cleanse_one_debuff()
+    {
+        foreach (Variant entry_variant in statuses)
+        {
+            Godot.Collections.Dictionary entry = entry_variant.AsGodotDictionary();
+            Godot.Collections.Array stacks = entry["stacks"].AsGodotArray();
+            if (stacks.Count > 0)
+            {
+                stacks.RemoveAt(stacks.Count - 1);
+                entry["stacks"] = stacks;
+                return 1;
+            }
+        }
+
+        foreach (Variant entry_variant in buffs)
+        {
+            Godot.Collections.Dictionary entry = entry_variant.AsGodotDictionary();
+            var row = _table_db?.get_row("buff_def", entry["buff_id"].AsString()) as BuffDefRow;
+            if (row != null && row.is_debuff && entry["stacks"].AsInt32() > 0)
+            {
+                entry["stacks"] = entry["stacks"].AsInt32() - 1;
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// 身上有没有减益（两个来源都算：`status_effect` 的异常 ＋ 减益的 `buff_def`）。
+    /// 内功满级签名「醉意」（有减益时闪避 +15%）与「不还」（每个减益 +8% 伤害）读它。
+    /// </summary>
+    public bool has_debuff(GodotObject db)
+    {
+        foreach (Variant entry_variant in statuses)
+        {
+            if (entry_variant.AsGodotDictionary()["stacks"].AsGodotArray().Count > 0)
+            {
+                return true;
+            }
+        }
+
+        return debuff_count(db) > 0;
+    }
+
+    /// <summary>
+    /// 身上有几条减益（只数**条目**、不数层数——"每个减益 +8%"说的是几条，不是几层）。
+    /// `status_effect` 全是减益（08 的口径），`buff_def` 按 `is_debuff` 判。
+    /// </summary>
+    public int debuff_count(GodotObject db)
+    {
+        var table_db = db as TableDb;
+        int count = 0;
+        foreach (Variant entry_variant in statuses)
+        {
+            if (entry_variant.AsGodotDictionary()["stacks"].AsGodotArray().Count > 0)
+            {
+                count += 1;
+            }
+        }
+
+        foreach (Variant entry_variant in buffs)
+        {
+            Godot.Collections.Dictionary entry = entry_variant.AsGodotDictionary();
+            if (entry["stacks"].AsInt32() <= 0)
+            {
+                continue;
+            }
+
+            string buff_id = entry["buff_id"].AsString();
+            var row = table_db?.get_row("buff_def", buff_id) as BuffDefRow;
+            if (row != null && row.is_debuff)
+            {
+                count += 1;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
     /// 面板用：[{buff_id, entry_id, name, stacks, remaining, permanent, is_debuff, desc, icon, kind}]，
     /// 与 `status_rows()` 同形状（`kind` 区分两套表）——**合并展示**由 `effect_rows()` 负责。
     /// </summary>

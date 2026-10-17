@@ -137,6 +137,7 @@ public partial class CharacterScreen
             }
         }
 
+        col.AddChild(_basic_attack_slot(panel));
         col.AddChild(_skill_detail(panel));
         return col;
     }
@@ -227,6 +228,8 @@ public partial class CharacterScreen
             "font_color",
             UiKit.color(_selected_skill == skill_id ? "cinnabar_deep" : "ink"));
         top.AddChild(pick);
+        // **武学页不挂悬停小卡**（用户 2026-10-13 口径）：这一页的信息已经收成
+        // 「点一格 → 右边出详情」，再叠一张卡就成了同一件事的两个出口。
         top.AddChild(_make_button(
             $"LoadoutButton{skill_id}",
             equipped ? "卸下" : "装配",
@@ -296,10 +299,8 @@ public partial class CharacterScreen
         Godot.Collections.Dictionary row = _selected_skill_row(panel);
         if (row.Count == 0)
         {
-            col.AddChild(_section("SkillDetailSection", "SkillDetailHeader", "招式详情", "点上面一格"));
-            col.AddChild(_make_label(
-                "SkillDetailHint",
-                "点上面任意一格，这里写出它的消耗内力／系别／结算／伤害倍率／段数／破架势／冷却／目标与附加效果。"));
+            // **没选中就什么都不摆**（用户 2026-10-13：「选中招式或内功才显示详细信息」）——
+            // 以前这儿有一整块空态提示（标题＋一句指路），对"还没点"的状态来说也是多余的一屏。
             return col;
         }
 
@@ -354,6 +355,11 @@ public partial class CharacterScreen
         {
             col.AddChild(_kv_row("SkillDetailSlotRow", "占用格数", $"{_i(row, "slot_cost")} 格", ""));
             col.AddChild(_kv_row("SkillDetailBonusRow", "常驻加成", _s(row, "bonus_summary"), ""));
+            // 满级签名（设计 08 §内功满级签名）：这一行把「熟练 N/10 · 满级效果：…」写出来——
+            // 练满给什么得看得见，否则玩家只会觉得"练满了怎么没变化"。没满级写还差几级；
+            // 满级而代码还没接的，那一句由 `MasteryBonus` 带出来（界面不自己判断"接没接"）。
+            col.AddChild(_kv_row(
+                "SkillDetailMasteryRow", "满级签名", _s(row, "mastery_bonus_text"), ""));
         }
 
         // 附加效果写成一句白话（`status_note` 就是那一句——界面不再转译一次，id 也不上界面）
@@ -453,12 +459,19 @@ public partial class CharacterScreen
             col.AddChild(row);
         }
 
-        col.AddChild(_section(
-            "SkillSetSection", "SkillSetHeader", "套装效果",
-            $"{SetService.create(Db).all_defs().Count} 套 · 随角色切"));
-        foreach (Control block in _skill_set_blocks(panel, st))
+        // 套装效果：**这个角色身上一件套装都没在凑，就整块不摆**（用户 2026-10-13：
+        // 「没有套装效果则不显示套装信息」）。以前是把配表里 3 套**全列出来**（每套还把档位逐条摆
+        // 「已激活／未达」）——对"什么都没装"的角色来说那是一屏废话。
+        System.Collections.Generic.List<Control> set_blocks = _skill_set_blocks(panel, st);
+        if (set_blocks.Count > 0)
         {
-            col.AddChild(block);
+            col.AddChild(_section(
+                "SkillSetSection", "SkillSetHeader", "套装效果",
+                $"{set_blocks.Count} 套 · 随角色切"));
+            foreach (Control block in set_blocks)
+            {
+                col.AddChild(block);
+            }
         }
 
         return col;
@@ -570,6 +583,13 @@ public partial class CharacterScreen
             }
 
             int count = sets.count_for(def.set_id, panel.char_id, inventory, st);
+            // **一件都没在凑的套不摆**（用户口径：没有套装效果就不显示套装信息）——
+            // 返回空表，调用方据此连小节头都不加（见 `_skill_info_column`）。
+            if (count <= 0)
+            {
+                continue;
+            }
+
             var top = 0;
             foreach (Variant tier_value in tiers)
             {
@@ -628,11 +648,6 @@ public partial class CharacterScreen
             }
 
             blocks.Add(block);
-        }
-
-        if (blocks.Count == 0)
-        {
-            blocks.Add(_make_label("SkillSetNone", "配表里还没有套装。"));
         }
 
         return blocks;

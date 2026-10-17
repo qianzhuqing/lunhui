@@ -195,7 +195,8 @@ public partial class TestSaveStore : TestCase
         CheckEq(loaded_state.migrated_from, 0, "当前版本的档不需要迁移");
         string diff = _DiffPath(state.Call("to_dict"), loaded_state.to_dict());
         CheckEq(diff, "", $"全字段往返零差异（第一处差异：{diff}）");
-        // 27 = 26 + v15 的 npc_favor（NPC 好感）；新增字段要一起登记
+        // 27 = 26 + v15 的 npc_favor（NPC 好感）＋ v16 的普攻位（char_loadouts 里那一项不占字段）；
+        // 新增字段要一起登记
         CheckEq(game.to_dict().Count, 27, "to_dict 的字段数没变（新增字段要一起登记）");
         CheckEq(loaded_state.world_position(), new Vector2(1234.5f, -678.25f), "大地图坐标（v13）往返一致");
         // 自查：比较器本身真的能报差异，否则上面那条断言就是空的

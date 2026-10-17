@@ -36,6 +36,21 @@ public partial class ItemBaseRow : TableRow
     [Export]
     public string icon { get; set; } = "";
 
+    // 效果数值（Q33 的三列，2026-10-13 小策划答）：回复气血／回复内力／解除状态。
+    // **以前效果只写在 `desc` 那一句中文里**（「非战斗恢复气血120」），代码不解析中文、
+    // 界面也不编数（道具使用弹窗与战斗的道具指令都因此置灰过）。现在数值有了列。
+    /// <summary>吃下去回多少气血（0＝不回；战斗内／外由 `use_context` 分）。</summary>
+    [Export]
+    public int heal_hp { get; set; }
+
+    /// <summary>吃下去回多少内力（0＝不回）。</summary>
+    [Export]
+    public int heal_qi { get; set; }
+
+    /// <summary>解除哪一个异常状态（填 `status_effect.status_id`，**空＝不解**；设计明写不做"全解"）。</summary>
+    [Export]
+    public string clear_status { get; set; } = "";
+
     [Export]
     public string desc { get; set; } = "";
 

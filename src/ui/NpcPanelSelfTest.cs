@@ -111,6 +111,27 @@ public partial class NpcPanel
         ok = ok && preview_ok;
         lines.Add($"赠礼按钮写出预期收益={_bool(preview_ok)}（{(gift_btn != null ? gift_btn.Text : "缺")}）");
 
+        // 悬停小卡（UI 清单 §二-7 ＋ §二-12）：那一枚按钮指着「草药」，停 0.2 秒该浮出物品卡。
+        // headless 里没有真鼠标，所以打 `MouseEntered` ＋**手动把计时器那一拍打出来**
+        // （与 `tests/TestCharacterHoverUi.cs` 同一套做法：真实那一拍走的就是这条函数）。
+        var hover_card = FindChild("HoverCard", true, false) as HoverCard;
+        var hover_delay = hover_card?.FindChild("HoverDelay", true, false) as Timer;
+        bool hover_ok = gift_btn != null && hover_card != null && hover_delay != null;
+        if (hover_ok)
+        {
+            gift_btn.EmitSignal(Control.SignalName.MouseEntered);
+            bool hidden_before = !hover_card.Visible; // 刚移上去还不浮（要等那 0.2 秒）
+            hover_delay.EmitSignal(Timer.SignalName.Timeout);
+            bool shown_after = hover_card.Visible;
+            var hover_title = hover_card.FindChild("HoverCardTitle", true, false) as Label;
+            bool name_ok = hover_title != null && hover_title.Text == _item_name("item_herb");
+            hover_card.hide_now();
+            hover_ok = hidden_before && shown_after && name_ok && !hover_card.Visible;
+        }
+
+        ok = ok && hover_ok;
+        lines.Add($"悬停小卡（停 0.2 秒浮出、移开收）={_bool(hover_ok)}");
+
         // 偷窃：判定是 `掷点 ≤ 成功率`——掷 0 必成功、掷 1 必失败（固定掷点，用例可复现）
         Godot.Collections.Dictionary steal_win =
             NpcService.steal(db, st, npc_id, "item_potion_small", 0.0);

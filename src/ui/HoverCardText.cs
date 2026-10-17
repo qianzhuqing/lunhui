@@ -1,3 +1,7 @@
+using Godot;
+using Lunhui.Core;
+using Lunhui.Data.Tables;
+
 namespace Lunhui.Ui;
 
 /// <summary>
@@ -14,16 +18,20 @@ namespace Lunhui.Ui;
 public static class HoverCardText
 {
     /// <summary>
-    /// 物品卡（清单 §二-12）：名称 ／ `类型 · 稀有度 · 剩 N` ／ 效果行 ／ 描述 ／ 脚注。
-    /// `foot` 由调用方给——**那句话是界面用法，不是数据**，而且各屏可能不一样
-    /// （清单原文写「左键使用 · 右键丢弃」，与现状不符：左键＝选中，动作在右侧按钮，已报策划）。
+    /// 物品卡（清单 §二-12）：名称 ／ `类型 · 稀有度 · <尾截>` ／ 效果行 ／ 描述 ／ 脚注。
+    ///
+    /// `tail` 与 `foot` 由调用方给：**这两样是"这一屏的信息"、不是卡型的一部分**——
+    /// 行囊写「剩 3」（你还剩几件），货架写「单价 16 文 · 持有 2」（店里卖多少）——
+    /// 同一个「剩 N」放上货架会被读成「货架上还剩 N」（限量），那是另一回事。
+    /// 脚注同理（清单原文写「左键使用 · 右键丢弃」，与现状不符：左键＝选中、
+    /// 动作在右侧按钮或底部确认，已报策划）。
     /// </summary>
     public static string[] item_card(
-        string name, string kind, string rarity, int count, string effect, string desc, string foot) =>
+        string name, string kind, string rarity, string tail, string effect, string desc, string foot) =>
         new[]
         {
             name,
-            join(kind, rarity, $"剩 {count}"),
+            join(kind, rarity, tail),
             effect,
             desc,
             foot,
@@ -43,6 +51,61 @@ public static class HoverCardText
             string.IsNullOrEmpty(affix) ? "无词条" : affix,
             "",
         };
+
+    /// <summary>
+    /// 只拿得到「表里一个 id」的场合（**商店货架**与 **NPC 面板**的赠与／偷窃／兑换）直接出一张卡：
+    /// 装备走装备卡、道具走物品卡；`tail`／`foot` 与物品卡同一口径（见上）。
+    ///
+    /// **这些场合没有实例**，所以装备卡的行4 写「无词条」——店里卖的、人家身上带的都是白板；
+    /// 行囊那一侧不同（有实例、读得出真词条），所以它自己那条路留着（那里要 `affix_summary_of`）。
+    /// 属性行不在这里重算：走 `CharacterSheet.equipment_summary_of()`，与面板同一处。
+    /// </summary>
+    public static string[] of_base(TableDb db, string base_id, string tail, string foot)
+    {
+        if (db == null || base_id.Length == 0)
+        {
+            return System.Array.Empty<string>();
+        }
+
+        if (db.get_row("equip_base", base_id) is EquipBaseRow equip)
+        {
+            Resource slot_row = db.get_row("equip_slot_def", equip.slot);
+            string slot_name = slot_row is EquipSlotDefRow slot ? slot.name_cn : "";
+            return equip_card(
+                equip.name_cn, _weapon_type_name(db, equip.weapon_type), slot_name,
+                _rarity_name(db, equip.rarity),
+                CharacterSheet.equipment_summary_of(db, equip), "");
+        }
+
+        if (db.get_row("item_base", base_id) is ItemBaseRow item)
+        {
+            return item_card(
+                item.name_cn, ItemText.type_name(item.item_type), _rarity_name(db, item.rarity),
+                tail, ItemText.EFFECT_PENDING, item.desc, foot);
+        }
+
+        // 查不到就**不浮**（给空数组，`HoverCard.show_now()` 会当场收掉）——比浮一张空卡好
+        return System.Array.Empty<string>();
+    }
+
+    /// <summary>品阶的中文名（照 `rarity_def` 读；查不到退回 id，与面板那些取值口同一口径）。</summary>
+    private static string _rarity_name(TableDb db, string rarity_id)
+    {
+        Resource row = db.get_row("rarity_def", rarity_id);
+        return row is RarityDefRow typed ? typed.name_cn : rarity_id;
+    }
+
+    /// <summary>武器类型的中文名（剑／拳／刀…；空串＝这件装备不是武器，那一截不摆）。</summary>
+    private static string _weapon_type_name(TableDb db, string weapon_type)
+    {
+        if (weapon_type.Length == 0)
+        {
+            return "";
+        }
+
+        Resource row = db.get_row("weapon_type_def", weapon_type);
+        return row is WeaponTypeDefRow typed ? typed.name_cn : "";
+    }
 
     /// <summary>拼一行次要字：**跳过空的那几截**（不摆「· · 凡品」这种空位）。</summary>
     private static string join(params string[] parts)

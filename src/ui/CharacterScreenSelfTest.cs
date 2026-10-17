@@ -318,6 +318,24 @@ public partial class CharacterScreen
         lines.Add(LayoutBudget.ascii_line(this));
         ok = ok && LayoutBudget.has_opaque_backdrop(this);
         lines.Add(LayoutBudget.ascii_backdrop_line(this));
+        // 新增的「道具使用 · 选人」弹窗（清单 §二-3）也是浮层，同样要过版式预算——**在开着的状态下量**
+        // （弹窗懒建：不开连节点都没有）。量它那块面板的最小尺寸有没有顶破 1152×648，两方向都要过；
+        // 量完关掉，别影响后面几条。
+        string field_item = _first_field_item_id();
+        bool use_modal_ok = true;
+        if (field_item.Length > 0)
+        {
+            open_use_item(field_item);
+            var use_window = FindChild("UseWindow", true, false) as Control;
+            Vector2 use_min = use_window != null ? use_window.GetCombinedMinimumSize() : Vector2.Zero;
+            use_modal_ok = use_modal_open() && use_window != null
+                && use_min.X <= 1152 && use_min.Y <= 648;
+            lines.Add($"道具使用弹窗 {use_min.X:F0}×{use_min.Y:F0}（限 1152×648）");
+            close_use_item();
+        }
+
+        ok = ok && use_modal_ok;
+        lines.Add($"道具使用弹窗〔开得起来 ＋ 版式塞得进〕={_bool(use_modal_ok)}");
         // 顶部「剩余配额」那一行（设计 14 §三条共性要求）：铜钱／经验／难度 ＋ **天赋**
         // （属性点的「未分配」在五维表头那一行）。天赋写「已选 + 花了几点」而不是「剩余」——
         // 它创建时就定死了，写「剩余」会让玩家以为还能加。
@@ -587,5 +605,23 @@ public partial class CharacterScreen
         {
             tree.Quit(ok ? 0 : 1);
         }
+    }
+
+    /// <summary>
+    /// 表里第一件 `use_context=field` 的药（清单 §二-3 那一屏的对象）；没有就给空串——
+    /// 那种情况下「弹窗开得起来」那条按过算（没有可开的东西不是这一屏的错）。
+    /// </summary>
+    private string _first_field_item_id()
+    {
+        foreach (Variant row_value in Db.rows("item_base"))
+        {
+            var row = row_value.AsGodotObject() as ItemBaseRow;
+            if (row != null && row.use_context == "field")
+            {
+                return row.item_id;
+            }
+        }
+
+        return "";
     }
 }

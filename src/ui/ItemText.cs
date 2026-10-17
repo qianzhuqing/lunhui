@@ -13,6 +13,12 @@ namespace Lunhui.Ui;
 public static class ItemText
 {
     /// <summary>
+    /// 道具「效果」那一行的**唯一措辞**：`item_base` 还没有效果数值列（Q33 未定），
+    /// **编一个数出来比留一句实话更糟**。行囊详情、商店货架与 NPC 面板的小卡都读它一处。
+    /// </summary>
+    public const string EFFECT_PENDING = "效果待补（配表还没有效果数值列）";
+
+    /// <summary>
     /// 道具类型的玩家可见名。取值与 `TableValidator.ITEM_TYPES` 同一套；
     /// **背包分类标签那六个词不从这里来**——分类是归组，与 `item_type` 不是一对一
     /// （钥匙那一档按 `is_key_item` 判，而铁镐的 `item_type` 是 `tool`）。

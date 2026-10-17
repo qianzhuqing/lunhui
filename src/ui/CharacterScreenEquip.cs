@@ -97,15 +97,21 @@ public partial class CharacterScreen
             string meta_text = empty
                 ? $"{slot_label} · 可装"
                 : $"{slot_label} · {panel.rarity_name(base_row.rarity)}";
-            string tooltip = empty
-                ? $"{slot_label}：空着，点它看看背包里有什么能装"
-                : $"{name_text}　{meta_text}　{_s(row, "summary")}";
             Button button = _make_button(
                 $"SlotButton{slot_id}_{index}",
                 $"{name_text}　{meta_text}",
                 () => press_slot(slot_id, index));
             button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            button.TooltipText = tooltip;
+            // 穿着东西的槽位：**原生提示退休、换自绘小卡**（清单 §二-5 ＋ §二-12）——
+            // 两套一起摆会叠着弹。空槽没有装备可摆，那句「点它看看背包里有什么能装」留在原生提示里。
+            if (empty || base_row == null)
+            {
+                button.TooltipText = $"{slot_label}：空着，点它看看背包里有什么能装";
+            }
+            else
+            {
+                _hover().watch(button, () => _equip_hover_rows(panel, base_row, _s(row, "affix_summary")));
+            }
             if (!empty && base_row != null)
             {
                 button.AddThemeColorOverride("font_color", new Color(panel.rarity_color(base_row.rarity)));
@@ -129,6 +135,21 @@ public partial class CharacterScreen
         }
 
         return col;
+    }
+
+    /// <summary>
+    /// 七槽那一行悬停要说的字（清单 §二-12 的装备卡：名称 ／ `类型 · 部位 · 品阶` ／ 属性行 ／ 词条行）——
+    /// **与中栏详情同一处数据**：武器类型走 `weapon_type_name_of`、品阶走 `rarity_name`、
+    /// 属性行走 `equipment_summary`、词条走槽位行自带的 `affix_summary`，界面不另算一套。
+    /// 槽位名照 `equip_slot_def.name_cn` 读（清单 §二-5：槽位名别在界面里再抄一份）。
+    /// </summary>
+    private string[] _equip_hover_rows(CharacterSheet panel, EquipBaseRow base_row, string affix_summary)
+    {
+        Resource slot_row = Db.get_row("equip_slot_def", base_row.slot);
+        string slot_name = slot_row != null ? slot_row.Get("name_cn").AsString() : "";
+        return HoverCardText.equip_card(
+            base_row.name_cn, panel.weapon_type_name_of(base_row), slot_name,
+            panel.rarity_name(base_row.rarity), panel.equipment_summary(base_row), affix_summary);
     }
 
     /// <summary>

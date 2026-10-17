@@ -276,6 +276,12 @@ public partial class SkillLoadout : RefCounted
             return _gate(false, "已经装配");
         }
 
+        // 与**普攻位**互斥（v16 起）：同一招不能两处都装——反方向的那一条在 `can_set_basic()` 里
+        if (basic_id() == skill_id)
+        {
+            return _gate(false, "这一招已经装在普攻位上了（同一个招式不能两处都装）");
+        }
+
         if (row.is_active())
         {
             if (!accepts_current_weapon(row))
@@ -312,6 +318,81 @@ public partial class SkillLoadout : RefCounted
     public bool accepts_current_weapon(Resource row) =>
         row is SkillBaseRow skill
         && (skill.accepts_any_weapon() || skill.weapon_type == equipped_weapon_type());
+
+    // ------------------------------------------------------------------ 普攻位（v16 起，设计 04 §武学页三块玩家配置）
+
+    /// <summary>普攻位装着哪一招（空串＝照旧用系统普攻）。</summary>
+    public string basic_id() =>
+        _state != null && _state.Call("loadout_of", char_id).AsGodotDictionary().ContainsKey("basic")
+            ? _state.Call("loadout_of", char_id).AsGodotDictionary()["basic"].AsString()
+            : "";
+
+    /// <summary>
+    /// 普攻位能不能装这一招：`{ok, error}`。四条判定（设计 04）：
+    /// **已学**、**是免费招**（`qi_cost = 0` 且 `cooldown = 0`——"替换普攻"那一档）、
+    /// **与招式位互斥**（同一招不能两处都装）、**受武器类型限制**（与招式同一条口径）。
+    /// </summary>
+    public Godot.Collections.Dictionary can_set_basic(string skill_id)
+    {
+        if (_db.get_row("skill_base", skill_id) is not SkillBaseRow row)
+        {
+            return _gate(false, $"没有这部武学：{skill_id}");
+        }
+
+        if (!is_learned(skill_id))
+        {
+            return _gate(false, $"还没学会（来源：{source_label(row)}）");
+        }
+
+        if (basic_id() == skill_id)
+        {
+            return _gate(false, "这一招已经装着当普攻了");
+        }
+
+        if (_contains(active_ids(), skill_id))
+        {
+            return _gate(false, "这一招已经装在招式位上（同一个招式不能两处都装）");
+        }
+
+        if (_db.get_row("skill_active", skill_id) is not SkillActiveRow active)
+        {
+            return _gate(false, "这不是招式，装不到普攻位上");
+        }
+
+        if (active.qi_cost != 0 || active.cooldown != 0)
+        {
+            return _gate(false, $"只有免费招能当普攻（这一招要 {active.qi_cost} 气" +
+                (active.cooldown > 0 ? $"、冷却 {active.cooldown} 回合" : "") + "）");
+        }
+
+        if (!accepts_current_weapon(row))
+        {
+            string have = equipped_weapon_type();
+            return _gate(
+                false,
+                $"武器不符（需要{weapon_type_name(row.weapon_type)}，"
+                + (have.Length == 0 ? "当前没拿武器" : $"当前拿的是{weapon_type_name(have)}")
+                + "）");
+        }
+
+        return _gate(true, "");
+    }
+
+    /// <summary>装修／卸下普攻位（空串＝卸下，回到系统普攻）。`{ok, error}`。</summary>
+    public Godot.Collections.Dictionary set_basic(string skill_id)
+    {
+        if (skill_id.Length > 0)
+        {
+            Godot.Collections.Dictionary gate = can_set_basic(skill_id);
+            if (!gate["ok"].AsBool())
+            {
+                return gate;
+            }
+        }
+
+        _state.Call("set_basic_skill", char_id, skill_id);
+        return _gate(true, "");
+    }
 
     public int passive_slot_cost(string skill_id) =>
         _db.get_row("skill_passive", skill_id) is SkillPassiveRow row ? row.slot_cost : 0;

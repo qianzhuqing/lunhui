@@ -316,16 +316,25 @@ public partial class TestBuffIntegration : TestCase
             sim.passive_cast_options(caster)[0].AsGodotDictionary()["buff_name"].AsString().Contains("运功"),
             "按钮上写明催动后会拿到什么");
 
-        // 道具：`use_context=battle` 的两件列得出来，但**效果列还没配**，必须写明而不是假装能用
+        // 道具：`use_context=battle` 的两件列得出来，**能不能用按 Q33 那三列判**（2026-10-13 三列落表）
         (state.inventory as Inventory).add_item(db, "item_potion_small", 2);
         Godot.Collections.Array items = sim.battle_item_options(state.inventory as Inventory);
         CheckEq(items.Count, 2, "战斗道具两件（金创药／回气散）");
         CheckEq(items[0].AsGodotDictionary()["name"].AsString(), "金创药", "道具用中文名");
         CheckEq(items[0].AsGodotDictionary()["qty"].AsInt32(), 2, "数量从背包读");
-        CheckFalse(items[0].AsGodotDictionary()["usable"].AsBool(), "效果列未配 → 不可用（不假装能回血）");
         CheckTrue(
-            items[0].AsGodotDictionary()["reason"].AsString().Contains("效果"),
-            $"不可用的原因写清是效果没配：{items[0].AsGodotDictionary()["reason"].AsString()}");
+            items[0].AsGodotDictionary()["usable"].AsBool(),
+            "有数量、也配了效果（金创药回气血）→ 可用");
+        CheckEq(
+            items[0].AsGodotDictionary()["reason"].AsString(), "",
+            "能用就别写原因（原因只留给「用不了」的那种）");
+
+        // 身上没有的那种：**不可用，而且原因写清是「没有了」**（不是"效果没配"）
+        Godot.Collections.Array none = sim.battle_item_options(new Inventory());
+        CheckFalse(none[0].AsGodotDictionary()["usable"].AsBool(), "身上没有 → 不可用");
+        CheckTrue(
+            none[0].AsGodotDictionary()["reason"].AsString().Contains("没有"),
+            $"原因写清是「没有了」：{none[0].AsGodotDictionary()["reason"].AsString()}");
     }
 
     /// <summary>进场 buff（`on_battle_start`，整场有效）在 setup 时就挂上：药王玉佩给气血回复 +3。</summary>

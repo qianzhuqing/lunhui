@@ -364,12 +364,14 @@ public partial class BattleScreen
         {
             Godot.Collections.Dictionary option = option_variant.AsGodotDictionary();
             string item_id = _s(option, "item_id");
+            // Q33 三列落表之后（2026-10-13）：能不能按就是真判定（有数量 ＋ 三列里至少有一条），
+            // 真没配的那种才置灰并把原因写在按钮上——**列表照样列出来**，玩家看得见自己有什么。
+            bool usable = _b(option, "usable");
             string text = $"{_s(option, "name")} ×{_i(option, "qty")}（{_s(option, "desc")}）"
-                + $"　— {_s(option, "reason")}";
-            // 道具的效果数值列还没配（设计 08 Q89 的读取端等 Q33），所以按钮一律置灰、
-            // 理由写在按钮上——但**列表照样列出来**，玩家看得见自己有什么。
+                + (usable ? "" : $"　— {_s(option, "reason")}");
+            string wanted = item_id;
             _skill_row.AddChild(_make_button(
-                $"ItemButton_{item_id}", text, () => press_item_list(), true));
+                $"ItemButton_{item_id}", text, () => press_item(wanted), !usable));
         }
     }
 

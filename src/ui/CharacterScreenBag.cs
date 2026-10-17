@@ -54,8 +54,6 @@ public partial class CharacterScreen
 
     private void _rebuild_bag()
     {
-        // 格子马上要被整批换掉，先把手上的小卡收了——不然它会继续指着已经不在树上的那一格
-        _bag_hover?.hide_now();
         _clear(_bag_box);
         GodotObject st = current_state();
         Inventory inventory = st?.Get("inventory").As<Inventory>();
@@ -393,11 +391,17 @@ public partial class CharacterScreen
         string item_id = selected.item_id;
         string instance_id = selected.instance_id;
         bool is_equip = selected.is_equip();
+        bool uses_modal = _bag_uses_modal(selected);
         actions.AddChild(_make_button("BagUseButton", action, () =>
         {
             if (is_equip)
             {
                 equip_instance(instance_id);
+            }
+            else if (uses_modal)
+            {
+                // 战斗外能用的药走「道具使用 · 选人」弹窗（清单 §二-3）：选人 ＋ 预览 ＋ 使用
+                open_use_item(item_id);
             }
             else
             {
@@ -490,10 +494,31 @@ public partial class CharacterScreen
             return _b(gate, "ok") ? "" : _s(gate, "error");
         }
 
-        // 丹药这类：`item_base` 还没有效果数值列（Q33），先置灰并把话说清楚，别让玩家点了没反应
+        // 「使用」走得通的是 `field`（战斗外用的药）——它打开「道具使用 · 选人」弹窗，
+        // 置灰与否由弹窗里那枚按钮自己说（数值列还没配，见 Q33）。
+        // `battle` 那两味（小还丹／回气散）是战斗里用的，面板上直说，别让玩家点了没反应。
+        if (row.use_context == "field")
+        {
+            return "";
+        }
+
         return row.use_context.Length > 0
-            ? "这件道具的效果数值还没接，先别用（效果待补）"
+            ? "这件要在战斗里用（非战斗用不上）"
             : "这件暂时没有可用的动作，先看描述";
+    }
+
+    /// <summary>
+    /// 这一件的「使用」走不走弹窗（清单 §二-3）：**只有 `use_context=field` 那一类**。
+    /// 装备走换上、秘籍走研读、`battle` 那两味在战斗里用——三条都不进这个弹窗。
+    /// </summary>
+    private bool _bag_uses_modal(BagEntry entry)
+    {
+        if (entry.is_equip())
+        {
+            return false;
+        }
+
+        return Db.get_row("item_base", entry.item_id) is ItemBaseRow row && row.use_context == "field";
     }
 
     private bool _bag_is_key_item(BagEntry entry)
@@ -557,17 +582,20 @@ public partial class CharacterScreen
         }
 
         return HoverCardText.item_card(
-            entry.name, type_text, rarity, entry.count,
+            entry.name, type_text, rarity, $"剩 {entry.count}",
             _bag_effect_text(entry, sheet_panel), _bag_desc_text(entry),
             // 脚注写**真话**：这一屏左键是选中，动作在右侧详情那两个按钮上
             // （清单原文的「左键使用 · 右键丢弃」与现状不符，已记进交接待策划回话）
             "左键选中 · 右侧按钮使用／丢弃");
     }
 
-    /// <summary>行囊这一屏共用的那张悬停小卡（第一次用到时才建，挂在本屏根节点上）。</summary>
-    private HoverCard _hover() => _bag_hover ??= HoverCard.make(this, "BagHoverCard");
+    /// <summary>
+    /// 这一屏共用的那张悬停小卡（第一次用到时才建，挂在本屏根节点上）——**四个页签共用一张**：
+    /// 卡是"指着某一格"的临时件，多建几张只会有几张同时亮着的风险。
+    /// </summary>
+    private HoverCard _hover() => _hover_card ??= HoverCard.make(this, "HoverCard");
 
-    private HoverCard _bag_hover;
+    private HoverCard _hover_card;
 
     /// <summary>效果行：**没有数值列就直说「效果待补」**——印一个编出来的数字比留白更糟
     /// （`item_base` 的效果数值列是 `待策划确认.md` Q33）。装备的效果行走词条。</summary>
@@ -579,7 +607,7 @@ public partial class CharacterScreen
             return affix.Length > 0 ? $"词条：{affix}" : "无词条";
         }
 
-        return "效果待补（配表还没有效果数值列）";
+        return ItemText.EFFECT_PENDING;
     }
 
     private string _bag_desc_text(BagEntry entry)

@@ -79,6 +79,9 @@ public partial class BattleSimulator : RefCounted
      * 用开发侧常数并在交接表登记请设计补列——别让它变成第二份没人管的数值。
      */
     public const string BASIC_ATTACK_ID = "__basic_attack__";
+
+    /// <summary>中毒的 `status_effect` 行 id：满级签名「引毒」要给普攻补这一条（普攻不落表、没有 status_id）。</summary>
+    public const string POISON_STATUS_ID = "poison";
     public const double BASIC_ATTACK_POWER = 1.0;
     public const int BASIC_ATTACK_POISE = 8;
 
@@ -285,6 +288,21 @@ public partial class BattleSimulator : RefCounted
         }
         _rounds += 1;
         _log.Add($"—— 第 {_rounds} 回合 ——");
+        // 满级签名「百草」：**每回合开始清掉自身 1 层减益**（设计 08）。放在这里而不是"轮到自己时"——
+        // 它是"回合开始"的规则，玩家在预兆那一拍就该看到层数掉了。
+        foreach (Variant actor_variant in _both_sides())
+        {
+            var cleanser = (BattleActor)actor_variant.AsGodotObject();
+            if (cleanser.is_alive() && cleanser.mastery_marker("cleanse_one") > 0.0)
+            {
+                int removed = cleanser.cleanse_one_debuff();
+                if (removed > 0)
+                {
+                    _log.Add($"R{_rounds} {cleanser.display_name} 的满级签名清掉 1 层减益");
+                }
+            }
+        }
+
         _order = turn_order(_allies, _enemies);
         if (_rounds == 1 && _encounter != null && _encounter.first_side >= 0)
         {
@@ -460,7 +478,7 @@ public partial class BattleSimulator : RefCounted
                 // 架势、异常状态、斩杀规则都只写一份，免得两条路行为不一致
                 _act_once(actor, skill, (BattleActor)target_variant.AsGodotObject());
             }
-            actor.spend_qi((int)skill.Get("qi_cost").AsInt32());
+            _spend_skill_qi(actor, skill);
             _apply_cast_grants(actor, skill);
         }
         _finish_round();

@@ -351,6 +351,43 @@ public partial class BattleScreen
         return new Godot.Collections.Dictionary { { "ok", true }, { "mode", _panel_mode } };
     }
 
+    /// <summary>
+    /// 用一件战斗道具（六指令之一）：走 `sim.use_item()`——效果是 Q33 那三列
+    /// （回气血／回内力／解异常），**花一次行动**。
+    /// </summary>
+    public Godot.Collections.Dictionary press_item(string item_id)
+    {
+        take_over();
+        GodotObject actor = _begin_round_for_command();
+        if (actor == null)
+        {
+            return new Godot.Collections.Dictionary { { "ok", false }, { "error", "现在不是我方行动" } };
+        }
+
+        GodotObject inventory = current_state()?.Get("inventory").AsGodotObject();
+        Godot.Collections.Dictionary result =
+            sim.Call("use_item", actor, item_id, inventory).AsGodotDictionary();
+        Godot.Collections.Array lines = _command_lines.Duplicate();
+        lines.AddRange(_v(result, "lines").AsGodotArray());
+        if (!_b(result, "ok"))
+        {
+            lines.Add($"用不了：{_s(result, "error")}");
+        }
+
+        _append_log(lines);
+        _set_status(_b(result, "ok")
+            ? $"{actor.Get("display_name").AsString()} 用了道具"
+            : $"用不了：{_s(result, "error")}");
+        _panel_mode = "";
+        if (_sim_finished())
+        {
+            _settle();
+        }
+
+        _refresh();
+        return result;
+    }
+
     /// <summary>招式指令：把**贴底展开浮层**切出来（22 §1.6：与指令行互斥，用完就收）</summary>
     public Godot.Collections.Dictionary press_skill_list()
     {

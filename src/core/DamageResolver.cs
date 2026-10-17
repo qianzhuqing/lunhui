@@ -53,6 +53,12 @@ public partial class DamageResolver : RefCounted
     /// enemy_base 没有暴击伤害列，敌人先统一用这个加成（0.5 = 暴击 +50%）。
     public const double DEFAULT_CRIT_DMG = 0.5;
 
+    /// <summary>满级签名「不还」最多按**几条**减益算（设计 08：上限 +24% ＝ 3 × 8%）。</summary>
+    public const int MASTERY_MAX_DEBUFFS = 3;
+
+    /// <summary>满级签名「铁骨」的血线（设计 08：气血 **&lt;30%** 时减伤 +20%）。</summary>
+    public const double MASTERY_LOW_HP_THRESHOLD = 0.30;
+
     public const string DEFAULT_ELEMENT = "external";
 
     /// <summary>
@@ -191,10 +197,40 @@ public partial class DamageResolver : RefCounted
     /// </summary>
     public double hit_chance(GodotObject attacker, GodotObject defender)
     {
+        // 内功满级签名（设计 08）先加进来，再一起夹上下限——「定军」给攻方命中、「醉意」给守方闪避
+        double attacker_bonus = attacker is BattleActor atk ? atk.mastery_marker("parry_double") : 0.0;
+        double defender_bonus = 0.0;
+        if (defender is BattleActor def && def.has_debuff(_db))
+        {
+            defender_bonus = def.mastery_marker("dodge_when_debuffed");
+        }
+
         return System.Math.Clamp(
-            _accuracy_base(attacker) + _stat(attacker, "hit_rate", 0.0) - _stat(defender, "dodge_rate", 0.0),
+            _accuracy_base(attacker) + _stat(attacker, "hit_rate", 0.0) + attacker_bonus
+                - _stat(defender, "dodge_rate", 0.0) - defender_bonus,
             HIT_CHANCE_MIN,
             HIT_CHANCE_MAX);
+    }
+
+    /// <summary>
+    /// 满级签名「腐肌」（设计 08）：**中毒目标外功防御 −N%**。挂在**攻方**身上（是它那部内功的签名），
+    /// 所以这一层要连着 attacker 一起看——`defense_value()` 只认守方，够不着。
+    /// 直伤与持续伤害两条路各调一次（都在算完 `defense_value` 之后）。
+    /// </summary>
+    private double _mastery_defense_cut(GodotObject attacker, GodotObject defender, double raw_defense)
+    {
+        if (attacker is not BattleActor debuffer || defender is not BattleActor poisoned)
+        {
+            return raw_defense;
+        }
+
+        double cut = debuffer.mastery_marker("poison_def_down");
+        if (cut <= 0.0 || !poisoned.has_status(BattleSimulator.POISON_STATUS_ID))
+        {
+            return raw_defense;
+        }
+
+        return raw_defense * (1.0 - cut);
     }
 
     private double _accuracy_base(GodotObject actor)
@@ -299,7 +335,17 @@ public partial class DamageResolver : RefCounted
         bool hit = true;
         if (damage_type_row.can_dodge && !_mod_bool(modifiers, "force_hit"))
         {
-            hit = _rng.Call("chance", chance).AsBool();
+            // 满级签名「影」：每场**第一次**被攻击必定闪避（用掉就不再触发，所以不掷骰）
+            if (defender is BattleActor untouched && !untouched.first_dodge_used
+                && untouched.mastery_marker("first_dodge") > 0.0)
+            {
+                untouched.first_dodge_used = true;
+                hit = false;
+            }
+            else
+            {
+                hit = _rng.Call("chance", chance).AsBool();
+            }
         }
         if (!hit)
         {
@@ -330,8 +376,16 @@ public partial class DamageResolver : RefCounted
         bool crit = false;
         if (damage_type_row.can_crit)
         {
+            double crit_rate = _stat(attacker, "crit_rate", 0.0);
+            if (attacker is BattleActor crit_source && defender is BattleActor afflicted
+                && afflicted.has_affliction())
+            {
+                // 满级签名「忘忧」：打**带异常状态**的目标暴击率 +N（设计 08）
+                crit_rate += crit_source.mastery_marker("crit_vs_afflicted");
+            }
+
             crit = _mod_bool(modifiers, "force_crit")
-                || _rng.Call("chance", _stat(attacker, "crit_rate", 0.0)).AsBool();
+                || _rng.Call("chance", crit_rate).AsBool();
         }
         double crit_multiplier = crit ? crit_base_mult() + _crit_damage(attacker) : 1.0;
         double step_c = step_a * crit_multiplier;
@@ -341,7 +395,17 @@ public partial class DamageResolver : RefCounted
         // 5. 穿透压低有效防御，再算减免
         double pen_rate = System.Math.Clamp(
             _stat(attacker, "pen_rate", 0.0), 0.0, _stat_cap("pen_rate", PEN_RATE_CAP_DEFAULT));
-        double raw_defense = defense_value(defender, damage_type_row);
+        if (attacker is BattleActor pen_source && defender is BattleActor pen_target
+            && pen_target.hp >= pen_target.max_hp())
+        {
+            // 满级签名「开碑」：对**满血**目标穿透 +N（加完照 `stat_def` 的上限夹，别绕过上限）
+            pen_rate = System.Math.Clamp(
+                pen_rate + pen_source.mastery_marker("pen_vs_full"),
+                0.0,
+                _stat_cap("pen_rate", PEN_RATE_CAP_DEFAULT));
+        }
+        double raw_defense = _mastery_defense_cut(
+            attacker, defender, defense_value(defender, damage_type_row));
         double effective_defense = raw_defense * (1.0 - pen_rate);
         double reduction = defense_reduction(effective_defense, attacker.Get("level").AsInt32());
         double step_r = step_k * (1.0 - reduction);
@@ -366,10 +430,37 @@ public partial class DamageResolver : RefCounted
         // 7. 增伤 / 减伤（减伤是终局乘区：装备属性 + 临时效果）
         // 天赋「天生武胆」的招式伤害加成也落在**增伤**这一区（不是另插一步，九步顺序不动）
         double dmg_up = (1.0 + _mod_double(modifiers, "dmg_up")) * talent_skill_factor;
+        if (attacker is BattleActor up_source)
+        {
+            // 满级签名「不还」：自身**每个减益** +N 伤害，最多算三条（设计写的上限 +24% ＝ 3×8%）
+            double per_debuff = up_source.mastery_marker("dmg_per_debuff");
+            if (per_debuff > 0.0)
+            {
+                int counted = System.Math.Min(up_source.debuff_count(_db), MASTERY_MAX_DEBUFFS);
+                dmg_up += per_debuff * counted;
+            }
+
+            // 满级签名「知白」：同系别连招（这一招该吃的那一档；`_record_use()` 每次行动算一次，
+            // 所以群攻按目标数重复走这里也不会重复推进）
+            dmg_up *= 1.0 + up_source.chain_damage_bonus;
+        }
+
         double total_reduction = System.Math.Clamp(
             _stat(defender, "dmg_reduction", 0.0) + _mod_double(modifiers, "dmg_down"),
             0.0,
             _stat_cap("dmg_reduction", DMG_REDUCTION_CAP_DEFAULT));
+        if (defender is BattleActor guard)
+        {
+            // 满级签名「铁骨」：气血 **<30%** 时减伤 +N（与 `dmg_reduction` 同一层、同样照上限夹）
+            double low_hp_guard = guard.mastery_marker("dmg_reduction_low_hp");
+            if (low_hp_guard > 0.0 && guard.hp < guard.max_hp() * MASTERY_LOW_HP_THRESHOLD)
+            {
+                total_reduction = System.Math.Clamp(
+                    total_reduction + low_hp_guard,
+                    0.0,
+                    _stat_cap("dmg_reduction", DMG_REDUCTION_CAP_DEFAULT));
+            }
+        }
         double step_m = step_b * dmg_up * (1.0 - total_reduction);
         // 8. 随机浮动
         double variance = 1.0;
@@ -471,14 +562,18 @@ public partial class DamageResolver : RefCounted
         // 5 步：穿透压低有效防御，再按 damage_type 决定吃不吃防御
         double pen_rate = System.Math.Clamp(
             _stat(attacker, "pen_rate", 0.0), 0.0, _stat_cap("pen_rate", PEN_RATE_CAP_DEFAULT));
-        double raw_defense = defense_value(defender, damage_type_row);
+        double raw_defense = _mastery_defense_cut(
+            attacker, defender, defense_value(defender, damage_type_row));
         double reduction = defense_reduction(raw_defense * (1.0 - pen_rate), attacker.Get("level").AsInt32());
         step *= 1.0 - reduction;
         // 异常强度：智换算出来的 debuff_power
         step *= 1.0 + _stat(attacker, "debuff_power", 0.0);
         // 内伤抗性（stat_def.res_internal，01 文档写「抵抗内伤类效果」）：
         // 只作用在内伤类持续伤害上；04 没写它落在第几步，这里按「伤害减免乘区」处理
-        if (type_id == "dot_internal")
+        // 满级签名「蚀脉」：**自己的异常无视目标的对应抗性**（设计 08）——这里管内伤那一条
+        // （落位那条几率在 `BattleSimulatorSettle.status_chance()` 里，两处都得看这个标记）
+        if (type_id == "dot_internal"
+            && !(attacker is BattleActor piercer && piercer.mastery_marker("pierce_res") > 0.0))
         {
             step *= 1.0 - System.Math.Clamp(
                 _stat(defender, "res_internal", 0.0), 0.0, _stat_cap("res_internal", RES_INTERNAL_CAP_DEFAULT));

@@ -1,0 +1,31 @@
+﻿skill_id,mastery,target,value,note
+pf_xuanwei_01,10,effect:first_move_free,1,每场第一招不耗内力
+pf_xuanwei_02,10,effect:low_qi_regen_double,1,内力低于两成时回气翻倍
+pf_xuanwei_03,10,effect:poise_guard,0.5,受击时架势掉落减半
+pf_xuanwei_04,10,effect:hold_qi_double,1,本回合没出招则回合末回气翻倍
+pf_xuanwei_05,10,stat:extra_hit,1,招式段数 +1
+pf_wudu_01,10,effect:basic_poison,1,普攻也附带 1 层中毒
+pf_wudu_02,10,effect:poison_def_down,0.10,中毒层数上限 +1；中毒目标外功防御 −10%
+pf_wudu_03,10,effect:pierce_res,1,自己的异常无视目标对应抗性
+pf_wudu_04,10,effect:venom_burst,2,附加异常时直接 +2 层
+pf_heifeng_01,10,stat:basic_hit,1,普攻段数 +1
+pf_heifeng_02,10,effect:dmg_reduction_low_hp,0.20,气血低于三成时减伤 +20%
+pf_heifeng_03,10,stat:poise_break_mul,0.5,破架势 +50%
+pf_chensha_01,10,effect:no_break_window,1,被打进破绽时不吃那 50% 增伤
+pf_chensha_02,10,effect:block_counter,1,格挡成功后反击一次（不耗内力）
+pf_chensha_03,10,effect:pen_vs_full,0.15,对满血目标穿透 +15%
+pf_tieqiang_01,10,effect:initiative_push,1,出招后行动条前移（下回合插队）
+pf_tieqiang_02,10,effect:parry_double,0.20,命中 +20%；拆招成功时架势反涨翻倍
+pf_yaowang_01,10,effect:item_free_action,1,战斗中用药不消耗行动
+pf_yaowang_02,10,effect:once_survive,1,每场一次免死（留 1 点并回三成）
+pf_yaowang_03,10,effect:cleanse_one,1,每回合开始清掉自身 1 层减益
+pf_taixu_01,10,effect:ignore_internal_qi,1,内伤不再让内力回复减半
+pf_luohan_01,10,effect:thorns,0.30,受击时按自身外防三成反伤
+pf_drunk_01,10,effect:dodge_when_debuffed,0.15,身上有减益时闪避 +15%
+pf_drunk_02,10,effect:crit_vs_afflicted,0.25,打带异常状态的目标暴击率 +25%
+pf_yipian_01,10,effect:qi_refund,0.30,招式命中后回复该招气耗的三成
+pf_xuanwei_zhbai,10,effect:same_element_chain,0.15,同系别连招：第二招 +15%、第三招 +30%
+pf_chensha_buhuan,10,effect:dmg_per_debuff,0.08,自身每个减益 +8% 伤害（上限 +24%）
+pf_wudu_huandu,10,effect:poison_retaliate,1,受到毒伤时给对方叠等量中毒层数
+pf_qingluo_ying,10,effect:first_dodge,1,每场第一次被攻击必定闪避
+pf_tiaoxi_huichun,10,effect:low_hp_regen_double,1,气血低于一半时气血与内力回复翻倍

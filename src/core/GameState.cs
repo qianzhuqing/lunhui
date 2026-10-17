@@ -43,7 +43,13 @@ public partial class GameState : RefCounted
     ///            `custom_templates`（后者必须进存档：自建角色不在任何 CSV 里）。
     /// v14 → v15：加入 NPC 好感度（`npc_favor`）。设计 19 的赠礼／切磋／偷窃／兑换都会改它。
     /// </summary>
-    public const int VERSION = 15;
+    /// <summary>
+    /// 存档结构版本。**v15 → v16**（2026-10-13）：装配结构加了「普攻位」（`loadout.basic`），
+    /// 每角色再加一份**战斗外残留状态**（`char_statuses`，设计 04 §战斗外的残留状态）。
+    /// 按用户拍板：**P28～P31 那一批合并成一次升版、旧的读写不迁移**——读档时版本对不上就
+    /// 直说「这个存档来自旧版本，读不了」（`SaveStore.load_slot` 那一处），**不许静默丢档**。
+    /// </summary>
+    public const int VERSION = 16;
 
     /// <summary>
     /// 开局队伍人数上限。

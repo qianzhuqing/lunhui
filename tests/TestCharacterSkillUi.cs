@@ -94,7 +94,14 @@ public partial class TestCharacterUi
         var detail_header = screen.FindChild("SkillDetailHeader", true, false) as Label;
         CheckEq(detail_header?.Text, skill_base.name_cn, "点一格后详情栏写出它的名字");
         var cost = screen.FindChild("SkillDetailCostRowValue", true, false) as Label;
-        CheckEq(cost?.Text, active_row.qi_cost.ToString(), "详情写消耗内力");
+        // 详情写的**不是表里的裸值**，而是实际会扣的那个数（`qi_cost_mul` 乘过、非零下限 1）
+        // ——与战斗侧同一处算法（`SkillCost`），否则屏上写 16、战斗里只扣 10
+        int effective_cost = SkillCost.effective_qi_cost(db, active_row.qi_cost, true);
+        CheckEq(cost?.Text, effective_cost.ToString(), "详情写消耗内力（乘过系数的实际值）");
+        CheckEq(
+            SkillCost.effective_qi_cost(db, 0, true), 0, "0 气招仍是 0（不被下限抬成 1）");
+        CheckEq(
+            SkillCost.effective_qi_cost(db, 1, true), 1, "1 气招四舍五入后仍是 1（下限兜住）");
 
         // 系别：读 `element_def.name_cn`（外功／内功／奇诡）——**那一行不许写 external 这类 id**
         var element_def = db.get_row("element_def", active_row.element) as ElementDefRow;
@@ -116,7 +123,7 @@ public partial class TestCharacterUi
 
         // 段数是**这个角色手里**的段数（`hit_count ＋ extra_hit`，与战斗侧同一算法），不是表里的裸值
         int expect_hits = BattleSimulator.effective_hits_for(
-            active_row.skill_id, active_row.hit_count, panel.stat_value("extra_hit"));
+            active_row.skill_id, active_row.hit_count, panel.stat_value("extra_hit"), 0.0);
         var power = screen.FindChild("SkillDetailPowerRowValue", true, false) as Label;
         CheckEq(
             power?.Text,

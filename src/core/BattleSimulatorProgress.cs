@@ -74,6 +74,27 @@ public partial class BattleSimulator
         string skill_id = skill.Get("skill_id").AsString();
         uses[skill_id] = _i(uses, skill_id, 0) + 1;
         _skill_uses[actor_id] = uses;
+
+        // 满级签名读的当场状态：本回合出过招（周天：没出招就回合末回气翻倍）、
+        // 这一招还没退过气（遗篇：每次行动退一次，`_act_once` 是"每目标一次"）。
+        actor.acted_this_round = true;
+        actor.refunded_this_action = false;
+
+        // 满级签名「知白」的同系别连招（设计 08：第二招 +15%、第三招 +30%）——
+        // **每次行动**在这儿推进一次（`_act_once` 是"每个目标各一次"，放那里群攻会按目标数重复推进）；
+        // 普攻在上面就 return 了，所以它既不算一招也不打断连招（这条取舍写在 `BattleActor.chain_*` 上）。
+        string element = skill.Get("element").AsString();
+        if (element.Length == 0)
+        {
+            return;
+        }
+
+        actor.chain_count = element == actor.chain_element ? actor.chain_count + 1 : 1;
+        actor.chain_element = element;
+        double step = actor.mastery_marker("same_element_chain");
+        actor.chain_damage_bonus = step <= 0.0
+            ? 0.0
+            : (actor.chain_count >= 3 ? step * 2.0 : (actor.chain_count == 2 ? step : 0.0));
     }
 
     // ------------------------------------------------------------------ 共用小工具

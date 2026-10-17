@@ -139,17 +139,17 @@ public partial class TestBattleUi
             CheckNotNull(battle.FindChild(node_name, true, false), $"指令按钮 {node_name} 在场景里");
         }
 
-        // 道具指令：把 `use_context=battle` 的道具列出来，并如实写「效果列未配」（不假装能用）
+        // 道具指令：把 `use_context=battle` 的道具列出来——**能不能按按 Q33 三列判**
+        // （2026-10-13 三列落表）；真正按下去要花一次行动、把效果落在这人身上
+        (state.Get("inventory").As<Inventory>()).add_item(db, "item_potion_small", 2);
         battle.press_item_list();
         var potion = battle.FindChild("ItemButton_item_potion_small", true, false) as Button;
         CheckNotNull(potion, "道具指令列出战斗道具（金创药）");
         if (potion != null)
         {
-            CheckTrue(potion.Disabled, "效果列未配 → 道具置灰");
-            CheckTrue(potion.Text.Contains("效果"), $"按钮上写明原因：{potion.Text}");
+            CheckFalse(potion.Disabled, $"配了效果、身上也有 → 能按：{potion.Text}");
+            CheckFalse(potion.Text.Contains("—"), $"能用就不写原因那一截：{potion.Text}");
         }
-
-        battle.press_item_list(); // 切回招式
 
         // 内功指令：切出已装内功的按钮 → 催动 → 拿到运功 buff
         battle.press_inner_list();
@@ -263,6 +263,25 @@ public partial class TestBattleUi
                 ally_debuff.GetIndex(), ally_buff.GetIndex(),
                 $"减益排在增益前面（{ally_debuff.GetIndex()} < {ally_buff.GetIndex()}）");
         }
+
+
+        // **真用一口**：回气血（Q33 三列）、扣一件、**花掉这次行动**（用完轮到下一位）
+        actor.hp = System.Math.Max(1, actor.max_hp() - 30);
+        int potion_hp_before = actor.hp;
+        string actor_id = actor.actor_id;
+        Godot.Collections.Dictionary used = battle.press_item("item_potion_small");
+        CheckTrue(used["ok"].AsBool(), $"用药成功：{_D(used, "error")}");
+        CheckEq(
+            actor.hp, System.Math.Min(actor.max_hp(), potion_hp_before + 60),
+            "金创药回 60 气血（照 Q33 那列、上限截断）");
+        CheckEq(
+            (state.Get("inventory").As<Inventory>()).count("item_potion_small"), 1, "用掉一件");
+        var next_actor = _Sim(battle).current_actor() as BattleActor;
+        CheckTrue(
+            next_actor == null || next_actor.actor_id != actor_id,
+            "用药花掉这次行动（轮到下一位，不是白用）");
+
+        battle.press_item_list(); // 切回招式
 
         _DropBattle(battle);
     }

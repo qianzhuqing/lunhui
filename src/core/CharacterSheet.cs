@@ -289,6 +289,110 @@ public partial class CharacterSheet : RefCounted
         return computed;
     }
 
+    /// <summary>
+    /// 某条派生数值的**来源拆解**（战斗属性那一行的悬停小卡用）：
+    /// `{ "base": double, "parts": [ {label, value} … ] }`。
+    ///
+    /// **为什么是「再算一遍」而不是手工累加**：属性点类贡献要过 `attr_to_stat` 的曲线，
+    /// 百分比类贡献是乘区——手工加减既会算错，也会在公式改动静默漂。这里的口径是：
+    /// 基础＝**不吃任何贡献**算一遍；然后**按来源分组**各算一遍「只吃这一组」的差额。
+    /// 代价是每组一次 `compute()`——一件装备最多几组、一屏几十次，量得起。
+    /// 对这一条数值没有影响的来源不占行（只加气血的腰带不会出现在外功攻击的来源里）。
+    /// </summary>
+    public Godot.Collections.Dictionary stat_breakdown(string stat_id)
+    {
+        double base_value = _computed_stat(new Godot.Collections.Array(), stat_id);
+        var labels = new System.Collections.Generic.List<string>();
+        var groups = new System.Collections.Generic.Dictionary<string, Godot.Collections.Array>();
+        foreach (Variant item in contributions())
+        {
+            Godot.Collections.Dictionary contribution = item.AsGodotDictionary();
+            string label = _source_label(
+                contribution.ContainsKey("source") ? contribution["source"].AsString() : "");
+            if (!groups.TryGetValue(label, out Godot.Collections.Array bucket))
+            {
+                bucket = new Godot.Collections.Array();
+                groups[label] = bucket;
+                labels.Add(label);
+            }
+
+            bucket.Add(contribution);
+        }
+
+        var parts = new Godot.Collections.Array();
+        foreach (string label in labels)
+        {
+            double delta = _computed_stat(groups[label], stat_id) - base_value;
+            if (delta == 0.0)
+            {
+                continue;
+            }
+
+            parts.Add(new Godot.Collections.Dictionary { { "label", label }, { "value", delta } });
+        }
+
+        return new Godot.Collections.Dictionary { { "base", base_value }, { "parts", parts } };
+    }
+
+    /// <summary>只吃指定贡献算出来的那一项（`stat_breakdown` 的两条腿都走它，别各写一份公式）。</summary>
+    private double _computed_stat(Godot.Collections.Array contributions, string stat_id)
+    {
+        Godot.Collections.Dictionary computed =
+            _calculator.compute(level, base_attrs(), allocations(), contributions, true);
+        return computed.ContainsKey(stat_id) ? computed[stat_id].AsDouble() : 0.0;
+    }
+
+    /// <summary>
+    /// 贡献的来源标签（小卡上要写中文，而**界面不许出现表内 id**，所以这里只给**类别词**）。
+    /// 认得出的是装备（含它自带的常驻 buff）／词条／内功／套装／图鉴／抉择／天赋；
+    /// 认不出的一律「其它」——**不猜**：猜错比说「其它」更糟（玩家会照着错的来源去找）。
+    /// </summary>
+    private string _source_label(string source)
+    {
+        if (source.StartsWith("set:"))
+        {
+            return "套装";
+        }
+
+        if (source.StartsWith("buff:"))
+        {
+            return "装备特效";
+        }
+
+        if (source.StartsWith("talent:"))
+        {
+            return "天赋";
+        }
+
+        if (source.Length == 0)
+        {
+            return "其它";
+        }
+
+        if (source == "codex")
+        {
+            return "图鉴";
+        }
+
+        if (_db.get_row("skill_passive", source) != null)
+        {
+            return "内功";
+        }
+
+        if (_db.get_row("affix_pool", source) != null)
+        {
+            return "词条";
+        }
+
+        if (_db.get_row("equip_base", source) != null)
+        {
+            return "装备";
+        }
+
+        Inventory inventory = _inventory();
+        return inventory != null && inventory.equipped_by(source).Count > 0 ? "装备" : "其它";
+    }
+
     /// <summary>招式槽上限（个数）与内功容量（容量点）</summary>
     public int active_slots() => _growth.active_slots(level, total_attrs());
 
@@ -359,11 +463,7 @@ public partial class CharacterSheet : RefCounted
         return row is StatDefRow typed ? typed.name_cn : stat_id;
     }
 
-    public string attribute_name(string attr_id)
-    {
-        Resource row = _db.get_row("attribute_def", attr_id);
-        return row is AttributeDefRow typed ? typed.name_cn : attr_id;
-    }
+    public string attribute_name(string attr_id) => attribute_name_of(_db, attr_id);
 
     // ------------------------------------------------------------------ 非战斗技能与判定
 
@@ -560,7 +660,14 @@ public partial class CharacterSheet : RefCounted
     }
 
     /// <summary>装备的关键属性摘要（前几条，供槽位与背包列表显示）。</summary>
-    public string equipment_summary(EquipBaseRow base_row)
+    public string equipment_summary(EquipBaseRow base_row) => equipment_summary_of(_db, base_row);
+
+    /// <summary>
+    /// 同一份摘要的**静态版**：菜单里没有 `CharacterSheet` 的场合也要这一句
+    /// （悬停小卡 `HoverCardText.of_base()` 就是——商店货架与 NPC 面板只有一张表，没有"某个角色"）。
+    /// 两份实现会漂（一处改了另一处不知道），所以只留这一个实现、实例版转调它。
+    /// </summary>
+    public static string equipment_summary_of(TableDb db, EquipBaseRow base_row)
     {
         if (base_row == null)
         {
@@ -573,7 +680,7 @@ public partial class CharacterSheet : RefCounted
             int value = attr_bonuses[attr_id].AsInt32();
             if (value != 0)
             {
-                parts.Add($"{attribute_name(attr_id.AsString())}+{value}");
+                parts.Add($"{attribute_name_of(db, attr_id.AsString())}+{value}");
             }
         }
         Godot.Collections.Dictionary stat_bonuses = base_row.stat_bonuses();
@@ -584,7 +691,7 @@ public partial class CharacterSheet : RefCounted
             {
                 continue;
             }
-            var row = _db.get_row("stat_def", stat_id.AsString()) as StatDefRow;
+            var row = db.get_row("stat_def", stat_id.AsString()) as StatDefRow;
             if (row != null && row.is_percent)
             {
                 parts.Add($"{row.name_cn}+{value * 100.0:0.0}%");
@@ -595,6 +702,13 @@ public partial class CharacterSheet : RefCounted
             }
         }
         return parts.Count == 0 ? "无附加属性" : string.Join("、", parts);
+    }
+
+    /// <summary>七维的中文名（静态版；实例版转调它，两处不会漂）。</summary>
+    public static string attribute_name_of(TableDb db, string attr_id)
+    {
+        Resource row = db.get_row("attribute_def", attr_id);
+        return row is AttributeDefRow typed ? typed.name_cn : attr_id;
     }
 
     public string rarity_color(string rarity_id)

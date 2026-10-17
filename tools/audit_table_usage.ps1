@@ -55,6 +55,13 @@ $knownUnused = @{
     # npc_guard 的三列（npc_name_cn／peace_note／fight_note）与 recruit_def:join_note
     # 都已由 `GuardService.cs`／`recruit_service.gd` 真读——那四条白名单按约定删掉了。
     # 只剩木桩那两条常数（等设计给 enemy_base 行，见 Q52）。
+    # 【2026-10-13 本批在途】Q33 那三列与战斗外状态开关**表先落了、读取端还在路上**：
+    # 道具使用弹窗／战斗的道具指令读到 `heal_hp` 等（C2 段），`persist_out_of_battle`
+    # 由「战斗结束把残留状态带出战斗」那一处读。**接完就把这四条删掉**——留在这儿不许长住。
+    # `item_base` 那三列 2026-10-13 全部接上了：`heal_hp` 走战斗外的 `ItemUse.use_field()`，
+    # `heal_qi`／`clear_status` 走战斗内的 `BattleSimulatorActions.use_item()`（六指令之一）——
+    # 那三条白名单按约定删掉了。
+    "status_effect:persist_out_of_battle" = "**列留着、暂时没有读取端**：用户 2026-10-13 拍板「战斗内的中毒等异常、以及增益 buff，离开战斗就清除」——所以策划那套「战斗外残留状态」整个不做（`char_statuses` 那个存档字段也已撤掉）。这一列先留在表里当设计记录，等策划答复要不要删"
 }
 
 # 常数这一侧同理：木桩练习战（09 3.3）没做，两条上限先记在理由里。

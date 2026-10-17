@@ -284,6 +284,22 @@ public partial class GrowthCalculator : RefCounted
                     });
                 }
             }
+
+            // 内功满级签名里的 `stat:` 那几条（设计 08 §内功满级签名）：**熟练满级才给**，
+            // 走同一条贡献通道（source 同样是这部内功的 id）——战斗与面板因此自动一致。
+            // 「同一条数值多来源取最高」那条规则收在 `MasteryBonus.stat_bonuses()` 一处。
+            int mastery = (int)number_of(mastery_levels, skill_id);
+            Godot.Collections.Dictionary bonus_map = MasteryBonus.stat_bonuses(_db, skill_id, mastery);
+            foreach (Variant stat_key in bonus_map.Keys)
+            {
+                out_contribs.Add(new Godot.Collections.Dictionary
+                {
+                    { "kind", AttributeCalculator.CONTRIB_STAT_FLAT },
+                    { "target", stat_key.AsString() },
+                    { "value", bonus_map[stat_key] },
+                    { "source", skill_id },
+                });
+            }
         }
 
         return out_contribs;

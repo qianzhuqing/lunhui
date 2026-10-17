@@ -19,9 +19,13 @@ public partial class BattleSimulator
         Godot.Collections.Dictionary modifiers = _modifiers_for(actor);
         if (target.is_broken())
         {
-            // 破绽窗口：受到伤害提高（窗口由上一击打空架势产生）
-            modifiers["dmg_up"] = _f(modifiers, "dmg_up", 0.0)
-                + _combat_const("poise_break_bonus", POISE_BREAK_DAMAGE_BONUS);
+            // 破绽窗口：受到伤害提高（窗口由上一击打空架势产生）。
+            // **满级签名「厚土」例外**：被打进破绽的那一方若装着它，就不吃这 50%（设计 08）。
+            if (target.mastery_marker("no_break_window") <= 0.0)
+            {
+                modifiers["dmg_up"] = _f(modifiers, "dmg_up", 0.0)
+                    + _combat_const("poise_break_bonus", POISE_BREAK_DAMAGE_BONUS);
+            }
         }
         // 拆招：被读破的那一招整招伤害减半（设计 04）。乘在现有增伤之后再减半，
         // 免得「破绽增伤 +50%」和「拆招 −50%」在同一层互相抵消。
@@ -68,6 +72,21 @@ public partial class BattleSimulator
         if (target.is_broken())
         {
             _log.Add($"R{_rounds} {target.display_name} 的架势被打破，进入破绽！");
+        }
+
+        // 满级签名「遗篇·归元」：招式**命中后**回复该招气耗的三成（设计 08）。
+        // 放在"这一招打完"的位置（`landed > 0`）而不是逐段那一层：逐段退等于按段数翻倍，
+        // 而且群攻还有"每个目标各一次"——`refunded_this_action` 再兜一道，一次行动只退一次。
+        if (landed > 0 && !actor.refunded_this_action)
+        {
+            actor.refunded_this_action = true;
+            double refund = actor.mastery_marker("qi_refund");
+            if (refund > 0.0)
+            {
+                int cost = SkillCost.effective_qi_cost(
+                    _db, skill.Get("qi_cost").AsInt32(), actor.side == BattleActor.side_ally());
+                actor.gain_qi((int)System.Math.Floor(cost * refund));
+            }
         }
     }
 
@@ -175,8 +194,13 @@ public partial class BattleSimulator
         {
             _kill_styles[target.actor_id] = "normal";
         }
-        // 架势伤害 = 招式破架势值 + 攻击者的破架势派生数值
-        int poise_hit = skill.Get("poise_damage").AsInt32() + (int)actor.stat("poise_break");
+        // 架势伤害 = （招式破架势值 + 攻击者的破架势派生数值）×（1 + 破架势加成）
+        // ——`poise_break_mul` 是**比例**加成（内功满级签名「悍勇」给 +50%，`stat_def` 上限 0.5）：
+        // 它买的是"更快打空 → 抓破绽"，与 `poise_break` 那个加值不是一回事，所以一个乘一个加。
+        double poise_mul = 1.0 + actor.stat("poise_break_mul");
+        int poise_hit = (int)System.Math.Round(
+            (skill.Get("poise_damage").AsInt32() + actor.stat("poise_break")) * poise_mul,
+            System.MidpointRounding.AwayFromZero);
         target.take_poise_damage(poise_hit);
         // 命中触发（buff_grant.trigger=on_hit）：装备特效（淬毒指环）与招式自带的都在这发，逐段各一次
         _apply_hit_grants(actor, skill);
@@ -185,6 +209,23 @@ public partial class BattleSimulator
             : new Godot.Collections.Dictionary();
         // 异常状态：命中之后掷一次（伤害类型是 dot 的招式本身没有直伤，全靠这里挂层）
         Godot.Collections.Dictionary status_event = _apply_status(actor, target, skill, modifiers);
+        // 满级签名「引毒」：**普攻也附带 1 层中毒**（设计 08）——普攻本身不落表、也没有 status_id，
+        // 所以在这一层补一次，走同一条 add_status（层数上限、抗性、万蛊那些规则一条都不会绕过）
+        if (actor.mastery_marker("basic_poison") > 0.0
+            && skill.Get("skill_id").AsString() == BASIC_ATTACK_ID
+            && target.is_alive())
+        {
+            var poison_row = _db.get_row("status_effect", POISON_STATUS_ID) as StatusEffectRow;
+            if (poison_row != null)
+            {
+                double per_stack = _resolver.resolve_dot(
+                    actor, target, basic_attack_skill(), modifiers, poison_row.damage_type)["damage"].AsDouble();
+                target.add_status(
+                    POISON_STATUS_ID, actor.actor_id, per_stack,
+                    poison_row.max_stack, System.Math.Max(1, poison_row.duration), poison_row.extra_rule);
+            }
+        }
+
         // 斩杀规则：血量掉到阈值以下，剩余 DoT 立刻结算（combat_const.dot_execute_threshold）
         Godot.Collections.Array executed = _settle_execute(target);
         _events.Add(new Godot.Collections.Dictionary
@@ -299,7 +340,11 @@ public partial class BattleSimulator
         chance += _resolver.stat_of(actor, "debuff_chance", 0.0);
         // 抗性走 `BattleActor.resistance_of()`：**角色与敌人同一条派生数值**（stat_def.res_<status_id>），
         // 玩家练五毒心法也有毒抗（设计 0.12.0）。敌人行那份快照只是缺派生数值时的兜底。
-        chance *= 1.0 - System.Math.Clamp(target.resistance_of(status_id), 0.0, 1.0);
+        // **满级签名「蚀脉」例外**：装着它的攻方，自己的异常**无视目标的对应抗性**（设计 08）。
+        if (actor.mastery_marker("pierce_res") <= 0.0)
+        {
+            chance *= 1.0 - System.Math.Clamp(target.resistance_of(status_id), 0.0, 1.0);
+        }
         return System.Math.Clamp(chance, 0.0, 0.95);
     }
 
@@ -325,6 +370,12 @@ public partial class BattleSimulator
         var type_row = _db.get_row("damage_type", status_row.damage_type) as DamageTypeRow;
         int duration = status_row.duration;
         int max_stack = status_row.max_stack;
+        // 满级签名「腐肌」：**中毒**层数上限 +1（设计 08；"中毒目标外功防御 −10%"那一半在伤害管线里）
+        if (status_id == POISON_STATUS_ID)
+        {
+            max_stack += (int)actor.mastery_marker("poison_def_down");
+        }
+
         if (type_row != null)
         {
             duration = System.Math.Max(duration, type_row.base_duration);
@@ -347,6 +398,15 @@ public partial class BattleSimulator
         Godot.Collections.Dictionary applied = target.add_status(
             status_id, actor.actor_id, dot["damage"].AsDouble(),
             max_stack, duration, status_row.extra_rule, status_row.dispellable);
+        // 满级签名「万蛊」：**附加异常时直接 +N 层**（设计 08，表里填 2）——
+        // 走同一条 `add_status` 再加几次，层数上限与刷新规则一条都不会绕过去。
+        int burst = (int)actor.mastery_marker("venom_burst");
+        for (int extra = 0; extra < burst; extra++)
+        {
+            applied = target.add_status(
+                status_id, actor.actor_id, dot["damage"].AsDouble(),
+                max_stack, duration, status_row.extra_rule, status_row.dispellable);
+        }
         _log.Add(
             $"R{_rounds} {actor.display_name} 让 {target.display_name} 中了{_status_name(status_row)}"
             + $" ×{applied["stacks"].AsInt32()}（每层 {(int)dot["damage"].AsDouble()}，持续 {duration} 回合）"
@@ -450,6 +510,8 @@ public partial class BattleSimulator
             var actor = (BattleActor)actor_variant.AsGodotObject();
             actor.end_of_round_regen();
             actor.end_of_round_poise();
+            // 周天那条读的是"**本回合**出过招没有"，所以回合末结算完才清（清早了它就永远算"没出招"）
+            actor.acted_this_round = false;
         }
         _tick_buffs();
         _tick_statuses();

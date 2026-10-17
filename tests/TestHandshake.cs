@@ -68,6 +68,8 @@ public abstract partial class TestHandshake : TestCase
         "TestCharacterBagUi.cs",
         "TestCharacterEquipUi.cs",
         "TestCharacterSkillUi.cs",
+        "TestCharacterHoverUi.cs",
+        "TestDamageMastery.cs",
         "TestSaveMigrationBase.cs", "TestTablePipelineBase.cs",
         "FailingProbe.cs", "FailingSaveStore.cs", "UnwritableSaveStore.cs",
     };
@@ -238,6 +240,7 @@ public abstract partial class TestHandshake : TestCase
     {
         // 20 号 §九 那张支线表要新增的行（表还没落，见 `待策划确认.md` Q72／Q73）
         "npc_quest.nq_yan_01",
+
     };
 
     /// <summary>
@@ -352,7 +355,8 @@ public abstract partial class TestHandshake : TestCase
         // `has_state` 2026-10-11 随 `src/autoload/GameSession.cs` 搬来 C#，**这条留着不动**：
         // 这道门的 C# 正则认得出 `public bool has_state()`（只认不出 `public static`），删了当场红（实测）。
         { "has_state", "查询" },
-        { "has_status", "查询" },
+        // `has_status` 2026-10-13 从这份白名单里**删掉**了：满级签名「腐肌」在伤害管线里真读它
+        // （中毒目标外防 −10% 那个判定），游戏路径有调用方——门限要求"接上了就删掉这一条"。
         { "hp_ratio", "查询" },
         { "kill_style_of", "查询" },
         { "checks_for_region", "查询" },

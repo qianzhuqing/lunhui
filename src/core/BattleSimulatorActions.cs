@@ -34,7 +34,7 @@ public partial class BattleSimulator
             _start_cooldown(actor, skill);
             _log.Add($"R{_rounds} {actor.display_name} 施放 {_skill_name(skill)}（增益）");
             _apply_cast_grants(actor, skill);
-            actor.spend_qi(skill.Get("qi_cost").AsInt32());
+            _spend_skill_qi(actor, skill);
             _order_index += 1;
             if (_order.Count > 0 && current_actor() == null)
             {
@@ -49,7 +49,7 @@ public partial class BattleSimulator
         {
             _act_once(actor, skill, (BattleActor)hit_target_variant.AsGodotObject());
         }
-        actor.spend_qi(skill.Get("qi_cost").AsInt32());
+        _spend_skill_qi(actor, skill);
         _apply_cast_grants(actor, skill);
         _order_index += 1;
         // 只有「本来就在回合里」才结算回合末：没有 begin_round 就调 act（用例／脚本直接出招）
@@ -59,6 +59,25 @@ public partial class BattleSimulator
             _finish_round();
         }
         return _slice(_log, from_index);
+    }
+
+    /// <summary>
+    /// 出一招扣多少内力：**四个扣气点都走这里**（手选／自动／敌人那条路）——分散写就会出现
+    /// "某条路径忘了这条签名"。算法仍旧只有 `SkillCost` 一处（实际气耗＝表值 × 系数、只作用我方）；
+    /// 这里多加的是**满级签名「引气」**：每场第一招不耗内力（设计 08，用 `first_move_done` 记一次）。
+    /// </summary>
+    private void _spend_skill_qi(BattleActor actor, Resource skill)
+    {
+        int base_cost = skill.Get("qi_cost").AsInt32();
+        bool free_first = !actor.first_move_done && actor.mastery_marker("first_move_free") > 0.0;
+        actor.first_move_done = true;
+        if (free_first)
+        {
+            return;
+        }
+
+        actor.spend_qi(SkillCost.effective_qi_cost(
+            _db, base_cost, actor.side == BattleActor.side_ally()));
     }
 
     /// <summary>让当前单位按自动策略行动。</summary>
@@ -87,7 +106,7 @@ public partial class BattleSimulator
         {
             _act_once(actor, skill, (BattleActor)target_variant.AsGodotObject());
         }
-        actor.spend_qi(skill.Get("qi_cost").AsInt32());
+        _spend_skill_qi(actor, skill);
         _apply_cast_grants(actor, skill);
         _order_index += 1;
         if (current_actor() == null)
@@ -316,10 +335,12 @@ public partial class BattleSimulator
         int pool = actor.max_poise();
         if (pool > 0)
         {
-            actor.poise = System.Math.Min(
-                pool,
-                actor.poise + System.Math.Max(1, (int)System.Math.Round(
-                    pool * _combat_const("parry_poise_gain", PARRY_POISE_GAIN))));
+            // 满级签名「定军」：拆招成功时**架势反涨翻倍**（设计 08；这一条的命中加成在
+            // `DamageResolver.hit_chance()` 那一侧）
+            double parry_gain = _combat_const("parry_poise_gain", PARRY_POISE_GAIN)
+                * (1.0 + actor.mastery_marker("parry_double"));
+            int gain = System.Math.Max(1, (int)System.Math.Round(pool * parry_gain));
+            actor.poise = System.Math.Min(pool, actor.poise + gain);
         }
         var lines = new Godot.Collections.Array();
         lines.Add(
@@ -366,6 +387,25 @@ public partial class BattleSimulator
         return _basic_attack_row;
     }
 
+    /// <summary>
+    /// 这一下"普通攻击"用的是哪一行：**普攻位装了免费招就用它**（设计 04 §武学页三块玩家配置），
+    /// 空着才退回系统普攻那一行（`__basic_attack__`，不落表）。
+    ///
+    /// 装上去之后那三条差异**自动成立**：段数吃 `extra_hit`（`skill_id` 不再是普攻那条，
+    /// `effective_hits_for()` 自然走招式那一支）、计入招式使用记录（`_record_use` 上面那个
+    /// 普攻早返回只认 `__basic_attack__`）、武器类型限制（装配时 `can_set_basic` 就拦了一道）。
+    /// </summary>
+    private Resource basic_attack_skill_for(BattleActor actor)
+    {
+        string basic_id = actor != null ? actor.basic_skill_id : "";
+        if (basic_id.Length > 0 && _db.get_row("skill_active", basic_id) is SkillActiveRow row)
+        {
+            return row;
+        }
+
+        return basic_attack_skill();
+    }
+
     public Godot.Collections.Array basic_attack(BattleActor actor, BattleActor target)
     {
         if (actor == null || target == null || !target.is_alive())
@@ -373,7 +413,7 @@ public partial class BattleSimulator
             return new Godot.Collections.Array();
         }
         int from_index = _log.Count;
-        Resource skill = basic_attack_skill();
+        Resource skill = basic_attack_skill_for(actor);
         foreach (Variant hit_target_variant in _targets_for(actor, skill, target))
         {
             _act_once(actor, skill, (BattleActor)hit_target_variant.AsGodotObject());
@@ -584,18 +624,99 @@ public partial class BattleSimulator
             {
                 continue;
             }
+            int qty = inv != null ? inv.count(row.item_id) : 0;
+            // Q33 三列落表之后（2026-10-13），"能不能用"就是真判定：有数量、而且三列里至少有一条
+            bool has_effect = row.heal_hp > 0 || row.heal_qi > 0 || row.clear_status.Length > 0;
+            string reason = qty <= 0
+                ? "身上没有了"
+                : (has_effect ? "" : "这件道具还没配效果（效果数值三列都是空的）");
             out_arr.Add(new Godot.Collections.Dictionary
             {
                 { "item_id", row.item_id },
                 { "name", row.name_cn },
-                { "qty", inv != null ? inv.count(row.item_id) : 0 },
+                { "qty", qty },
                 { "desc", row.desc },
-                { "usable", false },
-                // 玩家可见：**不许出现表名／列名**（AGENTS 硬规矩）。设计还没给效果数值列，如实说一句人话。
-                { "reason", "效果数值还没配（等设计补）" },
+                { "usable", qty > 0 && has_effect },
+                { "reason", reason },
             });
         }
         return out_arr;
+    }
+
+    /// <summary>
+    /// 六指令之一「道具」：真用一件（`use_context = battle`）。返回 `{ok, error, lines}`。
+    ///
+    /// 效果读的是 Q33 那三列（回气血／回内力／解异常）——**不解析 `desc` 里那句中文**，
+    /// 与战斗外那条路（`ItemUse.use_field()`）同一套口径，免得"屏上写回 60、实际回 40"。
+    /// **花一次行动**（设计里"用药不消耗行动"是满级签名「养生」的丙档，还没接）；
+    /// 目标是**用的人自己**（六指令表没写目标选择）。
+    /// </summary>
+    public Godot.Collections.Dictionary use_item(BattleActor actor, string item_id, GodotObject inventory)
+    {
+        var lines = new Godot.Collections.Array();
+        Godot.Collections.Dictionary fail(string error) => new()
+        {
+            { "ok", false }, { "error", error }, { "lines", new Godot.Collections.Array() },
+        };
+
+        if (actor == null || !actor.is_alive())
+        {
+            return fail("这个人现在动不了");
+        }
+
+        if (_db.get_row("item_base", item_id) is not ItemBaseRow row || row.use_context != "battle")
+        {
+            return fail("这件道具在战斗里用不上");
+        }
+
+        var inv = inventory as Inventory;
+        if (inv == null || inv.count(item_id) <= 0)
+        {
+            return fail($"身上没有{row.name_cn}了");
+        }
+
+        if (row.heal_hp <= 0 && row.heal_qi <= 0 && row.clear_status.Length == 0)
+        {
+            return fail("这件道具还没配效果（效果数值三列都是空的）");
+        }
+
+        if (row.heal_hp > 0)
+        {
+            int healed = actor.heal(row.heal_hp);
+            lines.Add(healed > 0
+                ? $"{actor.display_name} 回了 {healed} 点气血（{actor.hp}/{actor.max_hp()}）"
+                : $"{actor.display_name} 的气血是满的，这一口没回上去");
+        }
+
+        if (row.heal_qi > 0)
+        {
+            int gained = actor.gain_qi(row.heal_qi);
+            lines.Add(gained > 0
+                ? $"{actor.display_name} 回了 {gained} 点内力（{actor.qi}/{actor.max_qi()}）"
+                : $"{actor.display_name} 的内力是满的，这一口没回上去");
+        }
+
+        if (row.clear_status.Length > 0)
+        {
+            int cleared = actor.clear_status(row.clear_status);
+            lines.Add(cleared > 0
+                ? $"{actor.display_name} 身上的{_status_name(row.clear_status)}解了"
+                : $"{actor.display_name} 身上没有{_status_name(row.clear_status)}（这一口白喝）");
+        }
+
+        inv.consume(item_id, 1);
+        _spend_action(actor);
+        return new Godot.Collections.Dictionary
+        {
+            { "ok", true }, { "error", "" }, { "lines", lines },
+        };
+    }
+
+    /// <summary>异常状态的中文名（照 `status_effect` 读；查不到给空串——战报里不印 id）。</summary>
+    private string _status_name(string status_id)
+    {
+        var row = _db.get_row("status_effect", status_id) as StatusEffectRow;
+        return row != null ? row.name_cn : "";
     }
 
     /// <summary>一次行动的收尾：轮到下一位；本回合跑完就结算回合末。</summary>

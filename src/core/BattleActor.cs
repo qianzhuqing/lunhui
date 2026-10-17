@@ -44,6 +44,12 @@ public partial class BattleActor : RefCounted
     /// <summary>内伤「内力回复减半」的兜底值，正常取自 `status_effect.qi_regen_mul`。</summary>
     public const double INTERNAL_QI_REGEN_FACTOR = 0.5;
 
+    /// <summary>满级签名「凝神」的血线：内力低于**两成**时回气翻倍（设计 08）。</summary>
+    public const double LOW_QI_REGEN_THRESHOLD = 0.2;
+
+    /// <summary>满级签名「回春」的血线：气血低于**一半**时气血与内力回复翻倍（设计 08）。</summary>
+    public const double LOW_HP_REGEN_THRESHOLD = 0.5;
+
     /// <summary>
     /// 架势（破防资源）。
     /// 敌人取自 `enemy_base.poise`；玩家没有对应列，先按「40 + 8×等级」给一条基线
@@ -127,6 +133,35 @@ public partial class BattleActor : RefCounted
     [Export] public Godot.Collections.Dictionary talent_rules { get; set; } = new();
 
     /// <summary>
+    /// 内功满级签名要用的**当场状态**（不进存档，一场一清）：
+    /// `chain_element`／`chain_count` 是「同系别连招」（知白）的连了几招，
+    /// `chain_damage_bonus` 是这一招该吃的加成（`_record_use()` 每**次行动**算一次，
+    /// 免得群攻招式按目标数重复推进连招）；`first_dodge_used` 是「每场第一次被攻击必定闪避」（影）
+    /// 用掉没有。三个都只由战斗侧读写。
+    /// </summary>
+    public string chain_element { get; set; } = "";
+
+    public int chain_count { get; set; } = 0;
+
+    public double chain_damage_bonus { get; set; } = 0.0;
+
+    public bool first_dodge_used { get; set; } = false;
+
+    /// <summary>内功满级签名要用的另两个当场状态：本回合出过招没有（周天读它）、
+    /// 这一场第一次出招用掉没有（引气读它）、这一招已经退过气没有（遗篇按"次行动"退一次）。</summary>
+    public bool acted_this_round { get; set; } = false;
+
+    public bool first_move_done { get; set; } = false;
+
+    public bool refunded_this_action { get; set; } = false;
+
+    /// <summary>
+    /// 普攻位装着哪一招（空串＝系统普攻）。由 `PartyBuilder` 从装配里带进来（v16 起，设计 04）。
+    /// 装上去之后它就是"普攻"那一手——吃 `extra_hit`、计入招式使用记录、受武器类型限制。
+    /// </summary>
+    public string basic_skill_id { get; set; } = "";
+
+    /// <summary>
     /// 异常状态（DoT）。按 04_战斗与伤害.md 的持续伤害规则：
     ///   同源同类叠层、刷新时长（键 = status_id + source_id，不同来源独立计算）；
     ///   每层伤害在**施加那一刻锁定**（快照制，增益掉光也照原值跳）。
@@ -194,7 +229,12 @@ public partial class BattleActor : RefCounted
     /// <summary>扣架势，返回实际扣掉的量；扣到 0 就进入破绽。</summary>
     public int take_poise_damage(int amount)
     {
-        int lost = System.Math.Min(System.Math.Max(amount, 0), poise);
+        // 满级签名「守一」：**受击时架势掉落减半**（设计 08；守着自己架势不被打空＝不给对手破绽窗口）
+        double guard = mastery_marker("poise_guard");
+        int scaled = guard > 0.0
+            ? (int)System.Math.Round(amount * (1.0 - guard), System.MidpointRounding.AwayFromZero)
+            : amount;
+        int lost = System.Math.Min(System.Math.Max(scaled, 0), poise);
         poise -= lost;
         if (poise <= 0 && !broken)
         {
@@ -237,6 +277,44 @@ public partial class BattleActor : RefCounted
 
     public int mastery_of(string skill_id) =>
         skill_mastery.ContainsKey(skill_id) ? skill_mastery[skill_id].AsInt32() : 0;
+
+    /// <summary>
+    /// 这个单位身上**装着的、已经练满的**内功有没有这条满级签名；返回它的数值（没有＝0）。
+    ///
+    /// 设计 08 §内功满级签名两条规则都在这一处兑现：**装上才生效**（只看 `passives`，
+    /// 卸下立刻查不到）与**同一条效果多来源取最高**（两部都给同一个标记时只吃高的那条）。
+    /// 数值留在表里、判断留在代码里——所以这里返回的是 `value`，怎么用由调用点决定。
+    /// </summary>
+    public double mastery_marker(string marker)
+    {
+        var db = _db as TableDb;
+        if (db == null || marker.Length == 0)
+        {
+            return 0.0;
+        }
+
+        double best = 0.0;
+        foreach (string skill_id in passives)
+        {
+            foreach (Variant row_variant in MasteryBonus.rows_for(db, skill_id, mastery_of(skill_id)))
+            {
+                var row = row_variant.AsGodotObject() as SkillMasteryBonusRow;
+                if (row == null)
+                {
+                    continue;
+                }
+
+                Godot.Collections.Dictionary parsed = row.parsed_target();
+                if (parsed["kind"].AsString() == "effect"
+                    && parsed["target_id"].AsString() == marker)
+                {
+                    best = System.Math.Max(best, row.value);
+                }
+            }
+        }
+
+        return best;
+    }
 
     // ------------------------------------------------------------------ 资源与取值
 
@@ -326,6 +404,22 @@ public partial class BattleActor : RefCounted
         return true;
     }
 
+    /// <summary>
+    /// 回内力（夹在 0..上限），返回真回了多少。满级签名「遗篇·归元」（招式命中后退三成气）用它——
+    /// **不能拿 `spend_qi()` 传负数**：那边 `cost &lt;= 0` 直接返回 true、一点不加（静默不生效那种坑）。
+    /// </summary>
+    public int gain_qi(int amount)
+    {
+        if (amount <= 0)
+        {
+            return 0;
+        }
+
+        int before = qi;
+        qi = System.Math.Min(max_qi(), qi + amount);
+        return qi - before;
+    }
+
     /// <summary>回合末回复（气血回复 / 内力回复）。</summary>
     public void end_of_round_regen()
     {
@@ -333,9 +427,35 @@ public partial class BattleActor : RefCounted
         {
             return;
         }
-        heal((int)System.Math.Floor(stat("hp_regen")));
-        // 内伤：内力回复减半（status_effect.extra_rule = rule_internal_qi）
-        double regen = stat("qi_regen") * qi_regen_factor();
+        // 满级签名（设计 08）在回气这一层的三条：凝神（内力低于两成 → 回气翻倍）／
+        // 周天（本回合没出招 → 回气翻倍，蓄气）／回春（气血低于一半 → 气血与内力**都**翻倍）。
+        // 三条都是 `1.0` 那种"翻倍"值（表里填的是倍数增量），所以是加不是乘。
+        bool low_qi = max_qi() > 0 && qi < max_qi() * LOW_QI_REGEN_THRESHOLD;
+        bool low_hp = hp < max_hp() * LOW_HP_REGEN_THRESHOLD;
+        double hp_mul = 1.0;
+        double qi_mul = 1.0;
+        if (low_qi)
+        {
+            qi_mul += mastery_marker("low_qi_regen_double");
+        }
+
+        if (!acted_this_round)
+        {
+            qi_mul += mastery_marker("hold_qi_double");
+        }
+
+        if (low_hp)
+        {
+            double both = mastery_marker("low_hp_regen_double");
+            qi_mul += both;
+            hp_mul += both;
+        }
+
+        heal((int)System.Math.Floor(stat("hp_regen") * hp_mul));
+        // 内伤：内力回复减半（status_effect.extra_rule = rule_internal_qi）；
+        // **满级签名「静心」例外**——装着它的人内伤不再让回气减半（设计 08 里归在"规则表里已有"那一档）
+        double regen_factor = mastery_marker("ignore_internal_qi") > 0.0 ? 1.0 : qi_regen_factor();
+        double regen = stat("qi_regen") * regen_factor * qi_mul;
         qi = System.Math.Min(qi + (int)System.Math.Floor(regen), max_qi());
     }
 

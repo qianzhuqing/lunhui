@@ -158,6 +158,14 @@ public partial class CharacterScreen : Control
     {
         if (@event.IsActionPressed("ui_cancel"))
         {
+            // 弹窗开着时 `Esc` 只关它——清单 §二-3 写的是「关闭＝回到行囊」，
+            // 直接 `press_back()` 会把整个角色面板一起退掉，玩家按一下少两层
+            if (use_modal_open())
+            {
+                close_use_item();
+                return;
+            }
+
             press_back();
         }
     }
@@ -300,6 +308,11 @@ public partial class CharacterScreen : Control
             return;
         }
 
+        // 内容要整批重算，手上那张悬停小卡先收了——它指着的格子马上就不在树上了
+        // （四个页签的构建都从这一条路走，所以只在这里收一次就够）
+        _hover_card?.hide_now();
+        // 同理：「道具使用」弹窗指着的那件东西也可能被这一轮算掉（丢掉最后一件、研读掉一本）
+        close_use_item();
         _refresh_portrait();
         _rebuild_header();
         _rebuild_character();

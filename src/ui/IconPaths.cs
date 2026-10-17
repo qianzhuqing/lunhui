@@ -124,6 +124,11 @@ public partial class IconPaths : RefCounted
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            // **图标一律不吃鼠标**：它永远是装饰，要点的、要悬停的是它外面那一格／那一行。
+            // 不设的话 TextureRect 默认 Stop，会**吃掉父控件的点击与悬停**——行囊格子当年为此
+            // 专门把子节点逐个设成 Ignore，商店货架这种「整行悬停」的地方更是直接失灵
+            // （鼠标一挪到图标上，行就收到 MouseExited、小卡当场收掉）。收口在这里，别再逐处记。
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         return rect;
     }

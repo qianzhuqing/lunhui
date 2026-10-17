@@ -25,6 +25,7 @@ public partial class TestEndToEnd : TestCase
     {
         TableDb db = GetDb();
         CheckEq(TableValidator.validate(db).Length, 0, "开局校验通过");
+        _CheckNoStatusCarryOut(db);
 
         EnemyFactory factory = EnemyFactory.create(db);
         Godot.Collections.Array allies = _Party(db, 5);
@@ -34,6 +35,11 @@ public partial class TestEndToEnd : TestCase
         BattleSimulator simulator = BattleSimulator.create(db, RngService.create(Seed));
         Godot.Collections.Dictionary result = simulator.simulate(allies, enemies);
         CheckEq(result["winner"].AsString(), BattleSimulator.winner_ally(), "5 级两人组能清掉巡山队");
+        // 上面这条在 2026-10-13 P28 那一轮**翻过面**（降气耗敌我一视同仁 → 喽啰每回合都放得出刀法
+        // → 这一队 5 级**裸装**两人组从 17 回合险胜变 6 回合落败，连跑 13 颗种子一致）。
+        // 它当时被如实写成"目前打不过"并挂给策划复核——**小策划拍板：`qi_cost_mul` 只作用我方**，
+        // 敌人不乘（理由：这条系数买的是玩家的循环体感，敌人"大招偶尔放得出"是预兆／拆招那套的节奏输入）。
+        // 于是这条恢复原预期，它现在是"敌人不被降耗"的**守卫**：谁要是把判定写回全局，这一场会立刻翻面。
         CheckGt(result["rewards"].AsGodotDictionary()["exp"].AsDouble(), 0.0, "打完有经验入账");
         CheckGt(result["rewards"].AsGodotDictionary()["money"].AsDouble(), 0.0, "打完有铜钱入账");
 
@@ -307,6 +313,31 @@ public partial class TestEndToEnd : TestCase
     /// <summary>
     /// 造一队两人：0.4.0 起只有一个角色模板，同模板复制成两个（对位旧链 `_party(db, level)`）。
     /// </summary>
+    /// <summary>
+    /// **战斗内的状态与增益不往战斗外带**（用户 2026-10-13 的口径）：中毒那类异常、以及身上那些
+    /// buff，出了战斗就没了——所以**每一场战斗的状态都从零开始**，存档里也没有"残留状态"这一层
+    /// （曾按策划的「残留状态」设计写过一段搬运，已按用户口径整段撤掉）。
+    /// 这条用例是它的守卫：上场时一个状态都没有，而且存档里没有别的字段能把它带出来。
+    /// </summary>
+    private void _CheckNoStatusCarryOut(TableDb db)
+    {
+        GodotObject state = SoloState(db);
+        Godot.Collections.Array actors = PartyBuilder.build_actors(
+            db, state, new Godot.Collections.Array());
+        CheckGt(actors.Count, 0.0, "队伍建得起来");
+        var actor = (BattleActor)actors[0].AsGodotObject();
+        CheckEq(actor.statuses.Count, 0, "上场时身上一个异常状态都没有（上一场不带进来）");
+        CheckEq(actor.effect_rows(db).Count, 0, "增益也没有带进来的（场上从零开始）");
+
+        // 这一场里中了毒、也上了 buff：**出了战斗就随之消失**（战斗单位丢弃，存档里没有它的位置）
+        actor.add_status("poison", "test", 3.0, 5, 3);
+        CheckGt(actor.status_stacks("poison"), 0.0, "战斗内中毒照常生效");
+        Godot.Collections.Dictionary saved = ((GameState)state).to_dict();
+        CheckFalse(
+            saved.ContainsKey("char_statuses") || saved.ContainsKey("statuses"),
+            "存档里没有「战斗外残留状态」这个字段（用户口径：不往战斗外带）");
+    }
+
     private static Godot.Collections.Array _Party(TableDb db, int level)
     {
         var out_actors = new Godot.Collections.Array();

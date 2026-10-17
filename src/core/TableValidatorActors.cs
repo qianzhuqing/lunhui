@@ -860,6 +860,73 @@ internal static class TableValidatorActors
         }
     }
 
+    /// <summary>
+    /// 内功满级签名（`skill_mastery_bonus`，设计 08 §内功满级签名）——逐行查四件事：
+    /// ① `skill_id` 得是真内功（挂错表就是一条**永远不会生效**的签名）；② `mastery` 在 1..`mastery_max` 之间
+    /// （超过满级就永远够不到）；③ `value` 不为 0（白填）；④ `target` 前缀只能是 `stat:`／`effect:`，
+    /// 且 `stat:` 引用的派生数值要真存在。
+    /// **`effect:` 的标记不在这里查"接线了没有"**——丙那 6 条按设计就是"等第一章试玩后再排"，
+    /// 这里报了会把明知要等的活变成红的；接线状态由 `MasteryBonus.wired()` 一处说，
+    /// 面板上对没接线的如实写「还没接」（与内功 `passive_effect` 那套同一口径）。
+    /// </summary>
+    internal static void CheckMasteryBonuses(TableDb db, List<string> errors)
+    {
+        int mastery_max = 10;
+        foreach (Resource row in TableValidator.Rows(db, "growth_const"))
+        {
+            if (TableValidator.Str(row, "const_id") == "mastery_max")
+            {
+                mastery_max = (int)TableValidator.Num(row, "value");
+            }
+        }
+
+        foreach (Resource row in TableValidator.Rows(db, "skill_mastery_bonus"))
+        {
+            string id = TableValidator.RowId(row);
+            string skill_id = TableValidator.Str(row, "skill_id");
+            if (db.get_row("skill_passive", skill_id) == null)
+            {
+                errors.Add(
+                    $"skill_mastery_bonus[{id}].skill_id='{skill_id}' 不是内功（满级签名只挂在内功上）"
+                );
+            }
+
+            int mastery = (int)TableValidator.Num(row, "mastery");
+            if (mastery <= 0 || mastery > mastery_max)
+            {
+                errors.Add(
+                    $"skill_mastery_bonus[{id}].mastery={mastery} 超出 1..{mastery_max}"
+                    + "（超过满级就永远够不到）"
+                );
+            }
+
+            if (Mathf.IsZeroApprox(TableValidator.Num(row, "value")))
+            {
+                errors.Add($"skill_mastery_bonus[{id}].value = 0：这条签名是白填（练满等于没练）");
+            }
+
+            Godot.Collections.Dictionary parsed = row.Call("parsed_target").AsGodotDictionary();
+            string kind = parsed["kind"].AsString();
+            string target_id = parsed["target_id"].AsString();
+            if (kind == "stat")
+            {
+                if (db.get_row("stat_def", target_id) == null)
+                {
+                    errors.Add(
+                        $"skill_mastery_bonus[{id}].target 引用的派生数值 '{target_id}' 不存在"
+                    );
+                }
+            }
+            else if (kind != "effect")
+            {
+                errors.Add(
+                    $"skill_mastery_bonus[{id}].target='{TableValidator.Str(row, "target")}' "
+                    + "缺少 stat: 或 effect: 前缀"
+                );
+            }
+        }
+    }
+
     /// <summary>每部内功至少要有一条加成，否则装了等于没装。</summary>
     internal static void CheckPassiveStats(TableDb db, List<string> errors)
     {

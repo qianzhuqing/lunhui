@@ -166,6 +166,25 @@ public partial class SaveStore : RefCounted
         {
             return LoadResult(false, $"存档格式不对或已损坏：{path}", null);
         }
+        // 版本闸门（2026-10-13 用户口径修正）：**旧档照读、只有"比当前新"的档才拒**。
+        //
+        // 起因：v16 那次升版一开始写成了"版本对不上就拒读"（照策划转述的"不做兼容迁移"），
+        // 结果玩家手里 v15 的档一进游戏就报"读不了"——**看起来就像存档坏了**，用户当场反馈。
+        // v15 → v16 的结构差异只有 `char_loadouts.basic` 这一项（**新增**的键，缺了取默认 `""` ✓），
+        // 所以旧档本来就完全读得动；把"读不了"改成"读得动"只需要放开这一侧。
+        // 反过来，**比当前版本新的档必须拒**——那是未来版本的格式，硬读只会静静丢东西。
+        // 两个方向都**给玩家一句人话**（静默丢档/静默读坏是最糟的两种）。
+        int file_version = parsed.AsGodotDictionary().ContainsKey("version")
+            ? parsed.AsGodotDictionary()["version"].AsInt32()
+            : 0;
+        if (file_version > GameState.save_version())
+        {
+            return LoadResult(
+                false,
+                $"这个存档来自更新的版本（v{file_version}），当前版本（v{GameState.save_version()}）读不了",
+                null);
+        }
+
         GodotObject state = GameState.from_dict(parsed.AsGodotDictionary(), db);
         if (state == null)
         {

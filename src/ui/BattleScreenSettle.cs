@@ -362,6 +362,9 @@ public partial class BattleScreen
             }
 
             state.Call("set_current_hp", char_id, System.Math.Max(1, _prop_int(ally_variant, "hp")));
+            // **战斗内的状态与增益不往战斗外带**（用户 2026-10-13 的口径）：中毒那类异常、以及
+            // 身上那些 buff，出了战斗就没了（战斗单位随后丢弃，所以这里**什么都不用做**——
+            // 曾按"残留状态"设计写过一段搬运，已按用户口径撤掉，见交接单）。
         }
     }
 

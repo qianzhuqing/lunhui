@@ -645,8 +645,8 @@ $buildingIdSet = @(Get-Col $Tables['building_def.csv'] 'building_id')
 
 foreach ($row in $skillRows) {
     $sid = $row.skill_id
-    if (@('active', 'passive') -notcontains $row.skill_kind) {
-        Add-Error "[枚举] skill_base.csv $sid.skill_kind='$($row.skill_kind)' 应为 active 或 passive"
+    if (@('active', 'passive', 'qinggong') -notcontains $row.skill_kind) {
+        Add-Error "[枚举] skill_base.csv $sid.skill_kind='$($row.skill_kind)' 应为 active、passive 或 qinggong"
         continue
     }
     if ($starDefs -notcontains $row.star) {

@@ -107,11 +107,16 @@ public partial class PartyBuilder : RefCounted
         if (loadout != null)
         {
             actor.passives = loadout.passive_ids();
+            // 普攻位（v16 起，设计 04 §武学页三块玩家配置）：装上免费招就当普攻那一手用
+            actor.basic_skill_id = loadout.basic_id();
         }
 
         actor.setup_recompute(
             db, AttributeCalculator.create(db), sheet.level,
             sheet.base_attrs(), sheet.allocations(), sheet.contributions());
+
+        // **不带任何"上一场剩下来的"状态进场**（用户 2026-10-13 的口径：战斗内的状态与增益
+        // 出了战斗就清）——每一场的状态从零开始。
 
         // 进场 buff：装备的 on_equip／on_battle_start 里**非常驻**的那些（常驻的已进贡献列表，
         // 再发一次就重复计算了）；战斗外增益（`field`）也走这里带进战斗。

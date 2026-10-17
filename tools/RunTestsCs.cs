@@ -421,7 +421,87 @@ public partial class RunTestsCs : Node
 /// 武学详情第八行「冷却」＋无伤害招收口（2026-10-13 小策划 P25）：`TestCharacterSkillUi` 补六条
 /// （没冷却的招不摆那一行／有冷却写「N 回合」／醉步那一类收成一句白话且四行都不摆／它的冷却照摆）。
 /// 于是实测 **11918**，MinAssertions 11902 → **11908**（total−10）。
-private const int MinAssertions = 11908;
+/// 悬停小卡（2026-10-13 UI 清单 §二-12）：`TestCharacterHoverUi.cs`（`TestCharacterUi` 的第四份
+/// partial，已登记进 `InfrastructureTests`）补 43 条——组件形状（236px／0.2 秒／不吃鼠标／z 序／
+/// 五格都在）＋摆位纯函数（上方／贴上边翻下方／左右夹边）＋四类卡的字段顺序（物品／装备／招式／内功，
+/// 含「无词条」「无附加效果」与气不足置灰）＋真格子那条路（行囊：移上去不浮、那一拍才浮、
+/// 内容与表一致、移开立刻收；武学格：招式卡两行；装备槽：部位与品阶；属性行：来源小卡读 `stat_def.desc`）。
+/// 又把 `src/ui/HoverCard.cs`／`src/ui/HoverCardText.cs` 登记进对接表的 `code_paths`
+/// （那条门限逐条断言「列出的文件真实存在」，于是 +2）。**实测 11977**，MinAssertions → 11967。
+/// 悬停小卡第二批（2026-10-13）：商店货架（`ShopScreenBuy`，挂**整行**＋尾截写单价与持有＋
+/// 装备 id 走装备卡那一支）与 NPC 面板（`NpcPanelSelfTest` 补 1 条，Floor 26 → 27）
+/// ——同一次改口径、断言净 +11，**实测 11988**，MinAssertions 11967 → 11978。
+/// 道具使用弹窗（2026-10-13 UI 清单 §二-3）：`TestCharacterBagUi` 补一簇（开弹窗不扣物品／
+/// 目标行几人几行（空位不摆）／预览随目标变（已满写「浪费」、不满写「数值没配」不编数）／
+/// 「使用」置灰并把原因写在按钮下面／「取消」与 `Esc` 都只回行囊）＋对接表把新文件
+/// `src/ui/CharacterScreenUseItem.cs` 登记进 `code_paths`（+1）。**实测 12017**，MinAssertions 12007。
+/// 招式气耗系数（2026-10-13 小策划 P28）：`combat_const.qi_cost_mul = 0.6` ＋ `src/core/SkillCost.cs`
+/// （算法一处：四舍五入、非零下限 1、`0` 仍 `0`），战斗的可用判定／真扣气／按钮与角色面板的
+/// 「消耗内力」全读它；`skill_passive_stat` 给 30 部内功各补一条 `stat:qi_regen`（占格 ×1.0、
+/// 低于线的 4 部抬到线）。`TestSkill` 补「系数／四舍五入／下限／32 招逐招不高于裸值／
+/// 30 部内功回气不低于占格」一簇，`TestSkill` 的边界用例与 `TestCharacterSkillUi` 的
+/// 「消耗内力」改成读实际值；`TestEndToEnd` 那一场按实测翻面（敌人也有内力池，见那里的注释）。
+/// ＋对接表登记 `src/core/SkillCost.cs`（+1）、`06` 两处行数同步（combat_const 17→18／
+/// skill_passive_stat 77→101）。**实测 12094**，MinAssertions → 12084（total−10）。
+/// P33（2026-10-13 小策划复核）：**`qi_cost_mul` 只作用我方**——`SkillCost.effective_qi_cost()` 加
+/// `is_ally` 参数（**敌我判定只此一处**，不加第二条常数），战斗四处调用点传 `actor.side ==
+/// BattleActor.side_ally()`、面板传 `true`；`TestSkill` 补三条敌人侧断言（不乘／不吃四舍五入／0 仍 0）；
+/// `TestEndToEnd` 那一条**恢复原预期**（它现在是"敌人不被降耗"的守卫：写回全局它会立刻翻面）；
+/// 设计 04 点名的计划列 `item_base.clear_status` 进 `PendingDocRefs`（随 C 段落表）。
+/// **实测 12098**，MinAssertions 12084 → 12088。
+/// 内功满级签名 B1（2026-10-13 设计 08 §内功满级签名）：新表 `skill_mastery_bonus`（30 行）＋行类＋
+/// 注册表三处＋校验器＋`stat_def` 两条派生值（`basic_hit`／`poise_break_mul`）＋`src/core/MasteryBonus.cs`
+/// （查询口 ＋ 接线名单）＋`GrowthCalculator` 把 `stat:` 类签名并进贡献通道＋普攻段数/破架势两条消费点＋
+/// 武学页「满级签名」那一行；`TestSkill` 补一簇（30 行／满级档／标记都在名单里／满级才生效／
+/// 普攻与招式两条段数／面板那三句文案）。**实测 12189**，MinAssertions 12088 → 12179。
+/// 内功满级签名 B2a（2026-10-13）：**伤害结算那一簇 9 条**接线——`DamageResolver` 的命中（定军／醉意）／
+/// 暴击（忘忧）／穿透（开碑）／增伤（不还／知白）／减伤（铁骨）＋ 结算层的破绽窗口（厚土）＋
+/// 首次闪避（影）＋ 拆招架势翻倍（定军另一半）；`BattleActor.mastery_marker()` 一个查询口
+/// ＋三个当场状态（连招系别／连招档位／首次闪避用没用）。`TestDamage` 补一簇**成对**断言
+/// （装着与没装差在哪——只验一边的话代码写成恒真也过得去）。**实测 12210**，
+/// MinAssertions 12179 → 12200。
+/// 内功满级签名 B2b（2026-10-13）：**资源与回合那一簇 ＋ 异常那一簇 ＋ 守一**补完
+/// （引气／凝神／周天／回春／遗篇·归元／百草／引毒／腐肌／蚀脉／万蛊／守一），
+/// `MasteryBonus.QUEUED_MARKERS` **清空**（甲＋乙 24 条全接；只剩丙那 6 条按设计等试玩）；
+/// `tests/TestDamage.cs` 顶到 800 行上限后按职责拆出 `tests/TestDamageMastery.cs`（只挪位置不改行为）。
+/// **实测 12231**，MinAssertions 12200 → 12221。
+/// C 段第一部分（2026-10-13）——**存档结构 ＋ 表结构那一次升版**：`GameState.VERSION` 15 → **16**
+/// （装配加「普攻位」`char_loadouts.basic` ＋ 每角色 `char_statuses`），`SaveStore.load_slot()`
+/// **版本对不上就拒读并把那句人话说给玩家**（不做兼容迁移；`TestSaveMigration` 那条改成钉
+/// 「旧档被拒 ＋ 文件一个字节没动」）；`skill_base.skill_kind` 加枚举 `qinggong`（06／`TableValidator`／
+/// `validate_tables.ps1` 三处）；`item_base` 加 Q33 那三列（值取自各行原有的 `desc`，不是编数）；
+/// `status_effect` 加 `persist_out_of_battle`（中毒／内伤 1、战伤 0）。
+/// **实测 12247**，MinAssertions 12221 → 12237。
+/// C 段第二部分（2026-10-13）——**读取端**：① `src/core/ItemUse.cs`（Q33 三列的唯一读取端：
+/// 战斗外用药＝回气血（上限截断）／解掉 `clear_status` 那一条／扣一件；内力在战斗外如实说"用不上"），
+/// 道具使用弹窗的「使用」从常年置灰变成**按三列现算能不能按**，预览那两行也算出了
+/// 「气血 5 → 125（+120）」与「状态 中毒 仍在」；② **普攻位**（设计 04 §武学页三块玩家配置）：
+/// `SkillLoadout.can_set_basic()`／`set_basic()`（已学＋免费招＋与招式位互斥＋武器类型）、
+/// `BattleActor.basic_skill_id`（`PartyBuilder` 从装配带进战斗）、`basic_attack_skill_for()`
+/// 装上就用那一招（段数／使用记录／武器限制因此自动成立），武学页加「普通攻击」固定 1 格
+/// （新 partial `src/ui/CharacterScreenBasicSlot.cs`，`CharacterScreenSkill.cs` 拆出来）。
+/// **实测 12269**，MinAssertions 12237 → 12259。
+/// ⚠️ C 段第三部分（2026-10-13）**落过又撤回**：「战斗外残留状态」（小策划 P34）按用户口径
+/// ——「战斗内的状态与增益离开战斗就清除」——**整段撤掉**（`StatusCarry.cs` 删、战斗结束写回与
+/// 进战斗带入删、面板那一块删、`GameState.char_statuses` 字段删，`to_dict` 字段数回到 27）。
+/// 留下的是守卫 `TestEndToEnd::_CheckNoStatusCarryOut`（每场从零开始、存档里没有能带出去的字段）。
+/// `SAVE_VERSION` 仍是 v16（普攻位那一半）。**实测 12274**，MinAssertions 12237 → 12264。
+/// ⚠️ **读档的版本口径 2026-10-13 又改了一次（用户反馈）**：v16 那次升版一开始写成"版本对不上就拒读"，
+/// 玩家手里 v15 的档一进游戏就报"读不了"、**看着像存档坏了**——用户当场反馈。
+/// 现在改成经典那一套：**旧档照读**（缺的字段取默认值、`migrated_from` 记下从哪一版升上来），
+/// **只有"比当前版本新"的档才拒**，两个方向都给玩家一句人话。`TestSaveMigration` 补了
+/// v15→v16 边界那一格与"未来版本拒读"那一格。**实测 12311**，MinAssertions 12264 → 12301。
+/// 武学页收口（2026-10-13 用户三条口径）：① **没在凑的套装整块不摆**（以前把配表 3 套全列出来、
+/// 每套还逐档写已激活／未达）；② **没选中就什么都不摆**（撤掉那一整块空态提示）；
+/// ③ **武学页不挂悬停小卡**（删掉 `_skill_hover_rows()`／`_passive_set_progress()` 与
+/// `HoverCardText.skill_card()`／`passive_card()` 两个 builder）。**实测 12303**，MinAssertions 12293。
+/// **战斗内用道具**（C 段最后一块读取端，2026-10-13）：`use_item()` 按 Q33 三列回气血／回内力／
+/// 解异常（`BattleActor.clear_status()` 新增）、**花一次行动**、扣一件；`battle_item_options()`
+/// 的"能不能用"从"一律置灰＋效果没配"改成真判定（有数量＋三列至少一条），
+/// 战报与按钮都跟着走；`BattleScreenCommands.press_item()` 串起来（按钮不再只切列表）。
+/// 配表审计里 `item_base` 那三列的「在途」白名单**全部删掉**（都接上了）。
+/// **实测 12309**，MinAssertions 12293 → **12299**（total−10）。
+private const int MinAssertions = 12299;
 
     /// <summary>余量上限：实际 − 下限超过它，说明下限松了（这条网在退化成摆设）。</summary>
     private const int SlackLimit = 100;

@@ -27,6 +27,8 @@ public partial class TestSkill : TestCase
         _check_tables(db);
         _check_weapon_gate(db);
         _check_qi_boundary(db);
+        _check_qi_cost_mul(db);
+        _check_mastery_bonus(db);
         _check_enemy_skills(db);
         _check_dot_skills_usable(db);
     }
@@ -142,19 +144,26 @@ public partial class TestSkill : TestCase
         CheckFalse(actor.spend_qi(cost), "差一点：支付失败");
         CheckEq(actor.qi, cost - 1, "支付失败不扣内力");
 
-        // 选招与体检表：刚好够要算「可用」，差一点要写明「内力不足」
+        // 选招与体检表：刚好够要算「可用」，差一点要写明「内力不足」。
+        // **判定用的是乘过系数的实际气耗**（`SkillCost`，与真扣气同一处算法）——表里写 8，
+        // 实际扣 5；这里必须拿实际值当边界，否则测的是"表里那个数"，而战斗根本不用它。
+        int effective = SkillCost.effective_qi_cost(db, cost, true);
+        CheckLt(effective, cost, "实际气耗比表里的裸值低（乘过系数）");
         BattleSimulator simulator = BattleSimulator.create(db, RngService.create(Seed));
         actor.skills = new[] { "sk_xuanwei_02" };
         actor.tags["weapon_type"] = "sword";
-        actor.qi = cost;
+        actor.qi = effective;
         CheckTrue(_available(simulator, actor, "sk_xuanwei_02"), "刚好够内力：这一招在可用列表里");
-        actor.qi = cost - 1;
+        actor.qi = effective - 1;
         CheckFalse(_available(simulator, actor, "sk_xuanwei_02"), "差一点内力：不在可用列表里");
         Godot.Collections.Dictionary option = _option_of(simulator, actor, "sk_xuanwei_02");
         CheckFalse(!option.ContainsKey("ok") || option["ok"].AsBool(), "体检表也标成不可用");
         CheckTrue(
             _s(option, "reason").Contains("内力不足"),
             $"体检表写明内力不足：{_s(option, "reason")}");
+        CheckEq(
+            option["qi_cost"].AsInt32(), effective,
+            "体检表里写的也是实际气耗（按钮上那个数就是会扣的数）");
     }
 
     private static bool _available(BattleSimulator simulator, BattleActor actor, string skillId)
@@ -186,6 +195,200 @@ public partial class TestSkill : TestCase
     }
 
     /// <summary>敌人招式映射：毒手用五毒，醉刀客用自己的路数（不再错用黑风刀法）。</summary>
+    /// <summary>
+    /// 招式气耗系数（设计 04 §招式循环，2026-10-13 P28）：实际气耗 = `qi_cost` × `combat_const.qi_cost_mul`，
+    /// 四舍五入、**非零下限 1**、`0` 仍 `0`——降气耗靠**一处调参**，不去逐行改 35 个数。
+    ///
+    /// 顺带钉住「每部内功都有一条 `stat:qi_regen`、且不低于占格 ×1.0」这条数据口径：
+    /// 界面与战斗都从这一列读续航，漏一行就是"这部内功白装了"，而**漏了不会报错**。
+    /// </summary>
+    private void _check_qi_cost_mul(TableDb db)
+    {
+        CheckFloat(SkillCost.qi_cost_mul(db), 0.6, "气耗系数读 `combat_const.qi_cost_mul`");
+        CheckEq(SkillCost.effective_qi_cost(db, 0, true), 0, "0 气招仍是 0（不被下限抬成 1）");
+        CheckEq(SkillCost.effective_qi_cost(db, 1, true), 1, "1 气招四舍五入仍 1（非零下限）");
+        CheckEq(SkillCost.effective_qi_cost(db, 8, true), 5, "8 × 0.6 = 4.8 → 5");
+        CheckEq(SkillCost.effective_qi_cost(db, 12, true), 7, "12 × 0.6 = 7.2 → 7");
+        CheckEq(SkillCost.effective_qi_cost(db, 35, true), 21, "35 × 0.6 = 21");
+
+        // **只作用我方**（设计 04 §招式循环，2026-10-13 拍板）：敌人那一侧一分不减。
+        // 这条不是"顺手补一条"——统一降耗会把敌人的节奏（预兆／拆招那套的输入）抹平，
+        // 实测把 `TestEndToEnd` 那一场从 17 回合险胜翻成 6 回合落败（连跑 13 颗种子一致）。
+        CheckEq(SkillCost.effective_qi_cost(db, 8, false), 8, "敌人不乘系数（＝表里原值）");
+        CheckEq(SkillCost.effective_qi_cost(db, 35, false), 35, "敌人也不吃四舍五入");
+        CheckEq(SkillCost.effective_qi_cost(db, 0, false), 0, "敌人的 0 气招仍是 0");
+
+        // 表里每一招都真的按系数降了（别只在个别招上对）；0 气那三招是「替换普攻」那一档（P30）
+        var scaled = 0;
+        var free = 0;
+        foreach (Variant row_variant in db.rows("skill_active"))
+        {
+            var row = row_variant.As<SkillActiveRow>();
+            if (row.qi_cost <= 0)
+            {
+                free += 1;
+                continue;
+            }
+
+            int effective = SkillCost.effective_qi_cost(db, row.qi_cost, true);
+            CheckTrue(
+                effective >= 1 && effective <= row.qi_cost,
+                $"{row.skill_id}：实际气耗 {effective} 要落在 1..{row.qi_cost} 之间");
+            scaled += 1;
+        }
+
+        CheckEq(free, 4, "0 气那四招（玄微起手／通用招式／箭矢／醉步）仍是 0");
+        CheckEq(scaled, 31, "35 招里 31 招要内力");
+
+        // 每部内功都要有内力回复，且不低于占格 ×1.0
+        var checked_passives = 0;
+        foreach (Variant row_variant in db.rows("skill_passive"))
+        {
+            var passive = row_variant.As<SkillPassiveRow>();
+            double line = passive.slot_cost * 1.0;
+            double value = 0.0;
+            foreach (Variant stat_variant in db.rows("skill_passive_stat"))
+            {
+                var stat = stat_variant.As<SkillPassiveStatRow>();
+                if (stat.skill_id == passive.skill_id && stat.target == "stat:qi_regen")
+                {
+                    value = stat.value;
+                }
+            }
+
+            CheckTrue(
+                value >= line,
+                $"{passive.skill_id}：内力回复 {value} 要不低于占格 ×1.0（{line}）");
+            checked_passives += 1;
+        }
+
+        CheckEq(checked_passives, 30, "30 部内功逐部过一遍");
+    }
+
+    /// <summary>
+    /// 内功满级签名（设计 08 §内功满级签名，2026-10-13 拍板）：新表 30 行、`mastery` 一律满级；
+    /// **门槛＝满级才生效**（练到 9 级一分不给）；`stat:` 那三条真进贡献通道；
+    /// 每条 `effect:` 标记都得在某一条名单里（**漏进名单＝一条签名静静地不生效**，
+    /// 而玩家只会觉得"练满了怎么没变化"）。
+    /// </summary>
+    private void _check_mastery_bonus(TableDb db)
+    {
+        CheckEq(db.rows("skill_mastery_bonus").Count, 30, "30 部内功各有一条满级签名");
+        int mastery_max = MasteryBonus.mastery_max(db);
+        CheckEq(mastery_max, 10, "满级熟练度取 `growth_const.mastery_max`");
+        foreach (Variant row_variant in db.rows("skill_mastery_bonus"))
+        {
+            var row = row_variant.As<SkillMasteryBonusRow>();
+            CheckEq(row.mastery, mastery_max, $"{row.skill_id} 的签名挂在满级档");
+            Godot.Collections.Dictionary parsed = row.parsed_target();
+            if (parsed["kind"].AsString() != "effect")
+            {
+                continue;
+            }
+
+            CheckTrue(
+                MasteryBonus.known(parsed["target_id"].AsString()),
+                $"{row.skill_id} 的标记 {parsed["target_id"].AsString()} 在接线名单里"
+                    + "（漏进名单＝这条签名静静地不生效）");
+        }
+
+        CheckEq(
+            MasteryBonus.WIRED_MARKERS.Length, 21,
+            "已接线 21 条（30 条签名 − 3 条 `stat:` − 丙那 6 条等试玩）");
+        CheckEq(
+            MasteryBonus.WIRED_MARKERS[0], "ignore_internal_qi",
+            "接线名单头一条是甲那档的「内伤不再让内力回复减半」");
+        CheckEq(
+            System.Array.IndexOf(MasteryBonus.WIRED_MARKERS, "no_break_window") >= 0, true,
+            "「厚土」也在已接线名单里（伤害结算那一簇）");
+        CheckEq(MasteryBonus.QUEUED_MARKERS.Length, 0, "本批待接那一栏已经清空（甲＋乙都接上了）");
+        CheckEq(
+            MasteryBonus.QUEUED_MARKERS.Length + MasteryBonus.WIRED_MARKERS.Length
+                + MasteryBonus.AFTER_PLAYTEST_MARKERS.Length,
+            27, "三条名单加起来正好 27 条 ＝ 30 条签名里除 3 条 `stat:` 之外的全部"
+                + "（漏一条就是签名静静地不生效）");
+        CheckEq(
+            MasteryBonus.AFTER_PLAYTEST_MARKERS.Length, 6,
+            "设计明写「等第一章试玩后再排」的丙那 6 条");
+
+        // `stat:` 三条：满级才生效，差一级都不给
+        GrowthCalculator growth = GrowthCalculator.create(db);
+        CheckEq(
+            _stat_contrib(
+                growth.passive_contributions(
+                    new[] { "pf_heifeng_03" },
+                    new Godot.Collections.Dictionary { { "pf_heifeng_03", mastery_max } }),
+                "poise_break_mul"),
+            0.5, "悍勇满级给 `poise_break_mul` +0.5");
+        CheckEq(
+            _stat_contrib(
+                growth.passive_contributions(
+                    new[] { "pf_heifeng_03" },
+                    new Godot.Collections.Dictionary { { "pf_heifeng_03", mastery_max - 1 } }),
+                "poise_break_mul"),
+            0.0, "差一级（熟练 9）一分不给");
+        CheckEq(
+            _stat_contrib(
+                growth.passive_contributions(
+                    new[] { "pf_heifeng_01" },
+                    new Godot.Collections.Dictionary { { "pf_heifeng_01", mastery_max } }),
+                "basic_hit"),
+            1.0, "蛮力满级给 `basic_hit` +1");
+        CheckEq(
+            _stat_contrib(
+                growth.passive_contributions(
+                    new[] { "pf_xuanwei_05" },
+                    new Godot.Collections.Dictionary { { "pf_xuanwei_05", mastery_max } }),
+                "extra_hit"),
+            1.0, "太清满级给 `extra_hit` +1");
+
+        // 普攻与招式的段数是**两条**：普攻吃 `basic_hit`、招式吃 `extra_hit`（Q84）
+        CheckEq(
+            BattleSimulator.effective_hits_for(
+                BattleSimulator.basic_attack_id(), 1, 2.0, 1.0), 2,
+            "普攻段数吃 `basic_hit`（蛮力 → 2 段）");
+        CheckEq(
+            BattleSimulator.effective_hits_for(BattleSimulator.basic_attack_id(), 1, 2.0, 0.0), 1,
+            "普攻**不吃** `extra_hit`（Q84：否则套装白送普攻流）");
+        CheckEq(
+            BattleSimulator.effective_hits_for("sk_xuanwei_02", 1, 1.0, 9.0), 2,
+            "招式只吃 `extra_hit`（`basic_hit` 对它无效）");
+
+        // 面板那句话：满级写效果、没满写还差几级、接没接如实说
+        string full_text = MasteryBonus.describe(db, "pf_xuanwei_05", mastery_max)["text"].AsString();
+        CheckTrue(
+            full_text.Contains("满级效果") && full_text.Contains("招式段数 +1"),
+            $"满级那条写得出效果：{full_text}");
+        CheckFalse(
+            full_text.Contains("还没接"),
+            $"已经接线的不写「还没接」：{full_text}");
+        string almost_text = MasteryBonus.describe(db, "pf_xuanwei_05", mastery_max - 1)["text"].AsString();
+        CheckTrue(
+            almost_text.Contains("再练 1 级"), $"没满级写还差几级：{almost_text}");
+        CheckTrue(
+            MasteryBonus.describe(db, "pf_chensha_02", mastery_max)["text"].AsString().Contains("还没接"),
+            "满级了但代码还没接的，面板如实写「还没接」（只剩丙那 6 条了）");
+    }
+
+    /// <summary>从贡献列表里挑出某条 `stat:` 的合计值（`stat:extra_hit` 这类）。</summary>
+    private static double _stat_contrib(Godot.Collections.Array contributions, string stat_id)
+    {
+        double total = 0.0;
+        foreach (Variant item in contributions)
+        {
+            Godot.Collections.Dictionary contribution = item.AsGodotDictionary();
+            string target = contribution.ContainsKey("target")
+                ? contribution["target"].AsString()
+                : "";
+            if (target == stat_id && _s(contribution, "kind") == AttributeCalculator.contrib_stat_flat())
+            {
+                total += contribution["value"].AsDouble();
+            }
+        }
+
+        return total;
+    }
+
     private void _check_enemy_skills(TableDb db)
     {
         EnemyFactory factory = EnemyFactory.create(db);

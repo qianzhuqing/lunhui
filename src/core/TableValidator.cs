@@ -64,7 +64,9 @@ public partial class TableValidator : RefCounted
         },
         ["skill_base"] = new()
         {
-            ["skill_kind"] = new[] { "active", "passive" },
+            // `qinggong`＝轻功（设计 01 §第一章武学规模／04 §武学页三块玩家配置，2026-10-13）：
+            // 与内功**同一个容量池**、但**一律占 1 格**，本版不开放催动、不做主动位移
+            ["skill_kind"] = new[] { "active", "passive", "qinggong" },
             // `origin`＝出身本命机遇（设计 21 §九，0.31.0）：与 `story` 同一条发放通道
             ["source_type"] = new[]
                 { "start", "npc", "drop", "story", "hidden", "item", "shop", "origin" },
@@ -469,6 +471,7 @@ public partial class TableValidator : RefCounted
         TableValidatorActors.CheckSkillDetails(db, errors);
         TableValidatorActors.CheckSkillWeaponTypes(db, errors);
         TableValidatorActors.CheckPassiveStats(db, errors);
+        TableValidatorActors.CheckMasteryBonuses(db, errors);
         TableValidatorActors.CheckAffixTargets(db, errors);
         TableValidatorActors.CheckEquipBonuses(db, errors);
         TableValidatorActors.CheckGrowthConstants(db, errors);

@@ -63,6 +63,9 @@ public partial class NpcPanel
                 CustomMinimumSize = new Vector2(420, 36),
             };
             button.Pressed += () => { gift(item_id); };
+            // 悬停＝物品卡（清单 §二-7 ＋ §二-12）：这一行只写得下名字与收益，
+            // 卡里补「这是什么、手上还有几件」——赠与前最该知道的两件事
+            _hover().watch(button, () => _npc_hover_rows(item_id, "左键＝赠送"));
             _actions.AddChild(button);
         }
 
@@ -127,6 +130,7 @@ public partial class NpcPanel
                 CustomMinimumSize = new Vector2(420, 36),
             };
             button.Pressed += () => { steal(offer.offer_id); };
+            _hover().watch(button, () => _npc_hover_rows(offer.item_id, "左键＝偷（走敏／运判定）"));
             _actions.AddChild(button);
         }
     }
@@ -152,9 +156,29 @@ public partial class NpcPanel
                 CustomMinimumSize = new Vector2(420, 36),
             };
             button.Pressed += () => { redeem(offer.offer_id); };
+            _hover().watch(button, () => _npc_hover_rows(offer.item_id, "左键＝兑换"));
             _actions.AddChild(button);
         }
     }
+
+    /// <summary>
+    /// NPC 面板里那些「带一件东西的按钮」（赠与／偷窃／兑换）悬停要说的字
+    /// （清单 §二-12 的物品卡／装备卡）。尾截写**持有几件**——这一屏关心的是
+    /// 「我手上有没有、送出去亏不亏」；价在兑换那行按钮上已经写着了。
+    /// 数据走 `HoverCardText.of_base()`：与商店货架同一套读法，三个屏不各查一遍三张表。
+    /// 找不到那件东西（表里没有）时给空数组，卡当场收掉、不浮一张空卡。
+    /// </summary>
+    private string[] _npc_hover_rows(string item_id, string foot)
+    {
+        GodotObject st = current_state();
+        Inventory inv = st != null ? st.Get("inventory").As<Inventory>() : null;
+        return HoverCardText.of_base(db, item_id, $"持有 {(inv != null ? inv.count(item_id) : 0)}", foot);
+    }
+
+    /// <summary>这一屏共用的那张悬停小卡（第一次用到时才建，挂在本屏根节点上）。</summary>
+    private HoverCard _hover() => _hover_card ??= HoverCard.make(this, "HoverCard");
+
+    private HoverCard _hover_card;
 
     private void _add_quest_section()
     {

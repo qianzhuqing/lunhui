@@ -28,6 +28,9 @@ public partial class TestDamage : TestCase
         _CheckElementCounter(db);
         _CheckCritBeforeDefense(db);
         _CheckMastery(db);
+        _CheckMasterySignatures(db);
+        _CheckMasterySignaturesRound(db);
+        _CheckPoiseGuard(db);
         _CheckPenetration(db);
         _CheckBlock(db);
         _CheckDamageReduction(db);

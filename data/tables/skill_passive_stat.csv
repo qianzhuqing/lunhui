@@ -1,13 +1,15 @@
 ﻿skill_id,target,value,note
 pf_xuanwei_01,stat:qi_max,30,
+pf_xuanwei_01,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_xuanwei_02,stat:qi_regen,1.2,
 pf_xuanwei_03,stat:res_internal,0.12,
+pf_xuanwei_03,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_xuanwei_04,stat:qi_max,50,
-pf_xuanwei_04,stat:qi_regen,1.8,
+pf_xuanwei_04,stat:qi_regen,2.0,P28：抬到占格 ×1.0
 pf_xuanwei_05,attr:int,5,
 pf_xuanwei_05,attr:wu,5,
 pf_xuanwei_05,stat:qi_max,80,
-pf_xuanwei_05,stat:qi_regen,2.5,
+pf_xuanwei_05,stat:qi_regen,3.0,P28：抬到占格 ×1.0
 pf_wudu_01,stat:debuff_power,0.15,
 pf_wudu_01,stat:debuff_chance,0.05,
 pf_wudu_02,stat:debuff_power,0.10,
@@ -18,60 +20,82 @@ pf_wudu_04,stat:debuff_power,0.40,
 pf_wudu_04,stat:debuff_chance,0.15,
 pf_wudu_04,attr:luk,3,
 pf_wudu_01,stat:res_poison,0.10,以毒攻毒
+pf_wudu_01,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_wudu_02,stat:res_poison,0.10,
+pf_wudu_02,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_wudu_03,stat:res_poison,0.15,
+pf_wudu_03,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_wudu_04,stat:res_poison,0.25,
+pf_wudu_04,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_luohan_01,stat:res_bleed,0.15,铁布衫护体
 pf_taixu_01,stat:res_burn,0.12,静心降火
 pf_heifeng_01,attr:str,3,
+pf_heifeng_01,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_heifeng_02,attr:con,3,
 pf_heifeng_02,stat:hp_max,40,
+pf_heifeng_02,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_heifeng_03,attr:str,4,
 pf_heifeng_03,stat:poise_break,6,
+pf_heifeng_03,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_chensha_01,stat:def_phys,10,
 pf_chensha_01,stat:hp_max,40,
+pf_chensha_01,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_chensha_02,stat:block_rate,0.08,
 pf_chensha_02,stat:block_reduction,0.08,
+pf_chensha_02,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_chensha_03,stat:pen_rate,0.10,
 pf_chensha_03,attr:str,3,
+pf_chensha_03,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_tieqiang_01,attr:agi,3,
 pf_tieqiang_01,stat:speed,2,
+pf_tieqiang_01,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_tieqiang_02,stat:hit_rate,0.08,
 pf_tieqiang_02,attr:con,2,
+pf_tieqiang_02,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_yaowang_01,stat:hp_regen,2.0,
+pf_yaowang_01,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_yaowang_02,stat:hp_regen,3.5,
 pf_yaowang_02,stat:hp_max,50,
+pf_yaowang_02,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_yaowang_03,stat:res_internal,0.15,
 pf_yaowang_03,stat:hp_max,60,
 pf_yaowang_03,stat:hp_regen,2.0,
+pf_yaowang_03,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_taixu_01,stat:res_internal,0.18,
 pf_taixu_01,stat:qi_max,30,
+pf_taixu_01,stat:qi_regen,1.0,P28：占格 ×1.0
 pf_luohan_01,stat:dmg_reduction,0.06,
 pf_luohan_01,stat:def_phys,12,
+pf_luohan_01,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_drunk_01,stat:dodge_rate,0.08,
 pf_drunk_01,attr:luk,4,
+pf_drunk_01,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_drunk_02,attr:agi,4,
 pf_drunk_02,attr:luk,6,
 pf_drunk_02,stat:crit_dmg,0.20,
+pf_drunk_02,stat:qi_regen,3.0,P28：占格 ×1.0
 pf_yipian_01,attr:gen,4,
 pf_yipian_01,attr:int,4,
 pf_yipian_01,stat:qi_max,70,
-pf_yipian_01,stat:qi_regen,2.2,
+pf_yipian_01,stat:qi_regen,3.0,P28：抬到占格 ×1.0
 pf_yipian_01,stat:res_internal,0.12,
 pf_yipian_01,stat:hp_max,50,
 pf_xuanwei_zhbai,attr:int,4,
 pf_xuanwei_zhbai,attr:wu,2,
 pf_xuanwei_zhbai,stat:qi_max,50,
-pf_xuanwei_zhbai,stat:qi_regen,1.5,
+pf_xuanwei_zhbai,stat:qi_regen,2.0,P28：抬到占格 ×1.0
 pf_chensha_buhuan,attr:str,4,
 pf_chensha_buhuan,stat:poise_break,8,
 pf_chensha_buhuan,stat:pen_rate,0.06,
+pf_chensha_buhuan,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_wudu_huandu,stat:debuff_power,0.35,
 pf_wudu_huandu,stat:res_poison,0.30,
 pf_wudu_huandu,attr:luk,3,
+pf_wudu_huandu,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_qingluo_ying,attr:agi,4,
 pf_qingluo_ying,stat:dodge_rate,0.10,
 pf_qingluo_ying,stat:crit_rate,0.05,
+pf_qingluo_ying,stat:qi_regen,2.0,P28：占格 ×1.0
 pf_tiaoxi_huichun,stat:qi_regen,3.0,
 pf_tiaoxi_huichun,stat:hp_regen,3.0,
 pf_tiaoxi_huichun,stat:hp_max,50,

@@ -101,6 +101,14 @@ public partial class HoverCard : PanelContainer
             return;
         }
 
+        // 内容给空＝这一格没有可说的（例：还没选角色），**当场收掉别浮**——
+        // 浮一张空卡或上一格的旧内容是比不浮更糟的那种错。
+        if (rows == null || rows.Length == 0)
+        {
+            hide_now();
+            return;
+        }
+
         _target = target;
         set_rows(rows);
         Visible = true;
@@ -120,7 +128,10 @@ public partial class HoverCard : PanelContainer
     }
 
     /// <summary>
-    /// 换内容：`rows` 是「标题 ＋ 三行 ＋ 脚注」五格（见 `HoverCardText` 的四个 builder）。
+    /// 换内容：`rows` 是「标题 ＋ 三行 ＋ 脚注」五格（见 `HoverCardText` 的四个 builder），
+    /// 可选第 6 格是**整张卡的字色名**（清单一处用得上：招式卡「气不足时整条置灰、小卡仍可看」）。
+    /// 字色跟着内容一起走，是为了让「浮出」只有一条路——计时器到点调 `show_now()`，
+    /// 那时把字色单独设一遍就成了第二条路，迟早有一处忘了设。
     /// **空格子整行不摆**——摆一行空文字会白占一行高，卡看着就"多了一块"。
     /// </summary>
     public void set_rows(string[] rows)
@@ -130,6 +141,9 @@ public partial class HoverCard : PanelContainer
             return;
         }
 
+        _set_text_tone(rows.Length > ROW_COUNT + 2 && rows[ROW_COUNT + 2].Length > 0
+            ? rows[ROW_COUNT + 2]
+            : "ink");
         _title.Text = rows[0];
         for (int i = 0; i < ROW_COUNT; i++)
         {
@@ -187,17 +201,18 @@ public partial class HoverCard : PanelContainer
         column.AddThemeConstantOverride("separation", 4);
         AddChild(column);
 
-        _title = _label("HoverCardTitle", 0);
+        _title = _label("HoverCardTitle");
         column.AddChild(_title);
         _rows = new Label[ROW_COUNT];
         for (int i = 0; i < ROW_COUNT; i++)
         {
-            _rows[i] = _label($"HoverCardRow{i + 2}", 1);
+            _rows[i] = _label($"HoverCardRow{i + 2}");
             column.AddChild(_rows[i]);
         }
 
-        _foot = _label("HoverCardFoot", 2);
+        _foot = _label("HoverCardFoot");
         column.AddChild(_foot);
+        _set_text_tone("ink");
 
         _delay = new Timer
         {
@@ -210,8 +225,8 @@ public partial class HoverCard : PanelContainer
         AddChild(_delay);
     }
 
-    /// <summary>三档字色：标题 `ink`、正文 `ink_dim`、脚注 `ink_off`（换皮肤只改这三处）。</summary>
-    private Label _label(string node_name, int tier)
+    /// <summary>卡里那五个格子：一律不吃鼠标、一律自动换行（卡只有 236px 宽）。字色统一由 `_set_text_tone` 给。</summary>
+    private Label _label(string node_name)
     {
         var label = new Label
         {
@@ -219,9 +234,24 @@ public partial class HoverCard : PanelContainer
             MouseFilter = MouseFilterEnum.Ignore,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
-        label.AddThemeColorOverride(
-            "font_color", UiKit.color(tier == 0 ? "ink" : (tier == 1 ? "ink_dim" : "ink_off")));
         return label;
+    }
+
+    /// <summary>
+    /// 整张卡的字色（默认 `ink`）。置灰时正文与标题一起降档、**脚注保持最淡那一档**
+    /// ——脚注本来就是次要字，再降一档就跟没写一样。
+    /// </summary>
+    private void _set_text_tone(string color_name)
+    {
+        // 只有「置灰」（传进来的不是 ink）时才把正文一起降档；平时正文仍是 ink_dim 那一档
+        bool dimmed = color_name.Length > 0 && color_name != "ink";
+        _title.AddThemeColorOverride("font_color", UiKit.color(dimmed ? color_name : "ink"));
+        foreach (Label row in _rows)
+        {
+            row.AddThemeColorOverride("font_color", UiKit.color(dimmed ? color_name : "ink_dim"));
+        }
+
+        _foot.AddThemeColorOverride("font_color", UiKit.color("ink_off"));
     }
 
     /// <summary>

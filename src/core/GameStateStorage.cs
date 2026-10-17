@@ -444,6 +444,9 @@ public partial class GameState
                 char_id.AsString(),
                 _string_array(entry, "active"),
                 _string_array(entry, "passive"));
+            set_basic_skill(
+                char_id.AsString(),
+                entry.ContainsKey("basic") ? entry["basic"].AsString() : "");
         }
     }
 

@@ -30,7 +30,8 @@ public partial class BattleSimulator
             {
                 continue;
             }
-            if (actor.max_qi() > 0 && active.qi_cost > actor.qi)
+            // 实际气耗走 `SkillCost`（`qi_cost_mul` 一处调参）——判定与真扣气必须同一个数
+            if (actor.max_qi() > 0 && SkillCost.effective_qi_cost(_db, active.qi_cost, actor.side == BattleActor.side_ally()) > actor.qi)
             {
                 continue;
             }
@@ -73,15 +74,16 @@ public partial class BattleSimulator
             }
             bool is_support = !active.is_attack();
             var base_row = _db.get_row("skill_base", skill_id) as SkillBaseRow;
+            int cost = SkillCost.effective_qi_cost(_db, active.qi_cost, actor.side == BattleActor.side_ally());
             string reason = "";
             int left = cooldown_left(actor.actor_id, skill_id);
             if (left > 0)
             {
                 reason = $"冷却中（第 {cooldown_ready_round(actor.actor_id, skill_id)} 回合起可用）";
             }
-            else if (actor.max_qi() > 0 && active.qi_cost > actor.qi)
+            else if (actor.max_qi() > 0 && cost > actor.qi)
             {
-                reason = $"内力不足（要 {active.qi_cost}）";
+                reason = $"内力不足（要 {cost}）";
             }
             else if (!is_support && !_is_supported_damage(active.damage_type))
             {
@@ -95,7 +97,8 @@ public partial class BattleSimulator
             {
                 { "skill_id", skill_id },
                 { "name", base_row != null ? base_row.name_cn : skill_id },
-                { "qi_cost", active.qi_cost },
+                // 按钮上写的、面板上写的都是**实际会扣的那个数**（乘过 `qi_cost_mul`）
+                { "qi_cost", cost },
                 { "power_ratio", active.power_ratio },
                 { "hit_count", _effective_hits(actor, active) },
                 { "target_type", active.target_type },
@@ -150,7 +153,7 @@ public partial class BattleSimulator
         }
         // 敌人没有内力池（enemy_base 没有 qi 列，EnemyFactory 给 qi_max=0），
         // 所以内力消耗只对**有内力池的单位**生效——这条缺口记在交接表的 enemy_data 备注里。
-        if (actor.max_qi() > 0 && active.qi_cost > actor.qi)
+        if (actor.max_qi() > 0 && SkillCost.effective_qi_cost(_db, active.qi_cost, actor.side == BattleActor.side_ally()) > actor.qi)
         {
             return false;
         }
@@ -194,24 +197,26 @@ public partial class BattleSimulator
     public int _effective_hits(BattleActor actor, Resource skill)
     {
         return effective_hits_for(
-            skill.Get("skill_id").AsString(), skill.Get("hit_count").AsInt32(), actor.stat("extra_hit"));
+            skill.Get("skill_id").AsString(), skill.Get("hit_count").AsInt32(),
+            actor.stat("extra_hit"), actor.stat("basic_hit"));
     }
 
     /// <summary>
-    /// 上面那条的**唯一算法**：`hit_count ＋ extra_hit`，至少一段；普攻不吃 `extra_hit`。
+    /// 上面那条的**唯一算法**：`hit_count ＋ extra_hit`，至少一段；**普攻不吃 `extra_hit`**，
+    /// 它走自己那条 `basic_hit`（内功满级签名「蛮力」——设计 08；Q84 定的就是"普攻不吃 extra_hit"，
+    /// 否则套装白送普攻流，所以普攻要加段数只能走另一条）。
     ///
     /// 单拎出来是因为**角色面板也要写这个数**（UI 清单 §二-6「招式段数」写的是这个角色手里的段数，
     /// 不是表里的裸值——玄微剑「3 招档 +1」那种加成得看得见），而面板手上没有 `BattleActor`。
     /// 两处各写一遍的话，改了一处另一处就开始说谎。
     /// </summary>
-    public static int effective_hits_for(string skill_id, int base_hits, double extra_hit)
+    public static int effective_hits_for(
+        string skill_id, int base_hits, double extra_hit, double basic_hit)
     {
         int hits = System.Math.Max(1, base_hits);
-        if (skill_id == BASIC_ATTACK_ID)
-        {
-            return hits;
-        }
-        return System.Math.Max(1, hits + (int)extra_hit);
+        return skill_id == BASIC_ATTACK_ID
+            ? System.Math.Max(1, hits + (int)basic_hit)
+            : System.Math.Max(1, hits + (int)extra_hit);
     }
 
     /// <summary>一次行动的期望总伤害权重（不含随机与实际防御，只用来排序）。</summary>

@@ -598,6 +598,46 @@ public partial class TestShop : TestCase
         {
             CheckTrue(label.Text.Contains("限量：还剩 3"), $"行里写明还剩几个：{label.Text}");
         }
+
+        // 悬停小卡（UI 清单 §二-9 ＋ §二-12）：货架行悬停出物品卡——尾截写**单价与持有**，
+        // 不写「剩 N」（在货架上会被读成"货架还剩 N 件"，限量明明是另一行在报）。
+        // headless 没有真鼠标：打 `MouseEntered` ＋ 手动打计时器那一拍（与 `TestCharacterHoverUi` 同一套）。
+        var card = screen.FindChild("HoverCard", true, false) as HoverCard;
+        var hover_delay = card?.FindChild("HoverDelay", true, false) as Timer;
+        var buy_row = screen.FindChild("BuyRowitem_iron", true, false) as Control;
+        CheckNotNull(card, "商店有一张悬停小卡");
+        CheckNotNull(buy_row, "货架那一行在（悬停挂在**整行**上，鼠标挪到图标上也不该收）");
+        if (card != null && hover_delay != null && buy_row != null)
+        {
+            buy_row.EmitSignal(Control.SignalName.MouseEntered);
+            CheckFalse(card.Visible, "刚移上去还不浮（要等那 0.2 秒）");
+            hover_delay.EmitSignal(Timer.SignalName.Timeout);
+            CheckTrue(card.Visible, "那一拍到点，卡浮出来");
+            var iron = db.get_row("item_base", "item_iron") as ItemBaseRow;
+            CheckEq(
+                (card.FindChild("HoverCardTitle", true, false) as Label)?.Text,
+                iron != null ? iron.name_cn : "", "卡头写货名（不写 id）");
+            string row2 = (card.FindChild("HoverCardRow2", true, false) as Label)?.Text ?? "";
+            CheckTrue(row2.Contains("单价") && row2.Contains("持有"), $"行2 写单价与持有：{row2}");
+            CheckEq(
+                (card.FindChild("HoverCardFoot", true, false) as Label)?.Text,
+                "左键选中 · 底部「确认购买」", "脚注写这一屏真有的操作");
+            buy_row.EmitSignal(Control.SignalName.MouseExited);
+            CheckFalse(card.Visible, "移开立刻收");
+        }
+
+        // 装备 id 走装备卡那一支（店里也卖装备：`shop_stock` 里有 eq_ring_01／eq_acc_01）。
+        // 这一条不建界面，直接查 builder——「类型 · 部位 · 品阶」这行的拼法只有它一处。
+        string[] equip_card = HoverCardText.of_base(db, "eq_ring_01", "单价 80 文", "左键选中");
+        var ring = db.get_row("equip_base", "eq_ring_01") as EquipBaseRow;
+        CheckEq(equip_card.Length, 5, "装备卡也是五格");
+        if (ring != null)
+        {
+            CheckTrue(
+                equip_card[1].StartsWith("戒指 · ") && equip_card[1].EndsWith("品"),
+                $"装备卡行2＝部位 · 品阶（戒指不是武器，没有类型那一截）：{equip_card[1]}");
+            CheckEq(equip_card[3], "无词条", "货架上的是白板：词条行写「无词条」");
+        }
         Button select = screen.FindChild("BuySelectitem_iron", true, false) as Button;
         CheckNotNull(select, "限量商品行有「选中」（点一行＝选中）");
         CheckEq(screen.selected_item, "", "还没点过：没有选中行");

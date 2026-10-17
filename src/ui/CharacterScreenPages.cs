@@ -414,9 +414,15 @@ public partial class CharacterScreen
             Label stat_label = _make_label($"StatLabel{stat_id}", panel.stat_name(stat_id));
             stat_label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             stat_grid.AddChild(stat_label);
-            stat_grid.AddChild(_cell_label(
+            Label stat_value_label = _cell_label(
                 $"StatValue{stat_id}", panel.stat_label(stat_id), "cinnabar_deep", 56,
-                HorizontalAlignment.Right));
+                HorizontalAlignment.Right);
+            // 悬停＝来源小卡（清单 §二-4 ＋ §二-12）：这个数是怎么来的（基础 ＋ 各项加成）＋
+            // 表里那句来源说明（「由力驱动」）。**Label 默认不吃鼠标**，所以这里要显式 Stop——
+            // 不然 `MouseEntered` 永远不来，卡一辈子不浮（"没反应"那类最难查的错）。
+            stat_value_label.MouseFilter = Control.MouseFilterEnum.Stop;
+            _hover().watch(stat_value_label, () => _stat_hover_rows(stat_id));
+            stat_grid.AddChild(stat_value_label);
         }
 
         // 非战斗技能与判定值（判定不含装备）
@@ -430,6 +436,48 @@ public partial class CharacterScreen
                 $"{_s(row, "name")} {_i(row, "level")}/{_i(row, "max_level")}"
                     + $"　判定 {_i(row, "check_value")}（{_s(row, "related_attr_name")}）"));
         }
+    }
+
+    /// <summary>
+    /// 一条战斗属性的来源小卡（清单 §二-4）：名称 ／ `当前 N` ／ `基础 12 ＋ 装备 +6` ／
+    /// 表里那句来源说明（`stat_def.desc`，如「由力驱动」；表里没写就不摆那一行）。
+    ///
+    /// 拆解走 `CharacterSheet.stat_breakdown()`——**与战斗同一套公式再算一遍**，界面不自己反推
+    /// （反推的一处写错，玩家看到的来源就是假的，而且不报错）。数值格式化走 `format_stat_value`，
+    /// 与左栏那一列显示同一个格式（百分比是百分比、整数是整数）。
+    /// </summary>
+    private string[] _stat_hover_rows(string stat_id)
+    {
+        CharacterSheet panel = sheet();
+        if (panel == null)
+        {
+            return System.Array.Empty<string>();
+        }
+
+        Godot.Collections.Dictionary breakdown = panel.stat_breakdown(stat_id);
+        string base_text = panel.format_stat_value(stat_id, breakdown["base"].AsDouble());
+        var parts = new System.Collections.Generic.List<string>();
+        foreach (Variant part_value in breakdown["parts"].AsGodotArray())
+        {
+            Godot.Collections.Dictionary part = part_value.AsGodotDictionary();
+            double delta = part["value"].AsDouble();
+            parts.Add(
+                $"{part["label"].AsString()} {(delta >= 0 ? "+" : "-")}"
+                    + panel.format_stat_value(stat_id, System.Math.Abs(delta)));
+        }
+
+        Resource stat_row = Db.get_row("stat_def", stat_id);
+        string desc = stat_row != null ? stat_row.Get("desc").AsString().StripEdges() : "";
+        return new[]
+        {
+            panel.stat_name(stat_id),
+            $"当前 {panel.stat_label(stat_id)}",
+            parts.Count > 0
+                ? $"基础 {base_text} ＋ {string.Join("　", parts)}"
+                : $"基础 {base_text}（无额外加成）",
+            desc,
+            "",
+        };
     }
 
     // ------------------------------------------------------------------ 装备页

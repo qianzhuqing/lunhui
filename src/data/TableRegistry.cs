@@ -73,6 +73,7 @@ public partial class TableRegistry : RefCounted
         "skill_active",
         "skill_passive",
         "skill_passive_stat",
+        "skill_mastery_bonus",
         "skill_star_def",
         "combat_const",
         // 增益与套装（0.6.2 新增，见 docs/design/08_增益与套装.md）
@@ -149,6 +150,7 @@ public partial class TableRegistry : RefCounted
         { "skill_active", "res://src/data/tables/SkillActiveRow.cs" },
         { "skill_passive", "res://src/data/tables/SkillPassiveRow.cs" },
         { "skill_passive_stat", "res://src/data/tables/SkillPassiveStatRow.cs" },
+        { "skill_mastery_bonus", "res://src/data/tables/SkillMasteryBonusRow.cs" },
         { "skill_star_def", "res://src/data/tables/SkillStarDefRow.cs" },
         { "combat_const", "res://src/data/tables/CombatConstRow.cs" },
         { "buff_def", "res://src/data/tables/BuffDefRow.cs" },
@@ -219,6 +221,7 @@ public partial class TableRegistry : RefCounted
         { "skill_active", new[] { "skill_id" } },
         { "skill_passive", new[] { "skill_id" } },
         { "skill_passive_stat", new[] { "skill_id", "target" } },
+        { "skill_mastery_bonus", new[] { "skill_id", "mastery", "target" } },
         { "skill_star_def", new[] { "star" } },
         { "combat_const", new[] { "const_id" } },
         { "buff_def", new[] { "buff_id" } },
